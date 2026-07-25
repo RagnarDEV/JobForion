@@ -80,17 +80,17 @@ button{font-family:inherit}
 /* ── PINNED BADGE (shared across every job-card renderer) ── */
 .tag-pinned{background:var(--brand-soft);color:var(--brand);border:none;font-size:10px;padding:3px 9px;font-weight:800;letter-spacing:.3px;border-radius:20px}
 
-/* ── COUNTRY PICKER PANEL (triggered by the homepage "🌍 Country" chip;
-   also reusable by any future page that needs the same country-select UI) ── */
-.country-panel{display:none;max-width:1180px;margin:0 auto;padding:14px 24px;border-bottom:1px solid var(--border);background:var(--bg)}
-.country-panel.open{display:block;animation:slideDown .2s ease}
-.country-panel-inner{display:flex;flex-wrap:wrap;gap:8px;max-height:230px;overflow-y:auto;padding:2px}
-.country-item{display:inline-flex;align-items:center;gap:6px;padding:7px 13px;border-radius:20px;border:1.5px solid var(--border2);background:var(--surface);color:var(--ink2);font-size:12.5px;font-weight:700;font-family:inherit;cursor:pointer;white-space:nowrap;transition:all .2s}
-.country-item:hover{border-color:var(--brand);color:var(--brand)}
-.country-item.active{background:var(--ink);border-color:var(--ink);color:#fff}
-.country-item .cnt{color:var(--ink3);font-weight:600;font-size:11px}
-.country-item.active .cnt{color:rgba(255,255,255,.7)}
-@media(max-width:768px){.country-panel{padding:12px 14px}}
+/* ── FACET PICKER PANEL (shared by the homepage's Category / Country /
+   Skills / Companies chips — one visual pattern for all four facets) ── */
+.filter-panel{display:none;max-width:1180px;margin:0 auto;padding:14px 24px;border-bottom:1px solid var(--border);background:var(--bg)}
+.filter-panel.open{display:block;animation:slideDown .2s ease}
+.filter-panel-inner{display:flex;flex-wrap:wrap;gap:8px;max-height:230px;overflow-y:auto;padding:2px}
+.filter-pill{display:inline-flex;align-items:center;gap:6px;padding:7px 13px;border-radius:20px;border:1.5px solid var(--border2);background:var(--surface);color:var(--ink2);font-size:12.5px;font-weight:700;font-family:inherit;cursor:pointer;white-space:nowrap;transition:all .2s}
+.filter-pill:hover{border-color:var(--brand);color:var(--brand)}
+.filter-pill.active{background:var(--ink);border-color:var(--ink);color:#fff}
+.filter-pill .cnt{color:var(--ink3);font-weight:600;font-size:11px}
+.filter-pill.active .cnt{color:rgba(255,255,255,.7)}
+@media(max-width:768px){.filter-panel{padding:12px 14px}}
 
 /* ── POST A JOB MODAL (shared, works on every page) ── */
 .pj-overlay{display:none;position:fixed;inset:0;background:rgba(11,18,32,.6);backdrop-filter:blur(3px);z-index:500;align-items:flex-start;justify-content:center;padding:32px 16px;overflow-y:auto}
