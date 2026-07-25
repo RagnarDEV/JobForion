@@ -9,6 +9,7 @@ import { renderMainHTML } from '../pages/home.js';
 import { BLOG_POSTS } from '../data/blog-posts.js';
 import { getActiveApiKeys } from '../db/sync.js';
 import { baseLayout } from '../layout/base-layout.js';
+import { BASE_URL } from '../config/constants.js';
 
 // A deleted/expired job's row is hard-removed from D1 (see
 // db/cleanup.js), so at request time there's no way to tell "this id
@@ -43,7 +44,7 @@ async function renderJobGonePage(env, base, requestedId) {
 </div>`;
 
   return new Response(
-    baseLayout(`${headline} — JobNova`, body, `${base}/job/${requestedId}`, '', content, '', 'noindex, nofollow'),
+    baseLayout(`${headline} — JobForion`, body, `${base}/job/${requestedId}`, '', content, '', 'noindex, nofollow'),
     { status, headers: { "Content-Type": "text/html; charset=utf-8" } }
   );
 }
