@@ -1,5 +1,5 @@
 // src/lib/sitemap.js
-import { listCompanies, listSkills } from './entities.js';
+import { listCompanies, listSkills, listCountries } from './entities.js';
 
 // `blogPosts` / `categoryOrder` are passed in from index.js since they're
 // still defined as in-code constants there (static content stays static).
@@ -20,6 +20,7 @@ export async function buildSitemapXml(env, base, { blogPosts = [], categoryOrder
   add(`${base}/companies`, { changefreq: 'daily', priority: '0.7' });
   add(`${base}/categories`, { changefreq: 'daily', priority: '0.7' });
   add(`${base}/skills`, { changefreq: 'daily', priority: '0.6' });
+  add(`${base}/countries`, { changefreq: 'daily', priority: '0.6' });
 
   // blog
   for (const p of blogPosts) add(`${base}/blog/${p.id}`, { changefreq: 'monthly', priority: '0.7' });
@@ -27,17 +28,18 @@ export async function buildSitemapXml(env, base, { blogPosts = [], categoryOrder
   // categories (static list, cheap)
   for (const key of categoryOrder) add(`${base}/categories/${key}`, { changefreq: 'daily', priority: '0.65' });
 
-  // jobs / companies / skills queries are all independent — run them in
-  // parallel instead of sequentially awaiting each one. This alone can cut
-  // the endpoint's total wall-clock time roughly in half to a third,
-  // which matters because a slow-but-eventually-successful response is
-  // exactly what causes crawlers (which apply their own fetch timeouts)
-  // to report "couldn't fetch" even though a browser, given enough time,
-  // would eventually see a valid file.
-  const [jobsResult, companiesResult, skillsResult] = await Promise.allSettled([
+  // jobs / companies / skills / countries queries are all independent —
+  // run them in parallel instead of sequentially awaiting each one. This
+  // alone can cut the endpoint's total wall-clock time roughly in half to
+  // a third, which matters because a slow-but-eventually-successful
+  // response is exactly what causes crawlers (which apply their own fetch
+  // timeouts) to report "couldn't fetch" even though a browser, given
+  // enough time, would eventually see a valid file.
+  const [jobsResult, companiesResult, skillsResult, countriesResult] = await Promise.allSettled([
     env.DB.prepare("SELECT id,created_at FROM jobs ORDER BY id DESC LIMIT 1000").all(),
     listCompanies(env, { limit: 500 }),
     listSkills(env, { limit: 300 }),
+    listCountries(env, { limit: 300 }),
   ]);
 
   if (jobsResult.status === 'fulfilled') {
@@ -50,6 +52,9 @@ export async function buildSitemapXml(env, base, { blogPosts = [], categoryOrder
   }
   if (skillsResult.status === 'fulfilled') {
     for (const s of skillsResult.value) add(`${base}/skills/${s.slug}`, { changefreq: 'weekly', priority: '0.5' });
+  }
+  if (countriesResult.status === 'fulfilled') {
+    for (const c of countriesResult.value) add(`${base}/countries/${c.slug}`, { changefreq: 'weekly', priority: '0.5' });
   }
 
   return `<?xml version="1.0" encoding="UTF-8"?>
