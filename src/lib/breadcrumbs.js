@@ -1,20 +1,26 @@
 // src/lib/breadcrumbs.js
 import { breadcrumbSchema, ldJsonTag } from './schema.js';
+import { escapeHtml } from './entities.js';
 
 // trail: [{name, url}, ...] — home first, current page last (current has no link)
+// SECURITY: t.name can originate from DB-derived entity data (company,
+// skill, country name) or directly from the URL (search query) — always
+// escape before inserting into the visible HTML trail.
 export function breadcrumbHtml(trail) {
   if (!trail || !trail.length) return '';
   const parts = trail.map((t, i) => {
     const isLast = i === trail.length - 1;
+    const safeName = escapeHtml(t.name);
     return isLast
-      ? `<span>${t.name}</span>`
-      : `<a href="${t.href || t.url}">${t.name}</a>`;
+      ? `<span>${safeName}</span>`
+      : `<a href="${t.href || t.url}">${safeName}</a>`;
   });
   return `<div class="breadcrumb">${parts.join('<span>›</span>')}</div>`;
 }
 
 export function breadcrumbJsonLd(trail) {
-  // schema requires absolute URLs
+  // schema requires absolute URLs — ldJsonTag() itself now escapes "<" to
+  // prevent a name containing "</script>" from breaking out of the tag.
   return ldJsonTag(breadcrumbSchema(trail.map(t => ({ name: t.name, url: t.url }))));
 }
 
