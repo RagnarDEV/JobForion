@@ -1,93 +1,44 @@
 // src/components/nav.js
-import {
-  Logo, Menu, X, Home, Compass, Users,
-  Tag, FileText, Mail, PlusCircle
-} from '../assets/icons.js';
+// Desktop nav bar + mobile header/menu (shared across every page).
 
-const NAV_ITEMS = [
-  { href: '/', label: 'Home', icon: Home },
-  { href: '/search', label: 'Browse Jobs', icon: Compass },
-  { href: '/companies', label: 'Companies', icon: Users },
-  { href: '/categories', label: 'Categories', icon: Tag },
-  { href: '/blog', label: 'Blog', icon: FileText },
-  { href: '/contact', label: 'Contact', icon: Mail },
-];
+import { iconSearch, iconBuilding, iconFolder, iconBookmark, iconFileText, iconPlus, iconLock, iconMenu, iconGlobe } from '../assets/icons.js';
 
-export const navHtml = (currentPath = '/') => {
-  const logoLink = '/';
-  
-  const navItemsHtml = NAV_ITEMS.map(item => {
-    const isActive = currentPath === item.href || (item.href !== '/' && currentPath.startsWith(item.href));
-    return `
-      <a href="${item.href}" class="nav__dropdown-item${isActive ? ' active' : ''}" aria-current="${isActive ? 'page' : 'false'}">
-        ${item.icon(20)}
-        <span>${item.label}</span>
-      </a>
-    `;
-  }).join('');
-
+export function navHtml() {
   return `
-    <nav class="nav" role="navigation" aria-label="Main navigation">
-      <div class="nav__container">
-        <a href="${logoLink}" class="nav__logo" aria-label="JobForion Home">
-          <span class="nav__logo-icon">${Logo(28)}</span>
-          <span>JobForion</span>
-        </a>
-        
-        <div class="nav__actions">
-          <button 
-            class="nav__hamburger" 
-            id="navHamburger" 
-            aria-label="Open menu" 
-            aria-expanded="false"
-            aria-controls="navDropdown"
-          >
-            ${Menu(22)}
-          </button>
-        </div>
-      </div>
-      
-      <div class="nav__dropdown" id="navDropdown" role="menu" aria-hidden="true">
-        ${navItemsHtml}
-        <a href="/post-job" class="nav__dropdown-item nav__dropdown-item--primary" role="menuitem">
-          ${PlusCircle(20)}
-          <span>Post a Job</span>
-        </a>
-      </div>
-    </nav>
-    
-    <script>
-      (function() {
-        const hamburger = document.getElementById('navHamburger');
-        const dropdown = document.getElementById('navDropdown');
-        if (!hamburger || !dropdown) return;
-        
-        let isOpen = false;
-        const toggleMenu = () => {
-          isOpen = !isOpen;
-          hamburger.classList.toggle('active', isOpen);
-          dropdown.classList.toggle('open', isOpen);
-          hamburger.setAttribute('aria-expanded', String(isOpen));
-          dropdown.setAttribute('aria-hidden', String(!isOpen));
-          hamburger.setAttribute('aria-label', isOpen ? 'Close menu' : 'Open menu');
-        };
-        
-        hamburger.addEventListener('click', (e) => { e.stopPropagation(); toggleMenu(); });
-        document.addEventListener('click', (e) => {
-          if (isOpen && !dropdown.contains(e.target) && !hamburger.contains(e.target)) {
-            isOpen = false;
-            hamburger.classList.remove('active');
-            dropdown.classList.remove('open');
-            hamburger.setAttribute('aria-expanded', 'false');
-            dropdown.setAttribute('aria-hidden', 'true');
-          }
-        });
-        document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && isOpen) toggleMenu(); });
-      })();
-    </script>
-  `;
-};
+<nav class="nav">
+  <a href="/" class="nav-logo"><img src="/favicon.svg" alt="JobForion"><span>JobForion</span><span class="dot"></span></a>
+  <div class="nav-links">
+    <a href="/" class="nav-link">Browse Jobs</a>
+    <a href="/companies" class="nav-link">Companies</a>
+    <a href="/categories" class="nav-link">Categories</a>
+    <a href="/blog" class="nav-link">Blog</a>
+    <button class="nav-link" onclick="if(window.goView){goView('saved')}else{location='/'}">Saved</button>
+    <button class="nav-cta" onclick="openPostJobModal()">+ Post a Job</button>
+  </div>
+</nav>`;
+}
 
-// أسماء مستعارة لضمان التوافق مع أي ملف آخر في المشروع
-export const renderNav = navHtml;
-export const mobileHeaderHtml = navHtml;
+export function mobileHeaderHtml() {
+  return `
+<div class="mob-hdr">
+  <a href="/" class="mob-logo"><img src="/favicon.svg" alt="JobForion">JobForion</a>
+  <div class="mob-btns">
+    <button class="mob-cta" onclick="openPostJobModal()">+ Post</button>
+    <button class="mob-burger" onclick="toggleMobMenu()" id="mobBurgerBtn">${iconMenu({ size: 18 })}</button>
+  </div>
+</div>
+<div class="mob-menu" id="mobMenu">
+  <a href="/">${iconSearch({ size: 16 })} Browse Jobs</a>
+  <a href="/companies">${iconBuilding({ size: 16 })} Companies</a>
+  <a href="/categories">${iconFolder({ size: 16 })} Categories</a>
+  <a href="/countries">${iconGlobe({ size: 16 })} Countries</a>
+  <button onclick="if(window.goView){goView('saved');closeMobMenu();}else{location='/'}">${iconBookmark({ size: 16 })} Saved Jobs</button>
+  <a href="/blog">${iconFileText({ size: 16 })} Career Blog</a>
+  <button onclick="openPostJobModal();closeMobMenu();">${iconPlus({ size: 16 })} Post a Job</button>
+  <a href="/privacy">${iconLock({ size: 16 })} Privacy</a>
+</div>
+<script>
+function toggleMobMenu(){document.getElementById('mobMenu').classList.toggle('open');}
+function closeMobMenu(){document.getElementById('mobMenu').classList.remove('open');}
+</script>`;
+}
