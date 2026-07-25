@@ -2,17 +2,17 @@
 // Navigation bar — transparent over hero, hamburger menu with dropdown
 
 import {
-  LogoIcon, MenuIcon, XIcon, HomeIcon, CompassIcon, UsersIcon,
-  TagIcon, FileTextIcon, MailIcon, PlusCircleIcon
+  Logo, Menu, X, Home, Compass, Users,
+  Tag, FileText, Mail, PlusCircle
 } from '../assets/icons.js';
 
 const NAV_ITEMS = [
-  { href: '/', label: 'Home', icon: HomeIcon },
-  { href: '/search', label: 'Browse Jobs', icon: CompassIcon },
-  { href: '/companies', label: 'Companies', icon: UsersIcon },
-  { href: '/categories', label: 'Categories', icon: TagIcon },
-  { href: '/blog', label: 'Blog', icon: FileTextIcon },
-  { href: '/contact', label: 'Contact', icon: MailIcon },
+  { href: '/', label: 'Home', icon: Home },
+  { href: '/search', label: 'Browse Jobs', icon: Compass },
+  { href: '/companies', label: 'Companies', icon: Users },
+  { href: '/categories', label: 'Categories', icon: Tag },
+  { href: '/blog', label: 'Blog', icon: FileText },
+  { href: '/contact', label: 'Contact', icon: Mail },
 ];
 
 export const renderNav = (currentPath = '/') => {
@@ -33,7 +33,7 @@ export const renderNav = (currentPath = '/') => {
     <nav class="nav" role="navigation" aria-label="Main navigation">
       <div class="nav__container">
         <a href="${logoLink}" class="nav__logo" aria-label="JobForion Home">
-          <span class="nav__logo-icon">${LogoIcon(28)}</span>
+          <span class="nav__logo-icon">${Logo(28)}</span>
           <span>JobForion</span>
         </a>
         
@@ -45,7 +45,7 @@ export const renderNav = (currentPath = '/') => {
             aria-expanded="false"
             aria-controls="navDropdown"
           >
-            ${MenuIcon(22)}
+            ${Menu(22)}
           </button>
         </div>
       </div>
@@ -53,7 +53,7 @@ export const renderNav = (currentPath = '/') => {
       <div class="nav__dropdown" id="navDropdown" role="menu" aria-hidden="true">
         ${navItemsHtml}
         <a href="/post-job" class="nav__dropdown-item nav__dropdown-item--primary" role="menuitem">
-          ${PlusCircleIcon(20)}
+          ${PlusCircle(20)}
           <span>Post a Job</span>
         </a>
       </div>
