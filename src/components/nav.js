@@ -1,7 +1,7 @@
 // src/components/nav.js
 // Desktop nav bar + mobile header/menu (shared across every page).
 
-import { iconSearch, iconBuilding, iconFolder, iconBookmark, iconFileText, iconPlus, iconLock, iconMenu } from '../assets/icons.js';
+import { iconSearch, iconBuilding, iconFolder, iconBookmark, iconFileText, iconPlus, iconLock, iconMenu, iconGlobe } from '../assets/icons.js';
 
 export function navHtml() {
   return `
@@ -31,6 +31,7 @@ export function mobileHeaderHtml() {
   <a href="/">${iconSearch({ size: 16 })} Browse Jobs</a>
   <a href="/companies">${iconBuilding({ size: 16 })} Companies</a>
   <a href="/categories">${iconFolder({ size: 16 })} Categories</a>
+  <a href="/countries">${iconGlobe({ size: 16 })} Countries</a>
   <button onclick="if(window.goView){goView('saved');closeMobMenu();}else{location='/'}">${iconBookmark({ size: 16 })} Saved Jobs</button>
   <a href="/blog">${iconFileText({ size: 16 })} Career Blog</a>
   <button onclick="openPostJobModal();closeMobMenu();">${iconPlus({ size: 16 })} Post a Job</button>
