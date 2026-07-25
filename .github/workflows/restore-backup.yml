@@ -11,38 +11,37 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Find ZIP file
-        id: zip
+      - name: Install unzip
+        run: sudo apt-get update && sudo apt-get install -y unzip rsync
+
+      - name: Restore Backup
         run: |
-          ZIP=$(find . -maxdepth 1 -name "*.zip" | head -n 1)
+          ZIP=$(find . -maxdepth 1 -name "*.zip" | head -n1)
 
-          if [ -z "$ZIP" ]; then
-            echo "No ZIP file found!"
-            exit 1
-          fi
+          mkdir temp
 
-          echo "ZIP=$ZIP" >> $GITHUB_ENV
+          unzip -q "$ZIP" -d temp
 
-      - name: Extract Backup (Overwrite Existing Files)
-        run: |
-          unzip -o "$ZIP"
+          ROOT=$(find temp -mindepth 1 -maxdepth 1 -type d | head -n1)
 
-      - name: Commit & Push
+          rsync -a --delete \
+            --exclude=".git" \
+            --exclude=".github/workflows" \
+            "$ROOT"/ ./
+
+          rm -rf temp
+
+      - name: Commit
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
           git add .
 
-          if git diff --cached --quiet; then
-            echo "No changes to commit."
-            exit 0
-          fi
+          git diff --cached --quiet || git commit -m "Restore backup"
 
-          git commit -m "Restore backup from ZIP"
           git push
