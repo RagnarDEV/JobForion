@@ -1,5 +1,5 @@
 // src/pages/home.js
-import { baseLayout } from '../layout/base-layout.js';
+import { renderBaseLayout } from '../layout/base-layout.js';
 import { navHtml } from '../components/nav.js';
 import { renderFooter } from '../components/footer.js';
 import { SHARED_CSS } from '../styles/shared-css.js';
@@ -11,39 +11,58 @@ import {
 
 // ===== Filter Data =====
 const CATEGORIES = [
-  { id: 'development', label: 'Development' }, { id: 'design', label: 'Design' },
-  { id: 'marketing', label: 'Marketing' }, { id: 'finance', label: 'Finance' },
-  { id: 'engineering', label: 'Engineering' }, { id: 'hr', label: 'HR' },
-  { id: 'writing', label: 'Writing' }, { id: 'customer-support', label: 'Customer Support' },
+  { id: 'development', label: 'Development' },
+  { id: 'design', label: 'Design' },
+  { id: 'marketing', label: 'Marketing' },
+  { id: 'finance', label: 'Finance' },
+  { id: 'engineering', label: 'Engineering' },
+  { id: 'hr', label: 'HR' },
+  { id: 'writing', label: 'Writing' },
+  { id: 'customer-support', label: 'Customer Support' },
   { id: 'sales', label: 'Sales' },
 ];
 
 const COMPANIES = [
-  { id: 'google', label: 'Google' }, { id: 'microsoft', label: 'Microsoft' },
-  { id: 'amazon', label: 'Amazon' }, { id: 'apple', label: 'Apple' },
-  { id: 'meta', label: 'Meta' }, { id: 'shopify', label: 'Shopify' },
-  { id: 'gitlab', label: 'GitLab' }, { id: 'stripe', label: 'Stripe' },
+  { id: 'google', label: 'Google' },
+  { id: 'microsoft', label: 'Microsoft' },
+  { id: 'amazon', label: 'Amazon' },
+  { id: 'apple', label: 'Apple' },
+  { id: 'meta', label: 'Meta' },
+  { id: 'shopify', label: 'Shopify' },
+  { id: 'gitlab', label: 'GitLab' },
+  { id: 'stripe', label: 'Stripe' },
 ];
 
 const COUNTRIES = [
-  { id: 'us', label: 'United States' }, { id: 'ca', label: 'Canada' },
-  { id: 'de', label: 'Germany' }, { id: 'uk', label: 'United Kingdom' },
-  { id: 'au', label: 'Australia' }, { id: 'fr', label: 'France' },
-  { id: 'jp', label: 'Japan' }, { id: 'in', label: 'India' },
+  { id: 'us', label: 'United States' },
+  { id: 'ca', label: 'Canada' },
+  { id: 'de', label: 'Germany' },
+  { id: 'uk', label: 'United Kingdom' },
+  { id: 'au', label: 'Australia' },
+  { id: 'fr', label: 'France' },
+  { id: 'jp', label: 'Japan' },
+  { id: 'in', label: 'India' },
   { id: 'remote', label: 'Remote Worldwide' },
 ];
 
 const EXPERIENCE_LEVELS = [
-  { id: 'internship', label: 'Internship' }, { id: 'entry', label: 'Entry Level' },
-  { id: 'junior', label: 'Junior' }, { id: 'mid', label: 'Mid-Level' },
-  { id: 'senior', label: 'Senior' }, { id: 'lead', label: 'Lead' },
-  { id: 'manager', label: 'Manager' }, { id: 'executive', label: 'Executive' },
+  { id: 'internship', label: 'Internship' },
+  { id: 'entry', label: 'Entry Level' },
+  { id: 'junior', label: 'Junior' },
+  { id: 'mid', label: 'Mid-Level' },
+  { id: 'senior', label: 'Senior' },
+  { id: 'lead', label: 'Lead' },
+  { id: 'manager', label: 'Manager' },
+  { id: 'executive', label: 'Executive' },
 ];
 
 const EMPLOYMENT_TYPES = [
-  { id: 'full-time', label: 'Full-Time' }, { id: 'part-time', label: 'Part-Time' },
-  { id: 'contract', label: 'Contract' }, { id: 'freelance', label: 'Freelance' },
-  { id: 'temporary', label: 'Temporary' }, { id: 'internship', label: 'Internship' },
+  { id: 'full-time', label: 'Full-Time' },
+  { id: 'part-time', label: 'Part-Time' },
+  { id: 'contract', label: 'Contract' },
+  { id: 'freelance', label: 'Freelance' },
+  { id: 'temporary', label: 'Temporary' },
+  { id: 'internship', label: 'Internship' },
 ];
 
 // ===== Filter Renderer =====
@@ -221,7 +240,7 @@ const pageScript = `
 </script>
 `;
 
-// ===== Main Render Function (هذا هو السطر الذي كان ينقص ويصلح الخطأ) =====
+// ===== Main Render Function =====
 export const renderMainHTML = async (env, request, context = {}) => {
   const { jobs = [], totalPages = 1, currentPage = 1, query = '' } = context;
   const baseUrl = env?.BASE_URL || BASE_URL;
@@ -254,8 +273,9 @@ export const renderMainHTML = async (env, request, context = {}) => {
 
   const jobsSectionHtml = jobs.length > 0 ? renderJobsSection(jobs, currentPage, totalPages) : renderEmptyState();
   
-  const html = baseLayout({
-    env, request,
+  const html = renderBaseLayout({
+    env,
+    request,
     title: 'JobForion — Remote Jobs Worldwide',
     description: 'Discover remote job opportunities from top companies around the world.',
     url: baseUrl + '/',
@@ -263,23 +283,34 @@ export const renderMainHTML = async (env, request, context = {}) => {
     content: `${heroHtml}${jobsSectionHtml}`,
     footer: renderFooter(),
     structuredData: JSON.stringify({
-      '@context': 'https://schema.org', '@type': 'WebSite', name: 'JobForion', url: baseUrl,
-      potentialAction: { '@type': 'SearchAction', target: `${baseUrl}/search?q={search_term_string}`, 'query-input': 'required name=search_term_string' }
+      '@context': 'https://schema.org',
+      '@type': 'WebSite',
+      name: 'JobForion',
+      url: baseUrl,
+      potentialAction: {
+        '@type': 'SearchAction',
+        target: `${baseUrl}/search?q={search_term_string}`,
+        'query-input': 'required name=search_term_string'
+      }
     }),
   });
 
-  // حقن كود الجافاسكريبت لتشغيل الأزرار والقوائم قبل إغلاق وسم body
   return html.replace('</body>', pageScript + '</body>');
 };
 
-// ===== أسماء مستعارة لضمان التوافق مع أي ملف آخر =====
+// ===== Aliases for compatibility =====
 export const renderHome = renderMainHTML;
 export default renderMainHTML;
 
 // ===== Utilities =====
 const escapeHtml = (str) => {
   if (!str) return '';
-  return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
 };
 
 const formatDate = (dateStr) => {
@@ -291,5 +322,7 @@ const formatDate = (dateStr) => {
     if (diff < 7) return diff + ' days ago';
     if (diff < 30) return Math.floor(diff / 7) + ' weeks ago';
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-  } catch { return ''; }
+  } catch {
+    return '';
+  }
 };
