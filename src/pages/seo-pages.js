@@ -12,6 +12,7 @@ import {
   listCountries, findCountryBySlug, jobsByRegion,
   escapeHtml,
 } from '../lib/entities.js';
+import { countryFlag } from '../lib/country-flags.js';
 import { collectionPageSchema, itemListSchema, ldJsonTag } from '../lib/schema.js';
 import { buildBreadcrumb } from '../lib/breadcrumbs.js';
 import { truncateDescription } from '../lib/seo.js';
@@ -86,13 +87,15 @@ export async function renderCompanyDetail(env, base, slug) {
 // Mirrors the /companies pattern exactly: listCountries()/findCountryBySlug()
 // derive country/region names from the existing jobs.location column (see
 // splitLocation() in lib/entities.js) — no new table, no schema migration.
+// Every country name is prefixed with a flag emoji via countryFlag()
+// (lib/country-flags.js), both in the directory grid and the detail heading.
 export async function renderCountriesIndex(env, base) {
   const countries = await listCountries(env, { limit: 200 });
   const { html: bc, jsonLd: bcSchema } = buildBreadcrumb(base, [{ name: 'Countries', path: '/countries' }]);
   const content = `<div class="page">${bc}
     <h1 style="font-family:'Space Grotesk',sans-serif;font-size:26px;font-weight:700;margin-bottom:8px;color:var(--ink)">Browse Remote Jobs by Country</h1>
     <p style="color:var(--ink2);font-size:14px;margin-bottom:24px">${countries.length} countries and regions with active remote listings on JobForion.</p>
-    ${directoryGridHtml(countries, '/countries')}
+    ${directoryGridHtml(countries, '/countries', (c) => `<span aria-hidden="true">${countryFlag(c.name)}</span> `)}
   </div>`;
   const schema = ldJsonTag(collectionPageSchema('Countries — JobForion', 'Browse remote jobs by country or region.', `${base}/countries`));
   return baseLayout('Browse Remote Jobs by Country — JobForion', `Explore remote job listings across ${countries.length} countries and regions, updated hourly on JobForion.`, `${base}/countries`, '', content, schema + bcSchema);
@@ -106,8 +109,9 @@ export async function renderCountryDetail(env, base, slug) {
   // SECURITY: country.name is derived from jobs.location, which ultimately
   // traces back to external provider data — escape before rendering.
   const safeName = escapeHtml(country.name);
+  const flag = countryFlag(country.name);
   const content = `<div class="page">${bc}
-    <h1 style="font-family:'Space Grotesk',sans-serif;font-size:26px;font-weight:700;margin-bottom:8px;color:var(--ink)">Remote Jobs in ${safeName}</h1>
+    <h1 style="font-family:'Space Grotesk',sans-serif;font-size:26px;font-weight:700;margin-bottom:8px;color:var(--ink)">${flag} Remote Jobs in ${safeName}</h1>
     <p style="color:var(--ink2);font-size:14px;margin-bottom:24px">${jobs.length} open remote position${jobs.length === 1 ? '' : 's'} located in or hiring from ${safeName}.</p>
     <div class="related-grid">${jobs.map(jobRowMini).join('') || '<div class="empty"><div class="e-icon">📭</div><h3>No open jobs in this location yet</h3></div>'}</div>
   </div>`;
