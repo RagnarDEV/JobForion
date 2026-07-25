@@ -1,8 +1,6 @@
 // src/routes/api.router.js
 // JSON API surface: job search/listing, alert subscription, employer job
-// submissions, manual sync trigger, and a tiny debug endpoint. Contract is
-// UNCHANGED from the previous single-file version — same params, same
-// response shapes.
+// submissions, manual sync trigger, and a tiny debug endpoint.
 
 import { syncJobs } from '../db/sync.js';
 
@@ -52,6 +50,11 @@ export async function handleApiRoute(url, request, env) {
     const seniority = url.searchParams.get("seniority") || "";
     const salaryMin = url.searchParams.get("salary_min") || "";
     const days = url.searchParams.get("days") || "";
+    // Country filter — same matching heuristic as jobsByRegion() in
+    // lib/entities.js: location is either an exact match ("Germany") or
+    // ends with ", <country>" ("Berlin, Germany"), since `location` is
+    // free text with no normalized country column.
+    const country = url.searchParams.get("country") || "";
     const conditions = [], params = [];
     if (category) { conditions.push("LOWER(title) LIKE ?"); params.push(`%${category}%`); }
     if (search) { conditions.push("(LOWER(title) LIKE ? OR LOWER(company) LIKE ?)"); params.push(`%${search.toLowerCase()}%`, `%${search.toLowerCase()}%`); }
@@ -60,6 +63,7 @@ export async function handleApiRoute(url, request, env) {
     if (seniority) { conditions.push("LOWER(seniority) LIKE ?"); params.push(`%${seniority.toLowerCase()}%`); }
     if (salaryMin) { conditions.push("CAST(REPLACE(REPLACE(salary,'$',''),'k','') AS INTEGER) >= ?"); params.push(parseInt(salaryMin)); }
     if (days) { conditions.push("created_at >= datetime('now', '-' || ? || ' days')"); params.push(parseInt(days)); }
+    if (country) { conditions.push("(location = ? OR location LIKE ?)"); params.push(country, `%, ${country}`); }
     const where = conditions.length ? " WHERE " + conditions.join(" AND ") : "";
     const { results } = await env.DB.prepare(`SELECT * FROM jobs${where} ORDER BY featured DESC, id DESC LIMIT ${limit} OFFSET ${offset}`).bind(...params).all();
     const { results: cr } = await env.DB.prepare(`SELECT COUNT(*) as total FROM jobs${where}`).bind(...params).all();
