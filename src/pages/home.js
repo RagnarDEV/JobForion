@@ -13,7 +13,7 @@ import { jobCardSSR } from '../components/job-card.js';
 import { adSlot } from '../components/ad-slot.js';
 import { escapeHtml, listCountries, listSkills, listCompanies } from '../lib/entities.js';
 import { countryFlag } from '../lib/country-flags.js';
-import { iconSparkle, iconFlame, iconPin, iconMapPin, iconBookmark, iconLink, iconArrowRight, iconBadgeCheck, iconClock, iconGlobe, iconBuilding, iconSearch, iconX, iconFilter, iconBell, iconCheck, iconInfo, iconAlertTriangle } from '../assets/icons.js';
+import { iconSparkle, iconFlame, iconPin, iconMapPin, iconBookmark, iconLink, iconArrowRight, iconBadgeCheck, iconClock, iconGlobe, iconBuilding, iconSearch, iconX, iconFilter, iconBell, iconCheck, iconInfo, iconAlertTriangle, iconFolder, iconTag } from '../assets/icons.js';
 
 // Same icon markup used by the server-rendered cards (job-card.js) is
 // reused for client-rendered cards (search/filter/pagination results) by
@@ -27,7 +27,7 @@ const CLIENT_ICONS = {
   globe: iconGlobe({ size: 11 }), building: iconBuilding({ size: 11 }), search: iconSearch({ size: 16 }),
   x: iconX({ size: 13 }), filter: iconFilter({ size: 14 }), bell: iconBell({ size: 20 }),
   check: iconCheck({ size: 16 }), info: iconInfo({ size: 16 }), alertTriangle: iconAlertTriangle({ size: 32 }),
-  searchLg: iconSearch({ size: 32 }),
+  searchLg: iconSearch({ size: 32 }), folder: iconFolder({ size: 11 }), tag: iconTag({ size: 11 }),
 };
 
 // Kept for backward compatibility with anything still calling it directly;
@@ -44,42 +44,64 @@ export function categoryChipsServer() {
 // pill first. Building all four through one function keeps them visually
 // and behaviorally identical — a fifth facet later is a one-line addition
 // here, not a new bespoke UI.
-function facetPanelServer(facet, defaultIcon, allLabel, chipDefaultLabel, items) {
-  const allBtn = `<button class="filter-pill active" data-facet="${facet}" data-value="" data-label="${chipDefaultLabel}" onclick="selectFacet(this,'${facet}')">${defaultIcon} ${allLabel}</button>`;
+function facetPanelServer(facet, defaultIconSvg, allLabel, items, iconInDataLabel) {
+  // The "All X" reset pill's data-label is intentionally left blank: it's
+  // never actually read by selectFacet() (an empty value always falls
+  // back to the client-side FACET_DEFAULT_LABEL constant instead), so
+  // there's no reason to risk putting anything — let alone an SVG icon's
+  // own double-quoted width="…"/height="…" attributes — inside this
+  // attribute value.
+  const allBtn = `<button class="filter-pill active" data-facet="${facet}" data-value="" data-label="" onclick="selectFacet(this,'${facet}')">${defaultIconSvg} ${allLabel}</button>`;
   const rest = items.map(({ icon, name, value, count }) => {
     const safeName = escapeHtml(name);
     const safeValue = escapeHtml(value);
-    return `<button class="filter-pill" data-facet="${facet}" data-value="${safeValue}" data-label="${icon} ${safeName}" onclick="selectFacet(this,'${facet}')">${icon} ${safeName} <span class="cnt">${count}</span></button>`;
+    // SECURITY/CORRECTNESS: `icon` is only safe to also embed inside the
+    // data-label ATTRIBUTE when it's a plain emoji/Unicode character with
+    // no embedded quotes (category emoji, country flags). An SVG icon
+    // string (skill/company) always contains double quotes from its own
+    // attributes and would prematurely close data-label, corrupting this
+    // button's HTML — so SVG icons are only ever placed in element
+    // CONTENT (below, outside any attribute), never inside one.
+    const labelAttr = iconInDataLabel ? `${icon} ${safeName}` : safeName;
+    return `<button class="filter-pill" data-facet="${facet}" data-value="${safeValue}" data-label="${labelAttr}" onclick="selectFacet(this,'${facet}')">${icon} ${safeName} <span class="cnt">${count}</span></button>`;
   }).join('');
   return allBtn + rest;
 }
 
 function categoryPanelItemsServer(counts) {
   const items = CATEGORY_ORDER.map(k => ({ icon: CATEGORY_META[k].emoji, name: CATEGORY_META[k].label, value: k, count: counts[k] || 0 }));
-  return facetPanelServer('category', '📁', 'All Categories', '📁 Category', items);
+  return facetPanelServer('category', iconFolder({ size: 11 }), 'All Categories', items, true);
 }
 
-// Country picker, each entry prefixed with a flag emoji (lib/country-flags.js).
-// Selecting one filters jobs via /api/jobs?country=... (routes/api.router.js),
-// matching the same heuristic already used by jobsByRegion() in lib/entities.js.
+// Country picker, each entry prefixed with a flag emoji (lib/country-flags.js) —
+// flags are plain Unicode characters, safe to embed in the data-label
+// attribute directly. Selecting one filters jobs via /api/jobs?country=...
+// (routes/api.router.js), matching the same heuristic already used by
+// jobsByRegion() in lib/entities.js.
 function countryPanelItemsServer(countries) {
   const items = countries.map(c => ({ icon: countryFlag(c.name), name: c.name, value: c.name, count: c.count }));
-  return facetPanelServer('country', '🌍', 'All Countries', '🌍 Country', items);
+  return facetPanelServer('country', iconGlobe({ size: 11 }), 'All Countries', items, true);
 }
 
 // Skill picker — sourced from listSkills() (lib/entities.js), which parses
 // the jobs.skills JSON column via SQLite's json_each. Filters via
-// /api/jobs?skill=... which matches the same json_each pattern.
+// /api/jobs?skill=... which matches the same json_each pattern. Every
+// entry shares one uniform "tag" SVG icon (skills have no natural
+// per-item glyph the way countries have flags).
 function skillPanelItemsServer(skills) {
-  const items = skills.map(s => ({ icon: '🏷️', name: s.name, value: s.name, count: s.count }));
-  return facetPanelServer('skill', '🏷️', 'All Skills', '🏷️ Skills', items);
+  const tagIcon = iconTag({ size: 11 });
+  const items = skills.map(s => ({ icon: tagIcon, name: s.name, value: s.name, count: s.count }));
+  return facetPanelServer('skill', tagIcon, 'All Skills', items, false);
 }
 
 // Company picker — sourced from listCompanies() (lib/entities.js). Filters
 // via /api/jobs?company=... (exact match on the jobs.company column).
+// Uses the same building icon as the "hybrid/on-site" remote-type tag
+// elsewhere on the site for visual consistency.
 function companyPanelItemsServer(companies) {
-  const items = companies.map(c => ({ icon: '🏢', name: c.name, value: c.name, count: c.count }));
-  return facetPanelServer('company', '🏢', 'All Companies', '🏢 Companies', items);
+  const buildingIcon = iconBuilding({ size: 11 });
+  const items = companies.map(c => ({ icon: buildingIcon, name: c.name, value: c.name, count: c.count }));
+  return facetPanelServer('company', buildingIcon, 'All Companies', items, false);
 }
 
 // Single-query category counts: one SUM(CASE WHEN...) column per category
@@ -372,10 +394,10 @@ ${mobileHeaderHtml()}
     </div>
 
     <div class="filters-bar">
-      <button class="chip" id="categoryChipBtn" onclick="toggleFacetPanel('category')">📁 Category</button>
-      <button class="chip" id="countryChipBtn" onclick="toggleFacetPanel('country')">🌍 Country</button>
-      <button class="chip" id="skillChipBtn" onclick="toggleFacetPanel('skill')">🏷️ Skills</button>
-      <button class="chip" id="companyChipBtn" onclick="toggleFacetPanel('company')">🏢 Companies</button>
+      <button class="chip" id="categoryChipBtn" onclick="toggleFacetPanel('category')">${iconFolder({ size: 12 })} Category</button>
+      <button class="chip" id="countryChipBtn" onclick="toggleFacetPanel('country')">${iconGlobe({ size: 12 })} Country</button>
+      <button class="chip" id="skillChipBtn" onclick="toggleFacetPanel('skill')">${iconTag({ size: 12 })} Skills</button>
+      <button class="chip" id="companyChipBtn" onclick="toggleFacetPanel('company')">${iconBuilding({ size: 12 })} Companies</button>
     </div>
 
     <div class="filter-panel" id="categoryPanel">
@@ -566,7 +588,14 @@ function clearAdvFilters(){
 // currently has a value selected (independent of the other three, so
 // facets combine rather than reset each other).
 const FACETS=['category','country','skill','company'];
-const FACET_DEFAULT_LABEL={category:'📁 Category',country:'🌍 Country',skill:'🏷️ Skills',company:'🏢 Companies'};
+const FACET_DEFAULT_LABEL={category:ICONS.folder+' Category',country:ICONS.globe+' Country',skill:ICONS.tag+' Skills',company:ICONS.building+' Companies'};
+// Only skill/company need their icon prepended client-side: their
+// data-label attribute intentionally holds ONLY the plain name (see
+// facetPanelServer() server-side) since their icon is an SVG string,
+// which can't safely live inside an HTML attribute. Category/country
+// labels already include their icon (a plain emoji, safe in attributes)
+// as part of the label text itself.
+const FACET_ICON_PREFIX={skill:ICONS.tag+' ',company:ICONS.building+' '};
 
 function facetHasValue(f){ return f==='category' ? !!cat : !!adv[f]; }
 
@@ -592,15 +621,21 @@ function closeFacetPanel(facet){
 
 function selectFacet(btn,facet){
   const value=btn.dataset.value||'';
-  const label=btn.dataset.label||FACET_DEFAULT_LABEL[facet];
   if(facet==='category'){
-    filterCat(value,label.replace(/^\S+\s*/,''));
+    const rawLabel=value?(btn.dataset.label||''):'';
+    filterCat(value,rawLabel.replace(/^\S+\s*/,''));
     closeFacetPanel('category');
     return;
   }
+  const label=btn.dataset.label||'';
   adv[facet]=value;
   const chipBtn=document.getElementById(facet+'ChipBtn');
-  chipBtn.innerHTML=value?esc(label):FACET_DEFAULT_LABEL[facet];
+  if(value){
+    const prefix=FACET_ICON_PREFIX[facet]||''; // empty for country — its flag is already part of label
+    chipBtn.innerHTML=prefix+esc(label);
+  }else{
+    chipBtn.innerHTML=FACET_DEFAULT_LABEL[facet];
+  }
   document.querySelectorAll('.filter-pill[data-facet="'+facet+'"]').forEach(el=>el.classList.toggle('active',el.dataset.value===value));
   closeFacetPanel(facet);
   pg=1;loadJobs();
@@ -779,7 +814,7 @@ function filterCat(c,label){
   // and its own panel pills, never the other three facets' state.
   const chipBtn=document.getElementById('categoryChipBtn');
   const meta=c?CAT_META[c]:null;
-  chipBtn.innerHTML=c?esc((meta?meta.emoji+' ':'')+label):'📁 Category';
+  chipBtn.innerHTML=c?esc((meta?meta.emoji+' ':'')+label):(ICONS.folder+' Category');
   chipBtn.classList.toggle('active',!!c);
   document.querySelectorAll('.filter-pill[data-facet="category"]').forEach(el=>el.classList.toggle('active',el.dataset.value===c));
   showView('vJobs');loadJobs();
