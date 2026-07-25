@@ -43,7 +43,7 @@ export const iconClock = (opts) => svg(`<circle cx="12" cy="12" r="10"/><polylin
 // Remote-type tag: fully remote.
 export const iconGlobe = (opts) => svg(`<circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/>`, opts);
 
-// Remote-type tag: hybrid / on-site.
+// Remote-type tag: hybrid / on-site. Also used as the generic "Companies" facet icon.
 export const iconBuilding = (opts) => svg(`<path d="M6 22V4a1 1 0 0 1 1-1h9a1 1 0 0 1 1 1v18"/><path d="M6 12H4a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h2"/><path d="M18 9h2a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1h-2"/><path d="M10 6h4"/><path d="M10 10h4"/><path d="M10 14h4"/><path d="M10 18h4"/>`, opts);
 
 export const iconSearch = (opts) => svg(`<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>`, opts);
@@ -59,3 +59,8 @@ export const iconFileText = (opts) => svg(`<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2
 export const iconPlus = (opts) => svg(`<path d="M5 12h14"/><path d="M12 5v14"/>`, opts);
 export const iconLock = (opts) => svg(`<rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>`, opts);
 export const iconDollarSign = (opts) => svg(`<line x1="12" x2="12" y1="2" y2="22"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>`, opts);
+
+// Generic "tag/label" icon — used as the Skills facet's icon (skills have
+// no natural per-item glyph the way countries have flags, so one uniform
+// icon represents the whole facet, same as iconBuilding does for Companies).
+export const iconTag = (opts) => svg(`<path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42Z"/><circle cx="7.5" cy="7.5" r="1.5"/>`, opts);
