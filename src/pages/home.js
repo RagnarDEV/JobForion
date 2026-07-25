@@ -11,7 +11,8 @@ import { ICON_HEAD } from '../assets/favicon.js';
 import { FEATURED_COMPANIES, CATEGORY_ORDER, CATEGORY_META } from '../config/constants.js';
 import { jobCardSSR } from '../components/job-card.js';
 import { adSlot } from '../components/ad-slot.js';
-import { escapeHtml } from '../lib/entities.js';
+import { escapeHtml, listCountries } from '../lib/entities.js';
+import { countryFlag } from '../lib/country-flags.js';
 import { iconSparkle, iconFlame, iconPin, iconMapPin, iconBookmark, iconLink, iconArrowRight, iconBadgeCheck, iconClock, iconGlobe, iconBuilding, iconSearch, iconX, iconFilter, iconBell, iconCheck, iconInfo, iconAlertTriangle } from '../assets/icons.js';
 
 // Same icon markup used by the server-rendered cards (job-card.js) is
@@ -31,6 +32,20 @@ const CLIENT_ICONS = {
 
 export function categoryChipsServer() {
   return CATEGORY_ORDER.map(k => `<button class="chip" data-cat="${k}" onclick="filterCat('${k}','${CATEGORY_META[k].label}')">${CATEGORY_META[k].label}</button>`).join('');
+}
+
+// Server-rendered list of country picker buttons, each prefixed with a
+// flag emoji (lib/country-flags.js). Selecting one filters jobs via
+// /api/jobs?country=... (see routes/api.router.js), which matches the same
+// heuristic already used by jobsByRegion() in lib/entities.js.
+function countryPanelItemsServer(countries) {
+  const allBtn = `<button class="country-item active" data-country="" data-label="🌍 Country" onclick="selectCountryFromBtn(this)">🌍 All Countries</button>`;
+  const items = countries.map(c => {
+    const flag = countryFlag(c.name);
+    const safeName = escapeHtml(c.name);
+    return `<button class="country-item" data-country="${safeName}" data-label="${flag} ${safeName}" onclick="selectCountryFromBtn(this)">${flag} ${safeName} <span class="cnt">${c.count}</span></button>`;
+  }).join('');
+  return allBtn + items;
 }
 
 export async function renderMainHTML(env, base) {
@@ -58,6 +73,15 @@ export async function renderMainHTML(env, base) {
     }));
     categorySections = categorySections.filter(s => s.jobs.length > 0);
   } catch (e) {}
+
+  // Top countries for the homepage filter chip's picker panel — bounded to
+  // a reasonable number since this renders as a flat button list, not a
+  // paginated table (the full directory lives at /countries).
+  let topCountries = [];
+  try {
+    topCountries = await listCountries(env, { limit: 40 });
+  } catch (e) {}
+  const countryPanelHtml = countryPanelItemsServer(topCountries);
 
   const itemListSchema = JSON.stringify({
     "@context": "https://schema.org", "@type": "ItemList",
@@ -277,7 +301,7 @@ ${mobileHeaderHtml()}
     <div class="hero">
       <div class="hero-inner">
         <h1 class="hero-title">Find your next <span class="hl">remote job</span></h1>
-        <p class="hero-sub">Browse curated remote positions from top companies worldwide. Filter by category, salary, and seniority — or post your own opening in minutes.</p>
+        <p class="hero-sub">Browse curated remote positions from top companies worldwide. Filter by category, country, salary, and seniority — or post your own opening in minutes.</p>
         <div class="search-row">
           <div class="search-wrap">
             <span class="search-icon">${iconSearch({ size: 16 })}</span>
@@ -296,8 +320,13 @@ ${mobileHeaderHtml()}
     </div>
 
     <div class="filters-bar">
-      <button class="chip active" onclick="filterCat('','All Jobs')">All Jobs</button>
+      <button class="chip active" id="allJobsChipBtn" onclick="filterCat('','All Jobs')">All Jobs</button>
       ${categoryChipsServer()}
+      <button class="chip" id="countryChipBtn" onclick="toggleCountryPanel()">🌍 Country</button>
+    </div>
+
+    <div class="country-panel" id="countryPanel">
+      <div class="country-panel-inner">${countryPanelHtml}</div>
     </div>
 
     <div class="adv-filters" id="advFilters">
@@ -382,7 +411,7 @@ let pg=1,cat='',srch='',advT,srchT;
 let jobs=${JSON.stringify(initialJobs)},total=${initialTotal};
 let savedIds=JSON.parse(localStorage.getItem('jn_saved')||'[]');
 let alertKws=[];
-let adv={remote:'',employ:'',seniority:'',salaryMin:'',days:''};
+let adv={remote:'',employ:'',seniority:'',salaryMin:'',days:'',country:''};
 let hasLoadedOnce=true;
 
 function initials(n){return(n||'?').split(' ').slice(0,2).map(w=>w[0]||'').join('').toUpperCase();}
@@ -465,9 +494,36 @@ function debounceAdv(){clearTimeout(advT);advT=setTimeout(applyAdvFilters,500);}
 function clearAdvFilters(){
   ['fRemote','fEmploy','fSeniority','fDate'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('fSalaryMin').value='';
-  adv={remote:'',employ:'',seniority:'',salaryMin:'',days:''};
+  adv={remote:'',employ:'',seniority:'',salaryMin:'',days:'',country:adv.country};
   pg=1;loadJobs();
 }
+
+// ── Country picker panel (the "🌍 Country" chip) ──────────────────
+function toggleCountryPanel(){
+  document.getElementById('countryPanel').classList.toggle('open');
+}
+function closeCountryPanel(){
+  document.getElementById('countryPanel').classList.remove('open');
+}
+function selectCountryFromBtn(btn){
+  const name=btn.dataset.country||'';
+  const label=btn.dataset.label||'🌍 Country';
+  adv.country=name;
+  const chipBtn=document.getElementById('countryChipBtn');
+  chipBtn.innerHTML=name?esc(label):'🌍 Country';
+  chipBtn.classList.toggle('active',!!name);
+  document.querySelectorAll('.country-item').forEach(el=>el.classList.toggle('active',el.dataset.country===name));
+  closeCountryPanel();
+  pg=1;loadJobs();
+}
+window.selectCountryFromBtn=selectCountryFromBtn;
+document.addEventListener('click',function(e){
+  const panel=document.getElementById('countryPanel');
+  const chipBtn=document.getElementById('countryChipBtn');
+  if(!panel||!panel.classList.contains('open'))return;
+  if(panel.contains(e.target)||chipBtn.contains(e.target))return;
+  closeCountryPanel();
+});
 
 function renderSkeletons(){
   return Array(4).fill(0).map(()=>\`
@@ -536,11 +592,12 @@ async function loadJobs(){
   if(adv.seniority)p.set('seniority',adv.seniority);
   if(adv.salaryMin)p.set('salary_min',adv.salaryMin);
   if(adv.days)p.set('days',adv.days);
+  if(adv.country)p.set('country',adv.country);
   try{
     const res=await fetch('/api/jobs?'+p);
     const data=await res.json();
     jobs=data.jobs||[];total=data.total||0;
-    document.getElementById('resultsCount').innerHTML=\`<strong>\${total.toLocaleString()}</strong> jobs found\${cat?' in <strong>'+(CAT_META[cat]?CAT_META[cat].label:cat)+'</strong>':''}\${srch?' for "<strong>'+srch+'</strong>"':''}\`;
+    document.getElementById('resultsCount').innerHTML=\`<strong>\${total.toLocaleString()}</strong> jobs found\${cat?' in <strong>'+(CAT_META[cat]?CAT_META[cat].label:cat)+'</strong>':''}\${adv.country?' in <strong>'+esc(adv.country)+'</strong>':''}\${srch?' for "<strong>'+srch+'</strong>"':''}\`;
     if(!jobs.length){
       document.getElementById('jobsList').innerHTML=\`<div class="empty"><div class="e-icon">\${ICONS.searchLg}</div><h3>No jobs found</h3><p>Try different keywords or clear filters</p></div>\`;
       return;
@@ -623,8 +680,11 @@ async function submitAlert(){
 
 function filterCat(c,label){
   cat=c;pg=1;
-  document.querySelectorAll('.chip').forEach(el=>el.classList.remove('active'));
-  document.querySelectorAll('.chip').forEach(el=>{if(el.dataset.cat===c||(c===''&&!el.dataset.cat))el.classList.add('active');});
+  // Category and country are independent, combinable facets — this only
+  // ever touches category chips (by data-cat) and the dedicated "All Jobs"
+  // button (by id), never the separate Country chip's own active state.
+  document.getElementById('allJobsChipBtn').classList.toggle('active',c==='');
+  document.querySelectorAll('.chip[data-cat]').forEach(el=>el.classList.toggle('active',el.dataset.cat===c));
   showView('vJobs');loadJobs();
 }
 function debounceSearch(v){clearTimeout(srchT);srchT=setTimeout(()=>{srch=v;pg=1;loadJobs();},400);}
@@ -651,4 +711,3 @@ document.addEventListener('DOMContentLoaded',()=>{
 </body>
 </html>`;
 }
-
