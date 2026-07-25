@@ -41,13 +41,21 @@ export function jobRowMini(job) {
   </a>`;
 }
 
-export function directoryGridHtml(items, hrefBase) {
+// `iconFn(item)` is optional — when provided, its return value (expected
+// to be a small emoji/icon string, NOT user-controlled HTML) is rendered
+// immediately before the entity name. Used by the /countries directory to
+// prefix each entry with a flag emoji (see lib/country-flags.js) without
+// touching the /companies and /skills callers, which simply omit the arg.
+export function directoryGridHtml(items, hrefBase, iconFn) {
   if (!items.length) return `<div class="empty"><div class="e-icon">📭</div><h3>No entries yet</h3><p>Check back after the next sync.</p></div>`;
   return `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px">
-    ${items.map(it => `<a href="${hrefBase}/${it.slug}" style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;text-decoration:none;display:flex;align-items:center;justify-content:space-between;gap:10px;transition:all .2s" onmouseover="this.style.borderColor='var(--brand)'" onmouseout="this.style.borderColor='var(--border)'">
-      <span style="font-size:14px;font-weight:700;color:var(--ink)">${escapeHtml(it.name)}</span>
-      <span style="font-size:11px;font-weight:700;color:var(--brand);background:var(--brand-soft);padding:3px 9px;border-radius:20px">${it.count}</span>
-    </a>`).join('')}
+    ${items.map(it => {
+      const icon = iconFn ? iconFn(it) : '';
+      return `<a href="${hrefBase}/${it.slug}" style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;text-decoration:none;display:flex;align-items:center;justify-content:space-between;gap:10px;transition:all .2s" onmouseover="this.style.borderColor='var(--brand)'" onmouseout="this.style.borderColor='var(--border)'">
+        <span style="font-size:14px;font-weight:700;color:var(--ink);display:flex;align-items:center;gap:7px">${icon}${escapeHtml(it.name)}</span>
+        <span style="font-size:11px;font-weight:700;color:var(--brand);background:var(--brand-soft);padding:3px 9px;border-radius:20px">${it.count}</span>
+      </a>`;
+    }).join('')}
   </div>`;
 }
 
