@@ -1,0 +1,80 @@
+name: Restore Backup
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  restore:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install unzip
+        run: sudo apt-get update && sudo apt-get install -y unzip
+
+      - name: Locate ZIP file
+        id: zip
+        run: |
+          ZIP_FILE=$(find . -maxdepth 1 -name "*.zip" | head -n 1)
+
+          if [ -z "$ZIP_FILE" ]; then
+            echo "No ZIP file found!"
+            exit 1
+          fi
+
+          echo "zip=$ZIP_FILE" >> $GITHUB_OUTPUT
+
+      - name: Extract ZIP
+        run: |
+          mkdir extracted
+          unzip -q "${{ steps.zip.outputs.zip }}" -d extracted
+
+      - name: Detect root folder
+        id: root
+        run: |
+          ROOT=$(find extracted -mindepth 1 -maxdepth 1 -type d | head -n 1)
+
+          if [ -z "$ROOT" ]; then
+            ROOT="extracted"
+          fi
+
+          echo "root=$ROOT" >> $GITHUB_OUTPUT
+
+      - name: Remove current project files
+        run: |
+          find . \
+            -mindepth 1 \
+            ! -path "./.git*" \
+            ! -path "./.github*" \
+            ! -name ".git" \
+            ! -name ".github" \
+            -exec rm -rf {} +
+
+      - name: Restore files
+        run: |
+          shopt -s dotglob
+          cp -a "${{ steps.root.outputs.root }}/." .
+          rm -rf extracted
+          rm -f *.zip
+
+      - name: Commit and Push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add .
+
+          if git diff --cached --quiet; then
+            echo "No changes."
+            exit 0
+          fi
+
+          git commit -m "Restore project from backup"
+          git push
