@@ -7,6 +7,7 @@ import {
   renderCategoriesIndex, renderCategoryDetail,
   renderCompaniesIndex, renderCompanyDetail,
   renderSkillsIndex, renderSkillDetail,
+  renderCountriesIndex, renderCountryDetail,
   renderSearchPage,
 } from '../pages/seo-pages.js';
 import { withCache, CACHE_PRESETS } from '../lib/cache.js';
@@ -28,6 +29,15 @@ export async function handleSeoPagesRoute(url, request, env, ctx, base) {
   if (companyMatch) {
     const html = await renderCompanyDetail(env, base, companyMatch[1]);
     if (!html) return new Response('Company not found', { status: 404 });
+    return new Response(html, { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": CACHE_PRESETS.entity } });
+  }
+  if (url.pathname === '/countries') {
+    return await withCache(ctx, request, CACHE_PRESETS.directory, async () => renderCountriesIndex(env, base));
+  }
+  const countryMatch = url.pathname.match(/^\/countries\/([a-z0-9-]+)$/);
+  if (countryMatch) {
+    const html = await renderCountryDetail(env, base, countryMatch[1]);
+    if (!html) return new Response('Country not found', { status: 404 });
     return new Response(html, { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": CACHE_PRESETS.entity } });
   }
   if (url.pathname === '/skills') {
