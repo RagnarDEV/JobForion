@@ -5,8 +5,18 @@
 // Keep these pure (no I/O) so they're trivially testable.
 // ════════════════════════════════════════════════════════════════
 
+// SECURITY: JSON.stringify() does NOT escape "<", so any DB-derived or
+// user-submitted value (company name, country name, skill name, search
+// query) that ends up in one of these schema objects and happens to
+// contain "</script>" could break out of this <script> block and inject
+// a real executable tag. Escaping "<" as a unicode sequence keeps the
+// JSON value byte-identical while making that break-out impossible.
+// This mirrors the safeJsonLd() helper already used in job-page.js —
+// centralizing it here means every caller of ldJsonTag() across the
+// entire site (categories, companies, skills, countries, search,
+// breadcrumbs, home) is protected automatically, not just job pages.
 export function ldJsonTag(obj) {
-  return `<script type="application/ld+json">${JSON.stringify(obj)}</script>`;
+  return `<script type="application/ld+json">${JSON.stringify(obj).replace(/</g, '\\u003c')}</script>`;
 }
 
 export function websiteSchema(base) {
