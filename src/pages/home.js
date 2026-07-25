@@ -6,8 +6,8 @@ import { renderNav } from '../components/nav.js';
 import { renderFooter } from '../components/footer.js';
 import { SHARED_CSS } from '../styles/shared-css.js';
 import {
-  SearchIcon, FolderIcon, Building2Icon, GlobeIcon, AwardIcon,
-  ClockIcon, ChevronDownIcon
+  Search, Folder, Building2, Globe, Award,
+  Clock, ChevronDown
 } from '../assets/icons.js';
 
 // ===== Filter Data =====
@@ -85,7 +85,7 @@ const renderFilterDropdown = (id, label, iconFn, items) => {
       >
         ${iconFn(18)}
         <span>${label}</span>
-        ${ChevronDownIcon(16)}
+        ${ChevronDown(16)}
       </button>
       <div class="filter__dropdown" role="listbox" aria-label="${label}">
         <div class="filter__dropdown-title">${label}</div>
@@ -101,11 +101,11 @@ export const renderHome = (env, request, context = {}) => {
   const baseUrl = env?.BASE_URL || 'https://jobforion.manasa.workers.dev';
 
   const filtersHtml = `
-    ${renderFilterDropdown('category', 'Categories', FolderIcon, CATEGORIES)}
-    ${renderFilterDropdown('company', 'Companies', Building2Icon, COMPANIES)}
-    ${renderFilterDropdown('country', 'Countries', GlobeIcon, COUNTRIES)}
-    ${renderFilterDropdown('experience', 'Experience', AwardIcon, EXPERIENCE_LEVELS)}
-    ${renderFilterDropdown('type', 'Employment Type', ClockIcon, EMPLOYMENT_TYPES)}
+    ${renderFilterDropdown('category', 'Categories', Folder, CATEGORIES)}
+    ${renderFilterDropdown('company', 'Companies', Building2, COMPANIES)}
+    ${renderFilterDropdown('country', 'Countries', Globe, COUNTRIES)}
+    ${renderFilterDropdown('experience', 'Experience', Award, EXPERIENCE_LEVELS)}
+    ${renderFilterDropdown('type', 'Employment Type', Clock, EMPLOYMENT_TYPES)}
   `;
 
   const heroHtml = `
@@ -118,7 +118,7 @@ export const renderHome = (env, request, context = {}) => {
         
         <form class="search" action="/search" method="get" role="search" aria-label="Job search">
           <div class="search__box">
-            <span class="search__icon">${SearchIcon(22)}</span>
+            <span class="search__icon">${Search(22)}</span>
             <input 
               type="text" 
               name="q" 
@@ -129,7 +129,7 @@ export const renderHome = (env, request, context = {}) => {
               autocomplete="off"
             />
             <button type="submit" class="search__btn" aria-label="Search">
-              ${SearchIcon(20)}
+              ${Search(20)}
             </button>
           </div>
         </form>
