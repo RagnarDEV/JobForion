@@ -19,5 +19,5 @@ export const CATEGORY_META = {
 export const CATEGORY_ORDER = Object.keys(CATEGORY_META);
 export const FEATURED_COMPANIES = ["Shopify", "GitLab", "Automattic", "Zapier", "Notion", "Stripe", "Doist", "Buffer"];
 
-export const BASE_URL = 'https://jobforion.manasa.workers.dev';
+export const BASE_URL = 'https://jobforion.com';
 
