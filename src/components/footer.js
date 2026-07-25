@@ -1,46 +1,44 @@
 // src/components/footer.js
+import { BASE_URL } from '../config/constants.js';
 
-export function footerHtml(base) {
+export const renderFooter = () => {
   return `
-<footer class="site-footer">
-  <div class="sf-inner">
-    <div class="sf-top">
-      <div>
-        <div class="sf-brand"><img src="/favicon.svg" alt="JobForion">JobForion</div>
-        <p class="sf-desc">The curated platform for finding verified remote jobs and hiring remote talent — in development, design, marketing, data and more.</p>
-        <div class="sf-social">
-          <a href="#" aria-label="LinkedIn"><svg viewBox="0 0 24 24"><path d="M20.4 20.4h-3.5v-5.6c0-1.3 0-3-1.9-3s-2.1 1.4-2.1 2.9v5.7H9.4V9h3.4v1.6h.1c.5-.9 1.6-1.9 3.4-1.9 3.6 0 4.3 2.4 4.3 5.5v6.2zM5.3 7.4a2 2 0 1 1 0-4 2 2 0 0 1 0 4zM7 20.4H3.6V9H7v11.4z"/></svg></a>
-          <a href="#" aria-label="X"><svg viewBox="0 0 24 24"><path d="M18.9 3H22l-7.2 8.3L23 21h-6.9l-5.4-6.6L4.6 21H1.4l7.7-8.9L1 3h7l4.9 6.1L18.9 3zm-1.2 16h1.7L7.4 4.9H5.6L17.7 19z"/></svg></a>
-          <a href="#" aria-label="Facebook"><svg viewBox="0 0 24 24"><path d="M13.5 21v-7.7h2.6l.4-3h-3v-1.9c0-.9.2-1.5 1.5-1.5H16.6V3.9C16.3 3.9 15.3 3.8 14.2 3.8c-2.4 0-4 1.5-4 4.1v2.3H7.6v3h2.6V21h3.3z"/></svg></a>
+    <footer class="footer">
+      <div class="container">
+        <div class="footer__grid">
+          <div class="footer__brand">
+            <strong>JobForion</strong><br>
+            Discover remote job opportunities from top companies around the world.
+          </div>
+          <div>
+            <h4 class="footer__title">Platform</h4>
+            <ul class="footer__links">
+              <li><a href="/search" class="footer__link">Browse Jobs</a></li>
+              <li><a href="/companies" class="footer__link">Companies</a></li>
+              <li><a href="/categories" class="footer__link">Categories</a></li>
+            </ul>
+          </div>
+          <div>
+            <h4 class="footer__title">Resources</h4>
+            <ul class="footer__links">
+              <li><a href="/blog" class="footer__link">Blog</a></li>
+              <li><a href="/contact" class="footer__link">Contact</a></li>
+              <li><a href="/post-job" class="footer__link">Post a Job</a></li>
+            </ul>
+          </div>
+          <div>
+            <h4 class="footer__title">Legal</h4>
+            <ul class="footer__links">
+              <li><a href="/privacy" class="footer__link">Privacy Policy</a></li>
+              <li><a href="/terms" class="footer__link">Terms of Service</a></li>
+              <li><a href="/disclaimer" class="footer__link">Disclaimer</a></li>
+            </ul>
+          </div>
+        </div>
+        <div class="footer__bottom">
+          &copy; ${new Date().getFullYear()} JobForion. All rights reserved.
         </div>
       </div>
-      <div class="sf-col">
-        <div class="sf-col-title">For Job Seekers</div>
-        <a href="/">Browse remote jobs</a>
-        <a href="/companies">Companies hiring</a>
-        <a href="/categories">Browse by category</a>
-        <a href="/skills">Browse by skill</a>
-        <a href="/countries">Browse by country</a>
-        <a href="#" onclick="openPostJobModal();return false;">Post a job</a>
-        <a href="/" onclick="setTimeout(()=>window.goView&&goView('alerts'),50)">Job alerts</a>
-      </div>
-      <div class="sf-col">
-        <div class="sf-col-title">Resources</div>
-        <a href="/blog">Career blog</a>
-        <a href="/feed.rss">RSS feed</a>
-        <a href="/sitemap.xml">Sitemap</a>
-      </div>
-      <div class="sf-col">
-        <div class="sf-col-title">Company</div>
-        <a href="/privacy">Privacy policy</a>
-        <a href="/terms">Terms of service</a>
-        <a href="/disclaimer">Disclaimer</a>
-      </div>
-    </div>
-    <div class="sf-bottom">
-      <span>© 2026 JobForion. All rights reserved.</span>
-      <span>Made for the remote-first workforce 🌍</span>
-    </div>
-  </div>
-</footer>`;
-}
+    </footer>
+  `;
+};
