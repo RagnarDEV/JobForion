@@ -5,6 +5,7 @@
 // Worker's scheduled() handler via a second cron pattern in wrangler.toml.
 
 import { ensureTable } from './schema.js';
+import { BASE_URL } from '../config/constants.js';
 
 const DELETE_BATCH_SIZE = 200; // D1 DELETE...LIMIT isn't supported directly; batching keeps each statement bounded
 
@@ -61,10 +62,12 @@ export async function cleanupStaleJobs(env) {
   // Sitemap cache reflects deleted jobs immediately rather than waiting up
   // to an hour for the existing Cache-Control TTL to expire naturally —
   // a stale sitemap listing a job that now 410s is exactly the kind of
-  // mismatch Google Search Console flags.
+  // mismatch Google Search Console flags. Uses the canonical BASE_URL
+  // (config/constants.js) rather than a hardcoded domain, so this stays
+  // correct automatically if the site's domain ever changes again.
   try {
     const cache = caches.default;
-    await cache.delete(new Request('https://jobnova.sryze.cc/sitemap.xml'));
+    await cache.delete(new Request(`${BASE_URL}/sitemap.xml`));
   } catch (e) {}
 
   return { deleted: totalDeleted, breakdown };
