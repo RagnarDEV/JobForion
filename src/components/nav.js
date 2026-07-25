@@ -1,6 +1,4 @@
 // src/components/nav.js
-// Navigation bar — transparent over hero, hamburger menu with dropdown
-
 import {
   Logo, Menu, X, Home, Compass, Users,
   Tag, FileText, Mail, PlusCircle
@@ -15,12 +13,11 @@ const NAV_ITEMS = [
   { href: '/contact', label: 'Contact', icon: Mail },
 ];
 
-export const renderNav = (currentPath = '/') => {
+export const navHtml = (currentPath = '/') => {
   const logoLink = '/';
   
   const navItemsHtml = NAV_ITEMS.map(item => {
-    const isActive = currentPath === item.href || 
-                     (item.href !== '/' && currentPath.startsWith(item.href));
+    const isActive = currentPath === item.href || (item.href !== '/' && currentPath.startsWith(item.href));
     return `
       <a href="${item.href}" class="nav__dropdown-item${isActive ? ' active' : ''}" aria-current="${isActive ? 'page' : 'false'}">
         ${item.icon(20)}
@@ -66,7 +63,6 @@ export const renderNav = (currentPath = '/') => {
         if (!hamburger || !dropdown) return;
         
         let isOpen = false;
-        
         const toggleMenu = () => {
           isOpen = !isOpen;
           hamburger.classList.toggle('active', isOpen);
@@ -76,12 +72,7 @@ export const renderNav = (currentPath = '/') => {
           hamburger.setAttribute('aria-label', isOpen ? 'Close menu' : 'Open menu');
         };
         
-        hamburger.addEventListener('click', (e) => {
-          e.stopPropagation();
-          toggleMenu();
-        });
-        
-        // Close on outside click
+        hamburger.addEventListener('click', (e) => { e.stopPropagation(); toggleMenu(); });
         document.addEventListener('click', (e) => {
           if (isOpen && !dropdown.contains(e.target) && !hamburger.contains(e.target)) {
             isOpen = false;
@@ -91,16 +82,12 @@ export const renderNav = (currentPath = '/') => {
             dropdown.setAttribute('aria-hidden', 'true');
           }
         });
-        
-        // Close on Escape
-        document.addEventListener('keydown', (e) => {
-          if (e.key === 'Escape' && isOpen) {
-            toggleMenu();
-          }
-        });
+        document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && isOpen) toggleMenu(); });
       })();
     </script>
   `;
 };
 
-export default renderNav;
+// أسماء مستعارة لضمان التوافق مع أي ملف آخر في المشروع
+export const renderNav = navHtml;
+export const mobileHeaderHtml = navHtml;
