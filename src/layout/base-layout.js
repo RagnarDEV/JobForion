@@ -3,6 +3,7 @@ import { SHARED_CSS } from '../styles/shared-css.js';
 import { faviconHtml } from '../assets/favicon.js';
 import { BASE_URL } from '../config/constants.js';
 
+// الدالة الرئيسية المستخدمة في home.js
 export const renderBaseLayout = ({ 
   env, 
   request, 
@@ -32,3 +33,10 @@ export const renderBaseLayout = ({
 </body>
 </html>`;
 };
+
+// ==========================================
+// أسماء مستعارة (Aliases) للتوافق مع باقي المشروع
+// ==========================================
+// هذه السطور تمنع الأخطاء في: blog.js, job-page.js, seo-pages.js, static-pages.js, pages.router.js
+export const baseLayout = renderBaseLayout;
+export default renderBaseLayout;
