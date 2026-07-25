@@ -55,6 +55,14 @@ export async function handleApiRoute(url, request, env) {
     // ends with ", <country>" ("Berlin, Germany"), since `location` is
     // free text with no normalized country column.
     const country = url.searchParams.get("country") || "";
+    // Skill filter — matches the same jobs.skills JSON column that
+    // jobsBySkill() (lib/entities.js) parses via SQLite's json_each,
+    // expressed here as a correlated EXISTS subquery so it composes with
+    // the other AND-joined conditions on the single `jobs` table.
+    const skill = url.searchParams.get("skill") || "";
+    // Company filter — exact match on the jobs.company column, same value
+    // shape produced by listCompanies() (lib/entities.js).
+    const company = url.searchParams.get("company") || "";
     const conditions = [], params = [];
     if (category) { conditions.push("LOWER(title) LIKE ?"); params.push(`%${category}%`); }
     if (search) { conditions.push("(LOWER(title) LIKE ? OR LOWER(company) LIKE ?)"); params.push(`%${search.toLowerCase()}%`, `%${search.toLowerCase()}%`); }
@@ -64,6 +72,8 @@ export async function handleApiRoute(url, request, env) {
     if (salaryMin) { conditions.push("CAST(REPLACE(REPLACE(salary,'$',''),'k','') AS INTEGER) >= ?"); params.push(parseInt(salaryMin)); }
     if (days) { conditions.push("created_at >= datetime('now', '-' || ? || ' days')"); params.push(parseInt(days)); }
     if (country) { conditions.push("(location = ? OR location LIKE ?)"); params.push(country, `%, ${country}`); }
+    if (skill) { conditions.push("EXISTS (SELECT 1 FROM json_each(jobs.skills) je WHERE je.value = ?)"); params.push(skill); }
+    if (company) { conditions.push("company = ?"); params.push(company); }
     const where = conditions.length ? " WHERE " + conditions.join(" AND ") : "";
     const { results } = await env.DB.prepare(`SELECT * FROM jobs${where} ORDER BY featured DESC, id DESC LIMIT ${limit} OFFSET ${offset}`).bind(...params).all();
     const { results: cr } = await env.DB.prepare(`SELECT COUNT(*) as total FROM jobs${where}`).bind(...params).all();
