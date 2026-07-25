@@ -20,6 +20,7 @@ export function footerHtml(base) {
         <a href="/companies">Companies hiring</a>
         <a href="/categories">Browse by category</a>
         <a href="/skills">Browse by skill</a>
+        <a href="/countries">Browse by country</a>
         <a href="#" onclick="openPostJobModal();return false;">Post a job</a>
         <a href="/" onclick="setTimeout(()=>window.goView&&goView('alerts'),50)">Job alerts</a>
       </div>
