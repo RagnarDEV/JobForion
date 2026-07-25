@@ -1,0 +1,26 @@
+name: Deploy JobForion to Cloudflare Workers
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Deploy with Wrangler
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+# ── Required GitHub repo secrets (Settings → Secrets and variables → Actions) ──
+# CLOUDFLARE_API_TOKEN   -> Cloudflare dashboard → My Profile → API Tokens → "Edit Cloudflare Workers" template
+# CLOUDFLARE_ACCOUNT_ID  -> Cloudflare dashboard → Workers & Pages → Overview (right sidebar)
+#
+# These are DIFFERENT from the Worker secrets (API_KEY, ADMIN_PASSWORD),
+# which are set once via `wrangler secret put <NAME>` from your machine
+# and are not part of this workflow.
