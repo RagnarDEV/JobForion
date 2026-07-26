@@ -7,7 +7,17 @@
 import { ensureTable } from './schema.js';
 import { BASE_URL } from '../config/constants.js';
 
-const DELETE_BATCH_SIZE = 200; // D1 DELETE...LIMIT isn't supported directly; batching keeps each statement bounded
+// Cloudflare D1 hard-caps bound parameters at 100 per query (confirmed:
+// https://developers.cloudflare.com/d1/platform/limits) — well below
+// SQLite's usual 999. The DELETE below binds one placeholder per id in a
+// single `id IN (?,?,...)` clause, so 100 is also the batch size ceiling
+// here (unlike DB_BATCH_SIZE in sync.js, which batches separate INSERT/
+// UPDATE statements via env.DB.batch() and only needs ~11 params each).
+// A previous value of 200 silently failed this query outright (the whole
+// DELETE statement is rejected before touching any row) whenever there
+// were more than ~100 stale jobs to remove in one run — meaning cleanup
+// had effectively stopped deleting anything past that point.
+const DELETE_BATCH_SIZE = 100;
 
 // A job is deleted once EITHER condition is true:
 //  - expires_at has passed (our own computed 45-day lease, extended every
