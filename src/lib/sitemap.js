@@ -35,11 +35,23 @@ export async function buildSitemapXml(env, base, { blogPosts = [], categoryOrder
   // response is exactly what causes crawlers (which apply their own fetch
   // timeouts) to report "couldn't fetch" even though a browser, given
   // enough time, would eventually see a valid file.
+  //
+  // CAP SIZING: Google's sitemap protocol allows up to 50,000 URLs per
+  // file. These four ceilings (30,000 + 3,000 + 1,500 + 600 = 35,100, plus
+  // ~28 static/blog/category entries above) stay comfortably under that
+  // limit even if every category is maxed out simultaneously, while being
+  // generous enough to include effectively all real content for a long
+  // time. The previous values (1000 / 500 / 300 / 300) were sized as if
+  // this were a small site and were silently capping ~96% of job pages
+  // out of the sitemap once the job count passed 1,000 — if growth ever
+  // approaches these new ceilings, the next step is splitting into a
+  // sitemap INDEX (multiple sitemap-*.xml files) rather than raising them
+  // further, per Google's own guidance for very large sites.
   const [jobsResult, companiesResult, skillsResult, countriesResult] = await Promise.allSettled([
-    env.DB.prepare("SELECT id,created_at FROM jobs ORDER BY id DESC LIMIT 1000").all(),
-    listCompanies(env, { limit: 500 }),
-    listSkills(env, { limit: 300 }),
-    listCountries(env, { limit: 300 }),
+    env.DB.prepare("SELECT id,created_at FROM jobs ORDER BY id DESC LIMIT 30000").all(),
+    listCompanies(env, { limit: 3000 }),
+    listSkills(env, { limit: 1500 }),
+    listCountries(env, { limit: 600 }),
   ]);
 
   if (jobsResult.status === 'fulfilled') {
