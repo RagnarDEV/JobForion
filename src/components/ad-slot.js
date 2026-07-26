@@ -17,31 +17,31 @@
 //   'blog-index-top'         — src/pages/blog.js, above the article grid
 //   'blog-article-footer'    — src/pages/blog.js, after each article body
 
-// Banner 300×250 (Adsterra key: 0c69243f088d16d1621497a5a9091047) — used for
+// Banner 300×250 (Adsterra key: 69d7d3b2e8807dbd363b797829276c0c) — used for
 // every slot except the one explicitly reserved at 320×50.
 const BANNER_300x250 = `<script>
 atOptions = {
-  'key' : '0c69243f088d16d1621497a5a9091047',
+  'key' : '69d7d3b2e8807dbd363b797829276c0c',
   'format' : 'iframe',
   'height' : 250,
   'width' : 300,
   'params' : {}
 };
 </script>
-<script src="https://www.highperformanceformat.com/0c69243f088d16d1621497a5a9091047/invoke.js"></script>`;
+<script src="https://www.highperformanceformat.com/69d7d3b2e8807dbd363b797829276c0c/invoke.js"></script>`;
 
-// Banner 320×50 (Adsterra key: a741ce3155049c468de74c92a5f8a23e) — the
+// Banner 320×50 (Adsterra key: 136b80686b183d9484dc35c4136e3b57) — the
 // mobile-friendly size reserved specifically for job-detail-inline.
 const BANNER_320x50 = `<script>
 atOptions = {
-  'key' : 'a741ce3155049c468de74c92a5f8a23e',
+  'key' : '136b80686b183d9484dc35c4136e3b57',
   'format' : 'iframe',
   'height' : 50,
   'width' : 320,
   'params' : {}
 };
 </script>
-<script src="https://www.highperformanceformat.com/a741ce3155049c468de74c92a5f8a23e/invoke.js"></script>`;
+<script src="https://www.highperformanceformat.com/136b80686b183d9484dc35c4136e3b57/invoke.js"></script>`;
 
 const ADS = {
   'homepage-results-top': BANNER_320x50,
