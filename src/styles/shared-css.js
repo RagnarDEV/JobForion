@@ -41,12 +41,12 @@ button{font-family:inherit}
 @media(max-width:860px){.nav-links .nav-link{display:none}}
 
 /* ── MOBILE HEADER + MENU (shared, replaces old bottom tab bar) ── */
-.mob-hdr{display:none;padding:0 16px;height:60px;background:linear-gradient(135deg,#1830C4 0%,#3556FF 55%,#6C3FE0 100%);align-items:center;justify-content:space-between;position:sticky;top:0;z-index:200;gap:10px}
-.mob-logo{font-family:'Plus Jakarta Sans',sans-serif;font-size:18px;font-weight:800;color:#fff;display:flex;align-items:center;gap:6px}
+.mob-hdr{display:none;padding:0 16px;height:60px;background:var(--surface);border-bottom:1px solid var(--border);align-items:center;justify-content:space-between;position:sticky;top:0;z-index:200;gap:10px}
+.mob-logo{font-family:'Plus Jakarta Sans',sans-serif;font-size:18px;font-weight:800;color:var(--ink);display:flex;align-items:center;gap:6px}
 .mob-logo img{width:24px;height:24px;border-radius:6px}
-.mob-burger{width:38px;height:38px;border-radius:50%;border:none;background:rgba(255,255,255,.18);color:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:16px;transition:all .2s;flex-shrink:0}
-.mob-burger:active{background:rgba(255,255,255,.3);transform:scale(.94)}
-.mob-burger.is-open{background:rgba(255,255,255,.28)}
+.mob-burger{width:38px;height:38px;border-radius:50%;border:1px solid var(--border2);background:var(--surface2);color:var(--ink);display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:16px;transition:all .2s;flex-shrink:0}
+.mob-burger:active{background:var(--brand-soft);border-color:var(--brand);color:var(--brand);transform:scale(.94)}
+.mob-burger.is-open{background:var(--brand-soft);border-color:var(--brand);color:var(--brand)}
 .mob-menu{display:none;position:sticky;top:60px;z-index:199;background:var(--surface);border-bottom:1px solid var(--border);box-shadow:var(--shadow-lg);padding:10px;animation:slideDown .2s ease}
 .mob-menu.open{display:block}
 .mob-menu a,.mob-menu button{display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:12px 14px;border-radius:9px;color:var(--ink);font-size:14px;font-weight:600;border:none;background:none;cursor:pointer;font-family:inherit}
