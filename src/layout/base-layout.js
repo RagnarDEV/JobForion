@@ -1,7 +1,7 @@
 // src/layout/base-layout.js
 // The shared HTML shell used by every server-rendered page (job, blog, static,
-// categories/companies/skills, admin login screen). Wires together nav, footer,
-// the Post-a-Job modal, and the shared design tokens.
+// categories/companies/skills/countries/search, admin login screen). Wires
+// together nav, footer, the Post-a-Job modal, and the shared design tokens.
 
 import { navHtml, mobileHeaderHtml } from '../components/nav.js';
 import { footerHtml } from '../components/footer.js';
@@ -10,6 +10,7 @@ import { SHARED_CSS } from '../styles/shared-css.js';
 import { ICON_HEAD } from '../assets/favicon.js';
 import { BASE_URL } from '../config/constants.js';
 import { escapeHtml } from '../lib/entities.js';
+import { GOOGLE_ANALYTICS_TAG } from '../lib/analytics-tag.js';
 
 // SECURITY: title/description ultimately trace back to externally-sourced
 // content on many pages (job titles/companies scraped from LinkedIn,
@@ -23,6 +24,7 @@ export function baseLayout(title, description, canonical, ogImage, content, extr
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
+${GOOGLE_ANALYTICS_TAG}
 <meta charset="UTF-8">
 <meta name="google-site-verification" content="7Q0EJk3kQKNLNzIhyzH4k5CsuHsQEa-U0Pwp_w_b0n0"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
