@@ -8,10 +8,10 @@ import { footerHtml } from '../components/footer.js';
 import { postJobModalHtml } from '../components/post-job-modal.js';
 import { SHARED_CSS } from '../styles/shared-css.js';
 import { ICON_HEAD } from '../assets/favicon.js';
-import { FEATURED_COMPANIES, CATEGORY_ORDER, CATEGORY_META } from '../config/constants.js';
+import { CATEGORY_ORDER, CATEGORY_META } from '../config/constants.js';
 import { jobCardSSR } from '../components/job-card.js';
 import { adSlot } from '../components/ad-slot.js';
-import { escapeHtml, listCountries, listSkills, listCompanies } from '../lib/entities.js';
+import { escapeHtml, slugify, listCountries, listSkills, listCompanies } from '../lib/entities.js';
 import { countryFlag } from '../lib/country-flags.js';
 import { GOOGLE_ANALYTICS_TAG } from '../lib/analytics-tag.js';
 import { iconSparkle, iconFlame, iconPin, iconMapPin, iconBookmark, iconLink, iconArrowRight, iconBadgeCheck, iconClock, iconGlobe, iconBuilding, iconSearch, iconX, iconFilter, iconBell, iconCheck, iconInfo, iconAlertTriangle, iconFolder, iconTag } from '../assets/icons.js';
@@ -227,9 +227,9 @@ ${SHARED_CSS}
 .fc-strip{border-bottom:1px solid var(--border);padding:22px 24px;background:var(--surface)}
 .fc-inner{max-width:1180px;margin:0 auto}
 .fc-label{font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--ink3);margin-bottom:16px;text-align:center}
-.fc-logos{display:flex;align-items:center;justify-content:center;gap:40px;flex-wrap:wrap}
-.fc-logos span{font-family:'Plus Jakarta Sans',sans-serif;font-size:19px;font-weight:700;color:var(--ink3);opacity:.55;transition:all .25s;cursor:default}
-.fc-logos span:hover{opacity:1;color:var(--brand)}
+.fc-logos{display:flex;align-items:center;justify-content:center;gap:48px;flex-wrap:wrap}
+.fc-logos a{font-family:'Space Grotesk',sans-serif;font-size:25px;font-weight:700;color:var(--ink3);opacity:.65;transition:all .25s;text-decoration:none}
+.fc-logos a:hover{opacity:1;color:var(--brand)}
 
 /* ── FILTER BAR ── */
 .filters-bar{position:sticky;top:66px;z-index:150;padding:12px 24px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;overflow-x:auto;background:rgba(255,255,255,.92);backdrop-filter:blur(10px)}
@@ -351,8 +351,8 @@ ${SHARED_CSS}
   .search-btn{padding:12px}
   .hero-stats{gap:18px}
   .hero-stat-num{font-size:17px}
-  .fc-logos{gap:22px}
-  .fc-logos span{font-size:15px}
+  .fc-logos{gap:28px}
+  .fc-logos a{font-size:19px}
   .content-wrap{padding:14px}
   .cat-sections{padding:8px 14px 30px}
   .card-inner{padding:14px 12px}
@@ -391,7 +391,7 @@ ${mobileHeaderHtml()}
     <div class="fc-strip">
       <div class="fc-inner">
         <div class="fc-label">Featured Remote Employers</div>
-        <div class="fc-logos">${FEATURED_COMPANIES.map(c => `<span>${c}</span>`).join('')}</div>
+        <div class="fc-logos">${topCompanies.slice(0, 6).map(c => `<a href="/companies/${slugify(c.name)}">${escapeHtml(c.name)}</a>`).join('')}</div>
       </div>
     </div>
 
