@@ -1,7 +1,7 @@
 // src/components/nav.js
 // Desktop nav bar + mobile header/menu (shared across every page).
 
-import { iconSearch, iconBuilding, iconFolder, iconBookmark, iconFileText, iconPlus, iconLock, iconMenu, iconGlobe } from '../assets/icons.js';
+import { iconSearch, iconBuilding, iconFolder, iconBookmark, iconFileText, iconPlus, iconLock, iconMenu, iconGlobe, iconX } from '../assets/icons.js';
 
 export function navHtml() {
   return `
@@ -22,10 +22,7 @@ export function mobileHeaderHtml() {
   return `
 <div class="mob-hdr">
   <a href="/" class="mob-logo"><img src="/favicon.svg" alt="JobForion">JobForion</a>
-  <div class="mob-btns">
-    <button class="mob-cta" onclick="openPostJobModal()">+ Post</button>
-    <button class="mob-burger" onclick="toggleMobMenu()" id="mobBurgerBtn">${iconMenu({ size: 18 })}</button>
-  </div>
+  <button class="mob-burger" onclick="toggleMobMenu()" id="mobBurgerBtn">${iconMenu({ size: 18 })}</button>
 </div>
 <div class="mob-menu" id="mobMenu">
   <a href="/">${iconSearch({ size: 16 })} Browse Jobs</a>
@@ -34,11 +31,27 @@ export function mobileHeaderHtml() {
   <a href="/countries">${iconGlobe({ size: 16 })} Countries</a>
   <button onclick="if(window.goView){goView('saved');closeMobMenu();}else{location='/'}">${iconBookmark({ size: 16 })} Saved Jobs</button>
   <a href="/blog">${iconFileText({ size: 16 })} Career Blog</a>
-  <button onclick="openPostJobModal();closeMobMenu();">${iconPlus({ size: 16 })} Post a Job</button>
   <a href="/privacy">${iconLock({ size: 16 })} Privacy</a>
+  <button class="mob-menu-post-btn" onclick="openPostJobModal();closeMobMenu();">${iconPlus({ size: 18 })} Post a Job</button>
 </div>
 <script>
-function toggleMobMenu(){document.getElementById('mobMenu').classList.toggle('open');}
-function closeMobMenu(){document.getElementById('mobMenu').classList.remove('open');}
+(function(){
+  var MENU_ICON=${JSON.stringify(iconMenu({ size: 18 }))};
+  var CLOSE_ICON=${JSON.stringify(iconX({ size: 18 }))};
+  window.toggleMobMenu=function(){
+    var menu=document.getElementById('mobMenu');
+    var btn=document.getElementById('mobBurgerBtn');
+    var willOpen=!menu.classList.contains('open');
+    menu.classList.toggle('open');
+    btn.classList.toggle('is-open',willOpen);
+    btn.innerHTML=willOpen?CLOSE_ICON:MENU_ICON;
+  };
+  window.closeMobMenu=function(){
+    document.getElementById('mobMenu').classList.remove('open');
+    var btn=document.getElementById('mobBurgerBtn');
+    btn.classList.remove('is-open');
+    btn.innerHTML=MENU_ICON;
+  };
+})();
 </script>`;
 }
