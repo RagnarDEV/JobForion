@@ -344,7 +344,7 @@ ${SHARED_CSS}
   .filters-bar{top:60px}
 }
 @media(max-width:768px){
-  .hero{padding:56px 20px 52px}
+  .hero{min-height:calc(100vh - 60px);min-height:calc(100dvh - 60px);display:flex;flex-direction:column;justify-content:center;padding:40px 20px}
   .hero-title{font-size:36px;letter-spacing:-.8px;line-height:1.12}
   .hero-sub{font-size:13px;margin-bottom:20px}
   .search-row{flex-direction:column;padding:8px;gap:8px}
