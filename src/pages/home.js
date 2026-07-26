@@ -197,17 +197,17 @@ ${ICON_HEAD}
 <script type="application/ld+json">${orgSchema}</script>
 <script type="application/ld+json">${itemListSchema}</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Space+Grotesk:wght@700;800&display=swap" rel="stylesheet">
 <style>
 ${SHARED_CSS}
 
 /* ── HERO (navy → indigo gradient, bold headline, red CTA search) ── */
-.hero{padding:64px 24px 40px;background:linear-gradient(135deg,#1830C4 0%,#3556FF 55%,#6C3FE0 100%);position:relative;overflow:hidden}
+.hero{padding:96px 24px 84px;background:linear-gradient(135deg,#1830C4 0%,#3556FF 55%,#6C3FE0 100%);position:relative;overflow:hidden}
 .hero::before{content:'';position:absolute;inset:0;background:radial-gradient(ellipse 60% 50% at 80% 0%,rgba(255,255,255,.12),transparent 60%)}
 .hero-inner{max-width:1180px;margin:0 auto;position:relative}
 .hero-eyebrow{display:inline-flex;align-items:center;gap:7px;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.22);border-radius:20px;padding:5px 13px;font-size:12px;color:#fff;font-weight:700;margin-bottom:20px}
 .hero-eyebrow-dot{width:6px;height:6px;border-radius:50%;background:var(--green);animation:pulse-dot 2s infinite}
-.hero-title{font-family:'Plus Jakarta Sans',sans-serif;font-size:44px;font-weight:800;letter-spacing:-1.4px;line-height:1.08;margin-bottom:16px;color:#fff;max-width:680px}
+.hero-title{font-family:'Space Grotesk',sans-serif;font-size:54px;font-weight:800;letter-spacing:-1px;line-height:1.1;margin-bottom:20px;color:#fff;max-width:680px}
 .hero-title .hl{position:relative;display:inline-block}
 .hero-title .hl::after{content:'';position:absolute;left:0;right:0;bottom:2px;height:5px;background:var(--coral);border-radius:3px;opacity:.85;z-index:-1}
 .hero-sub{color:rgba(255,255,255,.85);font-size:16px;margin-bottom:28px;line-height:1.65;max-width:540px}
@@ -344,8 +344,8 @@ ${SHARED_CSS}
   .filters-bar{top:60px}
 }
 @media(max-width:768px){
-  .hero{padding:30px 16px 26px}
-  .hero-title{font-size:26px;letter-spacing:-.7px}
+  .hero{padding:56px 20px 52px}
+  .hero-title{font-size:36px;letter-spacing:-.8px;line-height:1.12}
   .hero-sub{font-size:13px;margin-bottom:20px}
   .search-row{flex-direction:column;padding:8px;gap:8px}
   .search-btn{padding:12px}
@@ -362,7 +362,7 @@ ${SHARED_CSS}
   .page-btn{padding:8px 13px;font-size:12px}
 }
 @media(max-width:380px){
-  .hero-title{font-size:22px}
+  .hero-title{font-size:29px}
   .chip{padding:6px 12px;font-size:12px}
 }
 </style>
