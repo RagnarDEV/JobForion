@@ -6,6 +6,7 @@
 
 import { ensureTable } from './schema.js';
 import { BASE_URL } from '../config/constants.js';
+import { JOBS_PER_SITEMAP } from '../lib/sitemap.js';
 
 // Cloudflare D1 hard-caps bound parameters at 100 per query (confirmed:
 // https://developers.cloudflare.com/d1/platform/limits) — well below
@@ -72,12 +73,20 @@ export async function cleanupStaleJobs(env) {
   // Sitemap cache reflects deleted jobs immediately rather than waiting up
   // to an hour for the existing Cache-Control TTL to expire naturally —
   // a stale sitemap listing a job that now 410s is exactly the kind of
-  // mismatch Google Search Console flags. Uses the canonical BASE_URL
-  // (config/constants.js) rather than a hardcoded domain, so this stays
-  // correct automatically if the site's domain ever changes again.
+  // mismatch Google Search Console flags. Since /sitemap.xml is now an
+  // INDEX (see lib/sitemap.js), it's the per-page job sitemaps
+  // (/sitemap-jobs-N.xml) that actually go stale after a deletion — the
+  // index itself only changes if the chunk COUNT shifts, which this also
+  // covers by invalidating exactly as many chunk URLs as currently exist.
   try {
     const cache = caches.default;
     await cache.delete(new Request(`${BASE_URL}/sitemap.xml`));
+    const { results: cntRows } = await env.DB.prepare("SELECT COUNT(*) c FROM jobs").all();
+    const jobCount = cntRows?.[0]?.c || 0;
+    const chunks = Math.max(1, Math.ceil(jobCount / JOBS_PER_SITEMAP));
+    for (let i = 1; i <= chunks; i++) {
+      await cache.delete(new Request(`${BASE_URL}/sitemap-jobs-${i}.xml`));
+    }
   } catch (e) {}
 
   return { deleted: totalDeleted, breakdown };
