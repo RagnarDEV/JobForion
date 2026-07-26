@@ -25,7 +25,7 @@ import { handleSeoPagesRoute } from './routes/seo-pages.router.js';
 import { handlePagesRoute } from './routes/pages.router.js';
 import { handleApiRoute } from './routes/api.router.js';
 
-const NON_TRACKED_STATIC_PATHS = new Set([...ASSET_PATHS, '/sitemap.xml', '/feed.rss']);
+const NON_TRACKED_STATIC_PATHS = new Set([...ASSET_PATHS, '/feed.rss']);
 
 // Permanent 301 redirect from any retired domain to the current canonical
 // one (BASE_URL, in src/config/constants.js). Required for Google's
@@ -55,10 +55,11 @@ export default {
     // ── visitor analytics (best-effort, non-blocking) ──
     const trackable = ['GET'].includes(request.method) &&
       !url.pathname.startsWith('/api/') && !url.pathname.startsWith('/admin') &&
+      !url.pathname.startsWith('/sitemap') &&
       !NON_TRACKED_STATIC_PATHS.has(url.pathname);
     if (trackable && ctx?.waitUntil) ctx.waitUntil(recordVisit(env, request, url));
 
-    // ── sitemap.xml / feed.rss ──
+    // ── sitemap index + its child sitemaps / feed.rss ──
     // Use the canonical BASE_URL for feeds to ensure Google Search Console consistency
     const feedResponse = await handleFeedRoute(url, env, BASE_URL, ctx);
     if (feedResponse) return feedResponse;
