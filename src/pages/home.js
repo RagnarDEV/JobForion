@@ -13,6 +13,7 @@ import { jobCardSSR } from '../components/job-card.js';
 import { adSlot } from '../components/ad-slot.js';
 import { escapeHtml, listCountries, listSkills, listCompanies } from '../lib/entities.js';
 import { countryFlag } from '../lib/country-flags.js';
+import { GOOGLE_ANALYTICS_TAG } from '../lib/analytics-tag.js';
 import { iconSparkle, iconFlame, iconPin, iconMapPin, iconBookmark, iconLink, iconArrowRight, iconBadgeCheck, iconClock, iconGlobe, iconBuilding, iconSearch, iconX, iconFilter, iconBell, iconCheck, iconInfo, iconAlertTriangle, iconFolder, iconTag } from '../assets/icons.js';
 
 // Same icon markup used by the server-rendered cards (job-card.js) is
@@ -175,6 +176,7 @@ export async function renderMainHTML(env, base) {
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
+${GOOGLE_ANALYTICS_TAG}
 <meta charset="UTF-8">
 <meta name="google-site-verification" content="7Q0EJk3kQKNLNzIhyzH4k5CsuHsQEa-U0Pwp_w_b0n0"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
