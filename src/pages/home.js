@@ -344,7 +344,7 @@ ${SHARED_CSS}
   .filters-bar{top:60px}
 }
 @media(max-width:768px){
-  .hero{min-height:calc(100vh - 130px);min-height:calc(100dvh - 130px);display:flex;flex-direction:column;justify-content:center;padding:40px 20px}
+  .hero{min-height:calc(100vh - 130px);min-height:calc(100svh - 130px);display:flex;flex-direction:column;justify-content:center;padding:40px 20px}
   .hero-title{font-size:42px;letter-spacing:-.9px;line-height:1.14;text-align:center}
   .hero-sub{font-size:15.5px;font-weight:600;color:rgba(255,255,255,.94);line-height:1.6;text-align:center;margin-bottom:30px}
   .search-row{flex-direction:column;padding:8px;gap:8px}
