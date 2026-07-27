@@ -114,3 +114,37 @@ export function countryFlag(name) {
   if (!iso) return '🌍';
   return isoToFlagEmoji(iso) || '🌍';
 }
+
+// ── Reusable country-confidence helpers ─────────────────────────────
+// Used by pages/job-page.js to decide whether a job's free-text
+// `location` value is trustworthy enough to publish as structured data
+// (schema.org JobPosting.jobLocation requires a real PostalAddress with
+// addressCountry) — publishing a wrong guess is worse than omitting the
+// field entirely, so callers should only use these to confirm, not infer.
+
+// Is `name` one of the countries this file already recognizes?
+export function isKnownCountry(name) {
+  if (!name) return false;
+  return name.trim().toLowerCase() in COUNTRY_TO_ISO;
+}
+
+// ISO 3166-1 alpha-2 code for a recognized country name, or null.
+export function countryIso(name) {
+  if (!name) return null;
+  return COUNTRY_TO_ISO[name.trim().toLowerCase()] || null;
+}
+
+// US state/territory postal abbreviations — by far the most common
+// non-country value seen in the free-text `location` column (e.g.
+// "Austin, TX"), since many US-sourced listings only capture the state,
+// not "United States" explicitly. Recognizing these lets us still
+// publish valid, honest structured data (addressCountry: US,
+// addressRegion: TX) for this large bucket of jobs instead of omitting
+// jobLocation for all of them.
+export const US_STATE_CODES = new Set([
+  'AL', 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'FL', 'GA', 'HI', 'ID',
+  'IL', 'IN', 'IA', 'KS', 'KY', 'LA', 'ME', 'MD', 'MA', 'MI', 'MN', 'MS',
+  'MO', 'MT', 'NE', 'NV', 'NH', 'NJ', 'NM', 'NY', 'NC', 'ND', 'OH', 'OK',
+  'OR', 'PA', 'RI', 'SC', 'SD', 'TN', 'TX', 'UT', 'VT', 'VA', 'WA', 'WV',
+  'WI', 'WY', 'DC',
+]);
