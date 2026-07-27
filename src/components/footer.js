@@ -22,7 +22,6 @@ export function footerHtml(base) {
         <a href="/skills">Browse by skill</a>
         <a href="/countries">Browse by country</a>
         <a href="#" onclick="openPostJobModal();return false;">Post a job</a>
-        <a href="/" onclick="setTimeout(()=>window.goView&&goView('alerts'),50)">Job alerts</a>
       </div>
       <div class="sf-col">
         <div class="sf-col-title">Resources</div>
