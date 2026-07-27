@@ -70,7 +70,7 @@ export async function handlePagesRoute(url, request, env, base) {
       } catch (e) {}
     }
     const { results: related } = await env.DB.prepare("SELECT id,title,company,salary,remote_type FROM jobs WHERE id != ? ORDER BY RANDOM() LIMIT 4").bind(jobMatch[1]).all();
-    return new Response(renderJobPage(job, related, base), { headers: { "Content-Type": "text/html; charset=utf-8" } });
+    return new Response(await renderJobPage(job, related, base, env), { headers: { "Content-Type": "text/html; charset=utf-8" } });
   }
 
   if (url.pathname === '/blog') return new Response(renderBlogIndex(base), { headers: { "Content-Type": "text/html; charset=utf-8" } });
