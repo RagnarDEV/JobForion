@@ -5,6 +5,7 @@ import { CATEGORY_META } from '../config/constants.js';
 import { baseLayout } from '../layout/base-layout.js';
 import { slugify, escapeHtml, cleanDescription, parseSalaryRange, categorySalaryStats, companySnapshot } from '../lib/entities.js';
 import { adSlot } from '../components/ad-slot.js';
+import { isKnownCountry, US_STATE_CODES } from '../lib/country-flags.js';
 import { iconBadgeCheck, iconMapPin, iconSparkle, iconFlame, iconDollarSign, iconArrowRight, iconBookmark, iconLink, iconTrendingUp, iconBuilding } from '../assets/icons.js';
 
 // SECURITY: JSON.stringify() does NOT escape "<", so a malicious job title
@@ -14,6 +15,47 @@ import { iconBadgeCheck, iconMapPin, iconSparkle, iconFlame, iconDollarSign, ico
 // identical while making that break-out impossible.
 function safeJsonLd(obj) {
   return JSON.stringify(obj).replace(/</g, '\\u003c');
+}
+
+// Google's JobPosting schema requires an exact enum value (underscore,
+// not space — a previous bug did .replace('_',' '), silently breaking
+// this for every job) and doesn't recognize "CONTRACT" — the closest
+// valid value is "CONTRACTOR". See:
+// https://developers.google.com/search/docs/appearance/structured-data/job-posting
+const EMPLOYMENT_TYPE_SCHEMA_MAP = {
+  full_time: 'FULL_TIME',
+  part_time: 'PART_TIME',
+  contract: 'CONTRACTOR',
+  internship: 'INTERN',
+  temporary: 'TEMPORARY',
+  volunteer: 'VOLUNTEER',
+};
+
+// Builds a schema.org PostalAddress for jobLocation — but ONLY when the
+// country can be confidently determined from the free-text `location`
+// column (a recognized country name, or a US state code). Google
+// explicitly requires addressCountry when jobLocation is present;
+// publishing a wrong guess is worse than omitting the field, since the
+// location data here has no normalized country column to begin with
+// (see splitLocation() in lib/entities.js). Remote jobs don't need this
+// at all — they use jobLocationType instead (see renderJobPage below).
+function buildJobLocationSchema(location) {
+  if (!location) return null;
+  const parts = location.split(',').map(s => s.trim()).filter(Boolean);
+  const last = parts[parts.length - 1];
+  if (!last) return null;
+
+  if (isKnownCountry(last)) {
+    const address = { "@type": "PostalAddress", "addressCountry": last };
+    if (parts.length > 1) address.addressLocality = parts[0];
+    return { "@type": "Place", "address": address };
+  }
+  if (US_STATE_CODES.has(last.toUpperCase())) {
+    const address = { "@type": "PostalAddress", "addressCountry": "US", "addressRegion": last.toUpperCase() };
+    if (parts.length > 1) address.addressLocality = parts[0];
+    return { "@type": "Place", "address": address };
+  }
+  return null; // not confident enough to publish — omit rather than guess
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -79,15 +121,32 @@ export async function renderJobPage(job, related, base, env) {
   ]);
   const insightsHtml = salaryInsightHtml(job, salaryStats, categoryLabel) + companySnapshotHtml(job, companyInfo);
 
+  const isRemote = job.remote_type === 'fully_remote';
+  const jobLocationSchema = isRemote ? null : buildJobLocationSchema(job.location);
+  const employmentTypeSchema = job.employment_type ? EMPLOYMENT_TYPE_SCHEMA_MAP[job.employment_type] : undefined;
+
   const schema = safeJsonLd({
     "@context": "https://schema.org", "@type": "JobPosting",
     "title": job.title, "description": cleanDesc || desc,
+    "identifier": { "@type": "PropertyValue", "name": job.company, "value": String(job.job_handle || job.id) },
     "hiringOrganization": { "@type": "Organization", "name": job.company },
-    "jobLocation": { "@type": "Place", "address": job.location || "Remote" },
-    "employmentType": job.employment_type ? job.employment_type.toUpperCase().replace('_', ' ') : "FULL_TIME",
     "datePosted": job.created_at ? new Date(job.created_at).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
     "validThrough": new Date(Date.now() + 1000 * 60 * 60 * 24 * 45).toISOString().split('T')[0],
-    "url": canonical, "directApply": true,
+    "url": canonical,
+    // Required for Google's "Work from home jobs" experience — this is a
+    // remote job board, so most listings qualify. applicantLocationRequirements
+    // is intentionally omitted (we don't have reliable data for it); per
+    // Google's docs, without it a remote job is simply shown broadly
+    // rather than being excluded.
+    ...(isRemote ? { "jobLocationType": "TELECOMMUTE" } : {}),
+    // jobLocation is technically required UNLESS the job is remote with
+    // applicantLocationRequirements present — for non-remote jobs we only
+    // publish it when the country is confidently known (see
+    // buildJobLocationSchema above); otherwise this specific listing
+    // simply won't be Google-Jobs-eligible until the location data
+    // improves, which is preferable to publishing a guessed country.
+    ...(jobLocationSchema ? { "jobLocation": jobLocationSchema } : {}),
+    ...(employmentTypeSchema ? { "employmentType": employmentTypeSchema } : {}),
     ...(job.salary ? { "baseSalary": { "@type": "MonetaryAmount", "currency": "USD", "value": { "@type": "QuantitativeValue", "value": job.salary } } } : {})
   });
   const breadcrumbSchema = safeJsonLd({
