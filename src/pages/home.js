@@ -8,13 +8,13 @@ import { footerHtml } from '../components/footer.js';
 import { postJobModalHtml } from '../components/post-job-modal.js';
 import { SHARED_CSS } from '../styles/shared-css.js';
 import { ICON_HEAD } from '../assets/favicon.js';
-import { CATEGORY_ORDER, CATEGORY_META } from '../config/constants.js';
+import { FEATURED_COMPANIES, CATEGORY_ORDER, CATEGORY_META } from '../config/constants.js';
 import { jobCardSSR } from '../components/job-card.js';
 import { adSlot } from '../components/ad-slot.js';
-import { escapeHtml, slugify, listCountries, listSkills, listCompanies } from '../lib/entities.js';
+import { escapeHtml, listCountries, listSkills, listCompanies } from '../lib/entities.js';
 import { countryFlag } from '../lib/country-flags.js';
 import { GOOGLE_ANALYTICS_TAG } from '../lib/analytics-tag.js';
-import { iconSparkle, iconFlame, iconPin, iconMapPin, iconBookmark, iconLink, iconArrowRight, iconBadgeCheck, iconClock, iconGlobe, iconBuilding, iconSearch, iconX, iconFilter, iconBell, iconCheck, iconInfo, iconAlertTriangle, iconFolder, iconTag } from '../assets/icons.js';
+import { iconSparkle, iconFlame, iconPin, iconMapPin, iconBookmark, iconLink, iconArrowRight, iconBadgeCheck, iconClock, iconGlobe, iconBuilding, iconSearch, iconX, iconFilter, iconCheck, iconInfo, iconAlertTriangle, iconFolder, iconTag } from '../assets/icons.js';
 
 // Same icon markup used by the server-rendered cards (job-card.js) is
 // reused for client-rendered cards (search/filter/pagination results) by
@@ -26,7 +26,7 @@ const CLIENT_ICONS = {
   mapPin: iconMapPin({ size: 11 }), bookmark: iconBookmark(), link: iconLink(), arrowRight: iconArrowRight(),
   arrowRightSm: iconArrowRight({ size: 11 }), badgeCheck: iconBadgeCheck({ size: 12 }), clock: iconClock({ size: 11 }),
   globe: iconGlobe({ size: 11 }), building: iconBuilding({ size: 11 }), search: iconSearch({ size: 16 }),
-  x: iconX({ size: 13 }), filter: iconFilter({ size: 14 }), bell: iconBell({ size: 20 }),
+  x: iconX({ size: 13 }), filter: iconFilter({ size: 14 }),
   check: iconCheck({ size: 16 }), info: iconInfo({ size: 16 }), alertTriangle: iconAlertTriangle({ size: 32 }),
   searchLg: iconSearch({ size: 32 }), folder: iconFolder({ size: 11 }), tag: iconTag({ size: 11 }),
 };
@@ -185,7 +185,7 @@ ${GOOGLE_ANALYTICS_TAG}
 <meta name="robots" content="index, follow">
 ${ICON_HEAD}
 <meta property="og:title" content="JobForion — Find Your Next Remote Job">
-<meta property="og:description" content="Curated remote jobs updated every few hours. Browse, save, and get alerted — or post your own opening.">
+<meta property="og:description" content="Curated remote jobs updated every few hours. Browse, save, and apply — or post your own opening.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="${base}">
 <meta property="og:site_name" content="JobForion">
@@ -197,17 +197,17 @@ ${ICON_HEAD}
 <script type="application/ld+json">${orgSchema}</script>
 <script type="application/ld+json">${itemListSchema}</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Space+Grotesk:wght@700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
 ${SHARED_CSS}
 
 /* ── HERO (navy → indigo gradient, bold headline, red CTA search) ── */
-.hero{padding:96px 24px 84px;background:linear-gradient(135deg,#1830C4 0%,#3556FF 55%,#6C3FE0 100%);position:relative;overflow:hidden}
+.hero{padding:64px 24px 40px;background:linear-gradient(135deg,#1830C4 0%,#3556FF 55%,#6C3FE0 100%);position:relative;overflow:hidden}
 .hero::before{content:'';position:absolute;inset:0;background:radial-gradient(ellipse 60% 50% at 80% 0%,rgba(255,255,255,.12),transparent 60%)}
 .hero-inner{max-width:1180px;margin:0 auto;position:relative}
 .hero-eyebrow{display:inline-flex;align-items:center;gap:7px;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.22);border-radius:20px;padding:5px 13px;font-size:12px;color:#fff;font-weight:700;margin-bottom:20px}
 .hero-eyebrow-dot{width:6px;height:6px;border-radius:50%;background:var(--green);animation:pulse-dot 2s infinite}
-.hero-title{font-family:'Space Grotesk',sans-serif;font-size:54px;font-weight:800;letter-spacing:-1px;line-height:1.1;margin-bottom:20px;color:#fff;max-width:680px}
+.hero-title{font-family:'Plus Jakarta Sans',sans-serif;font-size:44px;font-weight:800;letter-spacing:-1.4px;line-height:1.08;margin-bottom:16px;color:#fff;max-width:680px}
 .hero-title .hl{position:relative;display:inline-block}
 .hero-title .hl::after{content:'';position:absolute;left:0;right:0;bottom:2px;height:5px;background:var(--coral);border-radius:3px;opacity:.85;z-index:-1}
 .hero-sub{color:rgba(255,255,255,.85);font-size:16px;margin-bottom:28px;line-height:1.65;max-width:540px}
@@ -227,9 +227,9 @@ ${SHARED_CSS}
 .fc-strip{border-bottom:1px solid var(--border);padding:22px 24px;background:var(--surface)}
 .fc-inner{max-width:1180px;margin:0 auto}
 .fc-label{font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--ink3);margin-bottom:16px;text-align:center}
-.fc-logos{display:flex;align-items:center;justify-content:center;gap:48px;flex-wrap:wrap}
-.fc-logos a{font-family:'Space Grotesk',sans-serif;font-size:25px;font-weight:700;color:var(--ink3);opacity:.65;transition:all .25s;text-decoration:none}
-.fc-logos a:hover{opacity:1;color:var(--brand)}
+.fc-logos{display:flex;align-items:center;justify-content:center;gap:40px;flex-wrap:wrap}
+.fc-logos span{font-family:'Plus Jakarta Sans',sans-serif;font-size:19px;font-weight:700;color:var(--ink3);opacity:.55;transition:all .25s;cursor:default}
+.fc-logos span:hover{opacity:1;color:var(--brand)}
 
 /* ── FILTER BAR ── */
 .filters-bar{position:sticky;top:66px;z-index:150;padding:12px 24px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;overflow-x:auto;background:rgba(255,255,255,.92);backdrop-filter:blur(10px)}
@@ -323,18 +323,6 @@ ${SHARED_CSS}
 .page-btn:disabled{opacity:.35;cursor:default}
 .page-info{font-size:13px;color:var(--ink3);padding:0 8px}
 
-/* ── FORMS (alerts) ── */
-.form-card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:28px 20px;max-width:540px;box-shadow:var(--shadow)}
-.form-group{margin-bottom:18px}
-.form-label{font-size:11px;font-weight:700;color:var(--ink2);margin-bottom:7px;display:block;letter-spacing:.5px;text-transform:uppercase}
-.form-input{width:100%;background:var(--surface2);border:1.5px solid var(--border2);border-radius:10px;padding:12px 14px;color:var(--ink);font-size:14px;font-family:inherit;outline:none;transition:all .25s}
-.form-input:focus{border-color:var(--brand);box-shadow:0 0 0 3px var(--brand-soft)}
-.form-input::placeholder{color:var(--ink3)}
-.submit-btn{width:100%;background:var(--brand);color:#fff;padding:13px;border-radius:10px;font-size:15px;font-weight:700;font-family:inherit;border:none;cursor:pointer;transition:all .25s}
-.submit-btn:hover{background:#2842e0;transform:translateY(-1px)}
-.kw-chip{display:inline-flex;align-items:center;gap:6px;background:var(--brand-soft);border:1px solid rgba(53,86,255,.2);color:var(--brand);padding:4px 10px;border-radius:20px;font-size:12px;font-weight:700;margin:3px}
-.kw-chip button{background:none;border:none;color:var(--brand);cursor:pointer;font-size:14px;line-height:1;padding:0;opacity:.7}
-
 .ad-slot{border:1.5px dashed var(--border2);border-radius:12px;padding:14px;text-align:center;margin:16px 0;background:var(--surface2)}
 .ad-slot-label{font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--ink3);margin-bottom:4px}
 .ad-slot-hint{font-size:11px;color:var(--ink3)}
@@ -344,15 +332,15 @@ ${SHARED_CSS}
   .filters-bar{top:60px}
 }
 @media(max-width:768px){
-  .hero{min-height:calc(100vh - 130px);min-height:calc(100svh - 130px);display:flex;flex-direction:column;justify-content:center;padding:40px 20px}
-  .hero-title{font-size:42px;letter-spacing:-.9px;line-height:1.14;text-align:center}
-  .hero-sub{font-size:15.5px;font-weight:600;color:rgba(255,255,255,.94);line-height:1.6;text-align:center;margin-bottom:30px}
+  .hero{padding:30px 16px 26px}
+  .hero-title{font-size:26px;letter-spacing:-.7px}
+  .hero-sub{font-size:13px;margin-bottom:20px}
   .search-row{flex-direction:column;padding:8px;gap:8px}
   .search-btn{padding:12px}
   .hero-stats{gap:18px}
   .hero-stat-num{font-size:17px}
-  .fc-logos{gap:28px}
-  .fc-logos a{font-size:19px}
+  .fc-logos{gap:22px}
+  .fc-logos span{font-size:15px}
   .content-wrap{padding:14px}
   .cat-sections{padding:8px 14px 30px}
   .card-inner{padding:14px 12px}
@@ -362,7 +350,7 @@ ${SHARED_CSS}
   .page-btn{padding:8px 13px;font-size:12px}
 }
 @media(max-width:380px){
-  .hero-title{font-size:29px}
+  .hero-title{font-size:22px}
   .chip{padding:6px 12px;font-size:12px}
 }
 </style>
@@ -391,7 +379,7 @@ ${mobileHeaderHtml()}
     <div class="fc-strip">
       <div class="fc-inner">
         <div class="fc-label">Featured Remote Employers</div>
-        <div class="fc-logos">${topCompanies.slice(0, 6).map(c => `<a href="/companies/${slugify(c.name)}">${escapeHtml(c.name)}</a>`).join('')}</div>
+        <div class="fc-logos">${FEATURED_COMPANIES.map(c => `<span>${c}</span>`).join('')}</div>
       </div>
     </div>
 
@@ -457,27 +445,6 @@ ${mobileHeaderHtml()}
       <div class="jobs-list" id="savedList"></div>
     </div>
   </div>
-
-  <!-- ALERTS -->
-  <div id="vAlerts" style="display:none">
-    <div class="content-wrap">
-      <button onclick="goView('jobs')" style="display:inline-flex;align-items:center;gap:7px;color:var(--ink3);font-size:13px;cursor:pointer;border:none;background:none;font-family:inherit;margin-bottom:22px;font-weight:600">← Back to Jobs</button>
-      <div class="form-card">
-        <div style="font-family:'Plus Jakarta Sans',sans-serif;font-size:22px;font-weight:700;margin-bottom:6px;color:var(--ink);display:flex;align-items:center;gap:8px">${iconBell({ size: 20 })} Job Alerts</div>
-        <div style="font-size:13px;color:var(--ink2);margin-bottom:22px">Get notified by email when new matching jobs are posted.</div>
-        <div class="form-group">
-          <label class="form-label">Your Email</label>
-          <input type="email" class="form-input" id="alertEmail" placeholder="you@example.com">
-        </div>
-        <div class="form-group">
-          <label class="form-label">Keywords <span style="color:var(--ink3);font-weight:400;text-transform:none;letter-spacing:0;font-size:11px">(press Enter)</span></label>
-          <input type="text" class="form-input" id="alertKwInput" placeholder="e.g. React, Python..." onkeydown="addKeyword(event)">
-          <div style="margin-top:8px" id="kwWrap"></div>
-        </div>
-        <button class="submit-btn" onclick="submitAlert()">Subscribe to Alerts →</button>
-      </div>
-    </div>
-  </div>
 </main>
 
 ${footerHtml(base)}
@@ -496,7 +463,6 @@ const ICONS=window.__ICONS__;
 let pg=1,cat='',srch='',advT,srchT;
 let jobs=${JSON.stringify(initialJobs)},total=${initialTotal};
 let savedIds=JSON.parse(localStorage.getItem('jn_saved')||'[]');
-let alertKws=[];
 let adv={remote:'',employ:'',seniority:'',salaryMin:'',days:'',country:'',skill:'',company:''};
 let hasLoadedOnce=true;
 
@@ -555,7 +521,7 @@ function showToast(msg,type='success'){
   toastTimer=setTimeout(()=>el.classList.remove('show'),3100);
 }
 
-const VIEWS=['vJobs','vSaved','vAlerts'];
+const VIEWS=['vJobs','vSaved'];
 function showView(id){
   VIEWS.forEach(v=>{const el=document.getElementById(v);if(el)el.style.display=v===id?'block':'none';});
   window.scrollTo({top:0,behavior:'smooth'});
@@ -563,7 +529,6 @@ function showView(id){
 function goView(v){
   if(v==='jobs'){showView('vJobs');return;}
   if(v==='saved'){showView('vSaved');renderSaved();return;}
-  if(v==='alerts'){showView('vAlerts');return;}
 }
 window.goView=goView;
 
@@ -785,29 +750,6 @@ function renderSaved(){
 }
 
 function clearAllSaved(){savedIds=[];localStorage.removeItem('jn_saved');renderSaved();showToast('All cleared','info');}
-
-function addKeyword(e){
-  if(e.key!=='Enter')return;
-  const inp=document.getElementById('alertKwInput');
-  const val=inp.value.trim();if(!val)return;
-  if(!alertKws.includes(val)){alertKws.push(val);renderKws();}
-  inp.value='';
-}
-function removeKw(kw){alertKws=alertKws.filter(k=>k!==kw);renderKws();}
-function renderKws(){
-  document.getElementById('kwWrap').innerHTML=alertKws.map(k=>\`<span class="kw-chip">\${k}<button onclick="removeKw('\${k}')">×</button></span>\`).join('');
-}
-async function submitAlert(){
-  const email=document.getElementById('alertEmail').value.trim();
-  if(!email||!email.includes('@')){showToast('Please enter a valid email','info');return;}
-  if(!alertKws.length){showToast('Add at least one keyword','info');return;}
-  try{
-    const res=await fetch('/api/subscribe',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,keywords:alertKws})});
-    const d=await res.json();
-    if(d.success){showToast('Subscribed successfully');document.getElementById('alertEmail').value='';alertKws=[];renderKws();}
-    else showToast(d.error||'Something went wrong','info');
-  }catch(e){showToast('Failed. Try again.','info');}
-}
 
 function filterCat(c,label){
   cat=c;pg=1;
