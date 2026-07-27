@@ -243,3 +243,49 @@ export async function salaryBandsByCategory(env, categoryOrder, categoryMeta) {
   }
   return bands;
 }
+
+// ════════════════════════════════════════════════════════════════
+// ORIGINAL-CONTENT HELPERS — power the "Salary Insight" and "About this
+// company" boxes on individual job pages (see pages/job-page.js). These
+// exist specifically to give each job page genuinely unique, factual
+// content that cannot appear identically on any other site: the raw job
+// title/company/description is routinely scraped and republished across
+// many competing aggregators verbatim, which risks Google treating those
+// pages as duplicate/thin content. A live, computed comparison against
+// this site's own current listings is not reproducible elsewhere.
+// ════════════════════════════════════════════════════════════════
+
+// Single-category version of salaryBandsByCategory() above — used on a
+// job page, which only ever needs stats for ONE category (the job's own),
+// not all 13. Bounded to the most recent 3000 matching listings with a
+// salary, matching the sampling pattern already used by listCompanies()/
+// listSkills() elsewhere in this file for performance at scale.
+export async function categorySalaryStats(env, categoryKey) {
+  try {
+    const { results } = await env.DB.prepare(
+      `SELECT salary FROM (
+         SELECT salary FROM jobs WHERE LOWER(title) LIKE ? AND salary IS NOT NULL AND salary != '' ORDER BY id DESC LIMIT 3000
+       )`
+    ).bind(`%${categoryKey}%`).all();
+    const ranges = (results || []).map(r => parseSalaryRange(r.salary)).filter(Boolean);
+    if (!ranges.length) return null;
+    const mins = ranges.map(r => r.min), maxs = ranges.map(r => r.max);
+    const avg = arr => Math.round(arr.reduce((a, b) => a + b, 0) / arr.length);
+    return { count: ranges.length, avgMin: avg(mins), avgMax: avg(maxs), low: Math.min(...mins), high: Math.max(...maxs) };
+  } catch (e) { return null; }
+}
+
+// How many open roles a company currently has on JobForion, and roughly
+// how long they've been posting here — both factual, verifiable, and
+// specific to this site (not present in the scraped listing itself).
+export async function companySnapshot(env, companyName) {
+  try {
+    const { results } = await env.DB.prepare(
+      `SELECT COUNT(*) c, MIN(created_at) first_seen FROM jobs WHERE company = ?`
+    ).bind(companyName).all();
+    const row = results?.[0];
+    return { openPositions: row?.c || 0, firstSeen: row?.first_seen || null };
+  } catch (e) {
+    return { openPositions: 0, firstSeen: null };
+  }
+}
