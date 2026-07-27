@@ -3,9 +3,9 @@
 import { logoImgHtml, remoteTagHtml, catForTitleServer } from '../components/job-card.js';
 import { CATEGORY_META } from '../config/constants.js';
 import { baseLayout } from '../layout/base-layout.js';
-import { slugify, escapeHtml, cleanDescription } from '../lib/entities.js';
+import { slugify, escapeHtml, cleanDescription, parseSalaryRange, categorySalaryStats, companySnapshot } from '../lib/entities.js';
 import { adSlot } from '../components/ad-slot.js';
-import { iconBadgeCheck, iconMapPin, iconSparkle, iconFlame, iconDollarSign, iconArrowRight, iconBookmark, iconLink } from '../assets/icons.js';
+import { iconBadgeCheck, iconMapPin, iconSparkle, iconFlame, iconDollarSign, iconArrowRight, iconBookmark, iconLink, iconTrendingUp, iconBuilding } from '../assets/icons.js';
 
 // SECURITY: JSON.stringify() does NOT escape "<", so a malicious job title
 // like `</script><script>...` embedded in scraped/submitted data could
@@ -16,7 +16,51 @@ function safeJsonLd(obj) {
   return JSON.stringify(obj).replace(/</g, '\\u003c');
 }
 
-export function renderJobPage(job, related, base) {
+// ════════════════════════════════════════════════════════════════
+// ORIGINAL-CONTENT BOXES — see the matching helpers in lib/entities.js
+// (categorySalaryStats, companySnapshot) for why these exist: the raw
+// scraped title/company/description is routinely identical across many
+// competing job aggregators, which is a real duplicate/thin-content SEO
+// risk. These two boxes are computed live from THIS site's own current
+// listings, so their text is factually unique to JobForion — it cannot
+// be reproduced verbatim by a competitor scraping the same source feed.
+// ════════════════════════════════════════════════════════════════
+
+function salaryInsightHtml(job, stats, categoryLabel) {
+  if (!stats) return '';
+  const jobRange = job.salary ? parseSalaryRange(job.salary) : null;
+  let comparisonText = '';
+  if (jobRange) {
+    const jobMid = (jobRange.min + jobRange.max) / 2;
+    const avgMid = (stats.avgMin + stats.avgMax) / 2;
+    if (avgMid > 0) {
+      const diffPct = Math.round(((jobMid - avgMid) / avgMid) * 100);
+      comparisonText = Math.abs(diffPct) < 5
+        ? 'in line with'
+        : diffPct > 0 ? `about ${diffPct}% above` : `about ${Math.abs(diffPct)}% below`;
+    }
+  }
+  const body = (jobRange && comparisonText)
+    ? `This role's listed salary is <strong>${comparisonText}</strong> the average for ${escapeHtml(categoryLabel)} positions on JobForion ($${stats.avgMin}k–$${stats.avgMax}k, based on ${stats.count} current listing${stats.count === 1 ? '' : 's'} with salary data).`
+    : `The average salary range for ${escapeHtml(categoryLabel)} positions on JobForion is <strong>$${stats.avgMin}k–$${stats.avgMax}k</strong>, based on ${stats.count} current listing${stats.count === 1 ? '' : 's'} with salary data.`;
+  return `<div class="insight-card">
+    <div class="insight-card-title">${iconTrendingUp({ size: 15 })} Salary Insight</div>
+    <div class="insight-card-body">${body}</div>
+  </div>`;
+}
+
+function companySnapshotHtml(job, snapshot) {
+  if (!snapshot || snapshot.openPositions < 1) return '';
+  const since = snapshot.firstSeen
+    ? new Date(snapshot.firstSeen).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+    : null;
+  return `<div class="insight-card">
+    <div class="insight-card-title">${iconBuilding({ size: 15 })} About ${escapeHtml(job.company)} on JobForion</div>
+    <div class="insight-card-body">${escapeHtml(job.company)} currently has <strong>${snapshot.openPositions} open remote position${snapshot.openPositions === 1 ? '' : 's'}</strong> listed on JobForion${since ? `, hiring here since ${since}` : ''}. <a href="/companies/${slugify(job.company)}">View all openings →</a></div>
+  </div>`;
+}
+
+export async function renderJobPage(job, related, base, env) {
   let skills = [];
   try { skills = JSON.parse(job.skills || '[]'); } catch (e) {}
   const isNew = job.created_at && Date.now() - new Date(job.created_at).getTime() < 86400000;
@@ -26,6 +70,15 @@ export function renderJobPage(job, related, base) {
   const desc = cleanDesc.length > 20
     ? cleanDesc.slice(0, 160).replace(/\n/g, ' ') + '...'
     : `${job.title} at ${job.company}. ${job.location || 'Remote'}${job.salary ? ' — ' + job.salary : ''}. Apply on JobForion.`;
+
+  const categoryKey = catForTitleServer(job.title);
+  const categoryLabel = CATEGORY_META[categoryKey].label;
+  const [salaryStats, companyInfo] = await Promise.all([
+    categorySalaryStats(env, categoryKey),
+    companySnapshot(env, job.company),
+  ]);
+  const insightsHtml = salaryInsightHtml(job, salaryStats, categoryLabel) + companySnapshotHtml(job, companyInfo);
+
   const schema = safeJsonLd({
     "@context": "https://schema.org", "@type": "JobPosting",
     "title": job.title, "description": cleanDesc || desc,
@@ -61,7 +114,7 @@ export function renderJobPage(job, related, base) {
       <h1 class="job-title-h1">${escapeHtml(job.title)}</h1>
       <div class="job-chips">
         ${remoteTagHtml(job.remote_type)}
-        <a href="/categories/${catForTitleServer(job.title)}" class="tag tag-type" style="text-decoration:none">${CATEGORY_META[catForTitleServer(job.title)].label}</a>
+        <a href="/categories/${categoryKey}" class="tag tag-type" style="text-decoration:none">${categoryLabel}</a>
         ${job.employment_type ? `<span class="tag tag-type">${escapeHtml(job.employment_type.replace(/_/g, ' '))}</span>` : ''}
         ${job.seniority ? `<span class="tag tag-type">${escapeHtml(job.seniority)}</span>` : ''}
         ${isNew ? `<span class="tag tag-new">${iconSparkle({ size: 11 })} NEW</span>` : ''}
@@ -77,6 +130,7 @@ export function renderJobPage(job, related, base) {
       <a href="${escapeHtml(job.url)}" target="_blank" rel="noopener noreferrer" class="apply-big">Apply Now ${iconArrowRight({ size: 16 })}</a>
     </div>
   </div>
+  ${insightsHtml ? `<div class="insights-wrap">${insightsHtml}</div>` : ''}
   ${related.length ? `
     <div class="related-title" style="margin-top:24px">Similar Jobs</div>
     <div class="related-grid">
@@ -96,6 +150,12 @@ export function renderJobPage(job, related, base) {
 .job-act-btn:hover{border-color:var(--brand);color:var(--brand);background:var(--brand-soft)}
 .job-act-btn.active{background:var(--brand-soft);border-color:var(--brand);color:var(--brand)}
 @media(max-width:480px){.job-act-label{display:none}.job-act-btn{padding:8px}}
+.insights-wrap{display:flex;flex-direction:column;gap:10px;margin-top:16px}
+.insight-card{background:var(--pastel-blue);border:1px solid rgba(53,86,255,.15);border-radius:12px;padding:14px 16px}
+.insight-card-title{display:flex;align-items:center;gap:7px;font-size:12.5px;font-weight:800;color:var(--brand);margin-bottom:6px}
+.insight-card-body{font-size:13px;color:var(--ink2);line-height:1.6}
+.insight-card-body strong{color:var(--ink)}
+.insight-card-body a{color:var(--brand);font-weight:700}
 </style>
 <script>
 (function(){
