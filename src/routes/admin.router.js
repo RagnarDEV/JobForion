@@ -15,6 +15,7 @@ import { renderAdminLogin, renderAdminDashboard } from '../pages/admin.js';
 import { insertApiSource } from '../db/sync.js';
 import { cleanupStaleJobs } from '../db/cleanup.js';
 import { renderJobsListContent, renderJobEditContent, renderDuplicatesContent } from '../pages/admin/jobs.js';
+import { renderCompaniesListContent } from '../pages/admin/companies.js';
 import { adminShell } from '../pages/admin/shell.js';
 
 function errorPage(err) {
@@ -142,6 +143,41 @@ export async function handleAdminRoute(url, request, env, base) {
       if (!ok) return new Response(renderAdminLogin(false), { headers: { "Content-Type": "text/html; charset=utf-8" } });
       const content = await renderDuplicatesContent(env);
       return new Response(adminShell('jobs', content), { headers: { "Content-Type": "text/html; charset=utf-8" } });
+    } catch (e) { return errorPage(e); }
+  }
+
+  if (url.pathname === '/admin/companies' && request.method === 'GET') {
+    try {
+      const ok = await verifyAdminCookie(env, request.headers.get('Cookie'));
+      if (!ok) return new Response(renderAdminLogin(false), { headers: { "Content-Type": "text/html; charset=utf-8" } });
+      const content = await renderCompaniesListContent(env, url.searchParams);
+      return new Response(adminShell('companies', content), { headers: { "Content-Type": "text/html; charset=utf-8" } });
+    } catch (e) { return errorPage(e); }
+  }
+
+  if (url.pathname === '/admin/companies/hide' && request.method === 'POST') {
+    try {
+      const ok = await verifyAdminCookie(env, request.headers.get('Cookie'));
+      if (!ok) return new Response('Unauthorized', { status: 401 });
+      const form = await request.formData();
+      const company = (form.get('company') || '').toString().trim();
+      if (company) {
+        await env.DB.prepare("INSERT OR IGNORE INTO hidden_companies (company_lower) VALUES (?)").bind(company.toLowerCase()).run();
+      }
+      return new Response(null, { status: 302, headers: { 'Location': `/admin/companies?flash=${encodeURIComponent('Company hidden')}` } });
+    } catch (e) { return errorPage(e); }
+  }
+
+  if (url.pathname === '/admin/companies/unhide' && request.method === 'POST') {
+    try {
+      const ok = await verifyAdminCookie(env, request.headers.get('Cookie'));
+      if (!ok) return new Response('Unauthorized', { status: 401 });
+      const form = await request.formData();
+      const company = (form.get('company') || '').toString().trim();
+      if (company) {
+        await env.DB.prepare("DELETE FROM hidden_companies WHERE company_lower = ?").bind(company.toLowerCase()).run();
+      }
+      return new Response(null, { status: 302, headers: { 'Location': `/admin/companies?flash=${encodeURIComponent('Company unhidden')}` } });
     } catch (e) { return errorPage(e); }
   }
 
