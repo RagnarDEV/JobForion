@@ -155,5 +155,16 @@ export async function ensureTable(env) {
     )
   `).run();
 
+  // Backs lib/rate-limit.js — coarse, best-effort per-key (e.g. per-IP,
+  // per-endpoint) request counting to deter spam on public write
+  // endpoints (/api/subscribe, /api/post-job). See that file for details.
+  await env.DB.prepare(`
+    CREATE TABLE IF NOT EXISTS rate_limits (
+      rl_key TEXT PRIMARY KEY,
+      count INTEGER DEFAULT 1,
+      window_start DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `).run();
+
   schemaEnsured = true;
 }
