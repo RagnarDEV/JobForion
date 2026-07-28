@@ -3,10 +3,16 @@
 // submissions, manual sync trigger, and a tiny debug endpoint.
 
 import { syncJobs } from '../db/sync.js';
+import { checkRateLimit } from '../lib/rate-limit.js';
 
 export async function handleApiRoute(url, request, env) {
   if (url.pathname === '/api/subscribe' && request.method === 'POST') {
     try {
+      const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
+      const rl = await checkRateLimit(env, `subscribe:${ip}`, { maxRequests: 5, windowMinutes: 60 });
+      if (!rl.allowed) {
+        return new Response(JSON.stringify({ success: false, error: "Too many attempts. Please try again later." }), { status: 429, headers: { "Content-Type": "application/json" } });
+      }
       const { email, keywords } = await request.json();
       if (!email || !keywords?.length) return new Response(JSON.stringify({ success: false, error: "Required" }), { headers: { "Content-Type": "application/json" } });
       await env.DB.prepare("INSERT OR REPLACE INTO subscribers (email,keywords) VALUES (?,?)").bind(email, JSON.stringify(keywords)).run();
@@ -16,6 +22,11 @@ export async function handleApiRoute(url, request, env) {
 
   if (url.pathname === '/api/post-job' && request.method === 'POST') {
     try {
+      const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
+      const rl = await checkRateLimit(env, `post-job:${ip}`, { maxRequests: 3, windowMinutes: 60 });
+      if (!rl.allowed) {
+        return new Response(JSON.stringify({ success: false, error: "Too many submissions. Please try again later." }), { status: 429, headers: { "Content-Type": "application/json" } });
+      }
       const b = await request.json();
       const title = (b.title || '').toString().slice(0, 150);
       const company = (b.company || '').toString().slice(0, 100);
