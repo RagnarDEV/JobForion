@@ -13,8 +13,9 @@ import { SHARED_CSS } from '../../styles/shared-css.js';
 const NAV_ITEMS = [
   { id: 'dashboard', label: 'Dashboard', icon: '📊', href: '/admin' },
   { id: 'jobs', label: 'Jobs', icon: '💼', href: '/admin/jobs' },
+  { id: 'companies', label: 'Companies', icon: '🏢', href: '/admin/companies' },
   // Future phases plug in here, e.g.:
-  // { id: 'companies', label: 'Companies', icon: '🏢', href: '/admin/companies' },
+  // { id: 'skills', label: 'Skills', icon: '🏷️', href: '/admin/skills' },
 ];
 
 const DARK_THEME_CSS = `
