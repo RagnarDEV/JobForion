@@ -16,6 +16,7 @@ import { countryFlag } from '../lib/country-flags.js';
 import { collectionPageSchema, itemListSchema, ldJsonTag } from '../lib/schema.js';
 import { buildBreadcrumb } from '../lib/breadcrumbs.js';
 import { truncateDescription } from '../lib/seo.js';
+import { JOB_TYPE_SORT_SQL } from '../config/constants.js';
 
 export function renderCategoriesIndex(base) {
   const items = CATEGORY_ORDER.map(k => ({ name: CATEGORY_META[k].label, slug: k, count: '' }));
@@ -36,7 +37,7 @@ export function renderCategoriesIndex(base) {
 export async function renderCategoryDetail(env, base, key) {
   const meta = CATEGORY_META[key];
   if (!meta) return null;
-  const { results } = await env.DB.prepare("SELECT * FROM jobs WHERE LOWER(title) LIKE ? ORDER BY id DESC LIMIT 60").bind(`%${key}%`).all();
+  const { results } = await env.DB.prepare(`SELECT * FROM jobs WHERE LOWER(title) LIKE ? ORDER BY ${JOB_TYPE_SORT_SQL} ASC, id DESC LIMIT 60`).bind(`%${key}%`).all();
   const { html: bc, jsonLd: bcSchema } = buildBreadcrumb(base, [{ name: 'Categories', path: '/categories' }, { name: meta.label, path: `/categories/${key}` }]);
   const content = `<div class="page">${bc}
     <h1 style="font-family:'Space Grotesk',sans-serif;font-size:26px;font-weight:700;margin-bottom:8px;color:var(--ink)">${meta.emoji} ${meta.label} Remote Jobs</h1>
@@ -155,7 +156,7 @@ export async function renderSkillDetail(env, base, slug) {
 export async function renderSearchPage(env, base, query) {
   const q = decodeURIComponent(query || '').trim();
   const { results } = await env.DB.prepare(
-    "SELECT * FROM jobs WHERE LOWER(title) LIKE ? OR LOWER(company) LIKE ? OR LOWER(location) LIKE ? ORDER BY id DESC LIMIT 50"
+    `SELECT * FROM jobs WHERE LOWER(title) LIKE ? OR LOWER(company) LIKE ? OR LOWER(location) LIKE ? ORDER BY ${JOB_TYPE_SORT_SQL} ASC, id DESC LIMIT 50`
   ).bind(`%${q.toLowerCase()}%`, `%${q.toLowerCase()}%`, `%${q.toLowerCase()}%`).all();
   const hasResults = (results || []).length > 0;
   const { html: bc, jsonLd: bcSchema } = buildBreadcrumb(base, [{ name: `Search: ${q}`, path: `/search/${query}` }]);
