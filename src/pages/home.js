@@ -8,11 +8,11 @@ import { footerHtml } from '../components/footer.js';
 import { postJobModalHtml } from '../components/post-job-modal.js';
 import { SHARED_CSS } from '../styles/shared-css.js';
 import { ICON_HEAD } from '../assets/favicon.js';
-import { FEATURED_COMPANIES, CATEGORY_ORDER, CATEGORY_META } from '../config/constants.js';
+import { CATEGORY_ORDER, CATEGORY_META, JOB_TYPE_META, JOB_TYPE_SORT_SQL } from '../config/constants.js';
 import { jobCardSSR } from '../components/job-card.js';
 import { adSlot } from '../components/ad-slot.js';
-import { escapeHtml, listCountries, listSkills, listCompanies } from '../lib/entities.js';
-import { countryFlag } from '../lib/country-flags.js';
+import { escapeHtml, slugify, listCountries, listSkills, listCompanies } from '../lib/entities.js';
+import { countryFlag, COUNTRY_TO_ISO } from '../lib/country-flags.js';
 import { GOOGLE_ANALYTICS_TAG } from '../lib/analytics-tag.js';
 import { iconSparkle, iconFlame, iconPin, iconMapPin, iconBookmark, iconLink, iconArrowRight, iconBadgeCheck, iconClock, iconGlobe, iconBuilding, iconSearch, iconX, iconFilter, iconCheck, iconInfo, iconAlertTriangle, iconFolder, iconTag } from '../assets/icons.js';
 
@@ -121,26 +121,13 @@ export async function renderMainHTML(env, base) {
   await ensureTable(env);
   let initialJobs = [], initialTotal = 0, totalJobsCount = 0, companiesCount = 0;
   try {
-    const { results } = await env.DB.prepare("SELECT * FROM jobs ORDER BY featured DESC, id DESC LIMIT 20").all();
+    const { results } = await env.DB.prepare(`SELECT * FROM jobs ORDER BY ${JOB_TYPE_SORT_SQL} ASC, featured DESC, id DESC LIMIT 20`).all();
     initialJobs = results || [];
     const { results: cr } = await env.DB.prepare("SELECT COUNT(*) as total FROM jobs").all();
     initialTotal = cr[0]?.total || 0;
     totalJobsCount = initialTotal;
     const { results: ccr } = await env.DB.prepare("SELECT COUNT(DISTINCT LOWER(company)) as c FROM jobs WHERE company IS NOT NULL AND company != ''").all();
     companiesCount = ccr[0]?.c || 0;
-  } catch (e) {}
-
-  // "Top X Jobs" curated sections (one per category, a few most-recent jobs
-  // each) — shown below the main list. Skips categories with zero jobs.
-  let categorySections = [];
-  try {
-    categorySections = await Promise.all(CATEGORY_ORDER.map(async (key) => {
-      const { results } = await env.DB.prepare(
-        "SELECT * FROM jobs WHERE LOWER(title) LIKE ? ORDER BY featured DESC, id DESC LIMIT 4"
-      ).bind(`%${key}%`).all();
-      return { key, meta: CATEGORY_META[key], jobs: results || [] };
-    }));
-    categorySections = categorySections.filter(s => s.jobs.length > 0);
   } catch (e) {}
 
   // Data for the four homepage facet-picker panels (category, country,
@@ -197,27 +184,28 @@ ${ICON_HEAD}
 <script type="application/ld+json">${orgSchema}</script>
 <script type="application/ld+json">${itemListSchema}</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Space+Grotesk:wght@700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
 <style>
 ${SHARED_CSS}
 
 /* ── HERO (navy → indigo gradient, bold headline, red CTA search) ── */
-.hero{padding:64px 24px 40px;background:linear-gradient(135deg,#1830C4 0%,#3556FF 55%,#6C3FE0 100%);position:relative;overflow:hidden}
+.hero{padding:96px 24px 84px;background:linear-gradient(135deg,#1830C4 0%,#3556FF 55%,#6C3FE0 100%);position:relative;overflow:hidden}
 .hero::before{content:'';position:absolute;inset:0;background:radial-gradient(ellipse 60% 50% at 80% 0%,rgba(255,255,255,.12),transparent 60%)}
 .hero-inner{max-width:1180px;margin:0 auto;position:relative}
 .hero-eyebrow{display:inline-flex;align-items:center;gap:7px;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.22);border-radius:20px;padding:5px 13px;font-size:12px;color:#fff;font-weight:700;margin-bottom:20px}
 .hero-eyebrow-dot{width:6px;height:6px;border-radius:50%;background:var(--green);animation:pulse-dot 2s infinite}
-.hero-title{font-family:'Plus Jakarta Sans',sans-serif;font-size:44px;font-weight:800;letter-spacing:-1.4px;line-height:1.08;margin-bottom:16px;color:#fff;max-width:680px}
+.hero-title{font-family:'Space Grotesk',sans-serif;font-size:54px;font-weight:800;letter-spacing:-1px;line-height:1.1;margin-bottom:20px;color:#fff;max-width:680px}
 .hero-title .hl{position:relative;display:inline-block}
 .hero-title .hl::after{content:'';position:absolute;left:0;right:0;bottom:2px;height:5px;background:var(--coral);border-radius:3px;opacity:.85;z-index:-1}
 .hero-sub{color:rgba(255,255,255,.85);font-size:16px;margin-bottom:28px;line-height:1.65;max-width:540px}
-.search-row{display:flex;gap:0;max-width:640px;margin-bottom:26px;background:#fff;border-radius:14px;padding:6px;box-shadow:0 20px 44px -12px rgba(11,18,32,.45)}
+.search-row{display:flex;gap:0;max-width:640px;margin-bottom:26px;background:#fff;border-radius:18px;padding:6px;box-shadow:0 14px 34px -10px rgba(24,48,196,.22);border:1px solid rgba(255,255,255,.7);transition:box-shadow .25s ease}
+.search-row:focus-within{box-shadow:0 18px 42px -8px rgba(24,48,196,.3)}
 .search-wrap{position:relative;flex:1}
-.search-icon{position:absolute;left:14px;top:50%;transform:translateY(-50%);color:var(--ink3);pointer-events:none;font-size:15px}
-.search-input{width:100%;background:transparent;border:none;padding:12px 12px 12px 40px;color:var(--ink);font-size:15px;font-family:inherit;outline:none}
+.search-icon{position:absolute;left:16px;top:50%;transform:translateY(-50%);color:var(--ink3);pointer-events:none;font-size:15px}
+.search-input{width:100%;background:transparent;border:none;padding:13px 12px 13px 42px;color:var(--ink);font-size:15px;font-family:inherit;outline:none}
 .search-input::placeholder{color:var(--ink3)}
-.search-btn{background:var(--coral);color:#fff;border:none;border-radius:9px;padding:0 26px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;transition:all .2s;white-space:nowrap}
-.search-btn:hover{background:#e64d68;transform:translateY(-1px)}
+.search-btn{background:var(--coral);color:#fff;border:none;border-radius:13px;padding:0 28px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;transition:all .2s;white-space:nowrap}
+.search-btn:hover{background:#e64d68;box-shadow:0 6px 16px rgba(255,92,122,.32)}
 .hero-stats{display:flex;gap:30px;flex-wrap:wrap}
 .hero-stat{display:flex;flex-direction:column}
 .hero-stat-num{font-family:'Plus Jakarta Sans',sans-serif;font-size:22px;font-weight:700;color:#fff;line-height:1.2}
@@ -227,12 +215,13 @@ ${SHARED_CSS}
 .fc-strip{border-bottom:1px solid var(--border);padding:22px 24px;background:var(--surface)}
 .fc-inner{max-width:1180px;margin:0 auto}
 .fc-label{font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--ink3);margin-bottom:16px;text-align:center}
-.fc-logos{display:flex;align-items:center;justify-content:center;gap:40px;flex-wrap:wrap}
-.fc-logos span{font-family:'Plus Jakarta Sans',sans-serif;font-size:19px;font-weight:700;color:var(--ink3);opacity:.55;transition:all .25s;cursor:default}
-.fc-logos span:hover{opacity:1;color:var(--brand)}
+.fc-logos{display:flex;align-items:center;justify-content:center;gap:48px;flex-wrap:wrap}
+.fc-logos a{font-family:'Space Grotesk',sans-serif;font-size:25px;font-weight:700;color:var(--ink3);opacity:.65;transition:all .25s;text-decoration:none}
+.fc-logos a:hover{opacity:1;color:var(--brand)}
 
 /* ── FILTER BAR ── */
-.filters-bar{position:sticky;top:66px;z-index:150;padding:12px 24px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;overflow-x:auto;background:rgba(255,255,255,.92);backdrop-filter:blur(10px)}
+.filters-bar{position:sticky;top:66px;z-index:150;padding:12px 24px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;overflow-x:auto;background:rgba(255,255,255,.92);backdrop-filter:blur(10px);transition:transform .28s ease,box-shadow .28s ease}
+.filters-bar.bar-hidden{transform:translateY(-130%);box-shadow:none}
 .filters-bar::-webkit-scrollbar{height:0}
 .chip{display:inline-flex;align-items:center;gap:5px;padding:8px 15px;border-radius:20px;border:1.5px solid var(--border2);background:var(--surface);color:var(--ink2);font-size:13px;font-weight:700;font-family:inherit;cursor:pointer;white-space:nowrap;transition:all .2s}
 .chip:hover{border-color:var(--brand);color:var(--brand)}
@@ -278,19 +267,11 @@ ${SHARED_CSS}
 .job-meta-row{display:flex;flex-wrap:wrap;gap:5px;align-items:center}
 .card-right{display:flex;align-items:center;justify-content:flex-end;margin-top:9px;padding-top:9px;border-top:1px solid rgba(18,22,43,.06)}
 .card-time-corner{position:absolute;top:12px;right:14px;display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:600;color:var(--ink3);background:rgba(255,255,255,.85);padding:3px 8px;border-radius:20px;z-index:2}
-.salary-badge{font-size:11.5px;font-weight:800;color:var(--salary);background:rgba(15,174,121,.08);border:1px solid rgba(15,174,121,.18);padding:4px 11px;border-radius:8px;white-space:nowrap}
+.salary-badge{font-family:var(--font-mono);font-size:11px;font-weight:700;color:var(--salary);background:rgba(15,174,121,.08);border:1px solid rgba(15,174,121,.18);padding:4px 11px;border-radius:8px;white-space:nowrap}
 .card-time-corner{position:absolute;top:10px;right:12px;display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:600;color:var(--ink3);background:rgba(255,255,255,.75);padding:3px 8px;border-radius:20px;z-index:1}
 .act-btn{width:30px;height:30px;border-radius:8px;background:rgba(255,255,255,.6);border:1px solid var(--border2);color:var(--ink3);display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all .2s;position:relative;z-index:1}
 .act-btn:hover{background:var(--brand-soft);color:var(--brand);transform:scale(1.08)}
 .act-btn.saved{background:rgba(245,166,35,.12);border-color:var(--amber);color:var(--amber)}
-
-/* ── TOP CATEGORY SECTIONS (remote.io-style curated rows) ── */
-.cat-sections{max-width:1180px;margin:0 auto;padding:8px 24px 40px;display:flex;flex-direction:column;gap:30px}
-.cat-section-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
-.cat-section-title{display:flex;align-items:center;gap:8px;font-size:18px;color:var(--ink)}
-.cat-section-dot{width:9px;height:9px;border-radius:50%;background:var(--cat-color,var(--brand));flex-shrink:0}
-.cat-section-more{background:none;border:none;font-size:12.5px;font-weight:700;color:var(--ink3);cursor:pointer;font-family:inherit;padding:6px 10px;border-radius:8px}
-.cat-section-more:hover{color:var(--brand);background:var(--brand-soft)}
 
 /* ── TAGS ── */
 .tag{display:inline-flex;align-items:center;gap:4px;font-size:11px;padding:3px 9px;border-radius:20px;font-weight:700;white-space:nowrap}
@@ -332,17 +313,16 @@ ${SHARED_CSS}
   .filters-bar{top:60px}
 }
 @media(max-width:768px){
-  .hero{padding:30px 16px 26px}
-  .hero-title{font-size:26px;letter-spacing:-.7px}
-  .hero-sub{font-size:13px;margin-bottom:20px}
+  .hero{min-height:calc(100vh - 130px);min-height:calc(100svh - 130px);display:flex;flex-direction:column;justify-content:center;padding:40px 20px}
+  .hero-title{font-size:42px;letter-spacing:-.9px;line-height:1.14;text-align:center}
+  .hero-sub{font-size:15.5px;font-weight:600;color:rgba(255,255,255,.94);line-height:1.6;text-align:center;margin-bottom:30px}
   .search-row{flex-direction:column;padding:8px;gap:8px}
   .search-btn{padding:12px}
   .hero-stats{gap:18px}
   .hero-stat-num{font-size:17px}
-  .fc-logos{gap:22px}
-  .fc-logos span{font-size:15px}
+  .fc-logos{gap:28px}
+  .fc-logos a{font-size:19px}
   .content-wrap{padding:14px}
-  .cat-sections{padding:8px 14px 30px}
   .card-inner{padding:14px 12px}
   .co-logo{width:42px;height:42px;border-radius:9px}
   .job-title-card{font-size:13px}
@@ -350,7 +330,7 @@ ${SHARED_CSS}
   .page-btn{padding:8px 13px;font-size:12px}
 }
 @media(max-width:380px){
-  .hero-title{font-size:22px}
+  .hero-title{font-size:29px}
   .chip{padding:6px 12px;font-size:12px}
 }
 </style>
@@ -379,11 +359,11 @@ ${mobileHeaderHtml()}
     <div class="fc-strip">
       <div class="fc-inner">
         <div class="fc-label">Featured Remote Employers</div>
-        <div class="fc-logos">${FEATURED_COMPANIES.map(c => `<span>${c}</span>`).join('')}</div>
+        <div class="fc-logos">${topCompanies.slice(0, 6).map(c => `<a href="/companies/${slugify(c.name)}">${escapeHtml(c.name)}</a>`).join('')}</div>
       </div>
     </div>
 
-    <div class="filters-bar">
+    <div class="filters-bar" id="filtersBar">
       <button class="chip" id="categoryChipBtn" onclick="toggleFacetPanel('category')">${iconFolder({ size: 12 })} Category</button>
       <button class="chip" id="countryChipBtn" onclick="toggleFacetPanel('country')">${iconGlobe({ size: 12 })} Country</button>
       <button class="chip" id="skillChipBtn" onclick="toggleFacetPanel('skill')">${iconTag({ size: 12 })} Skills</button>
@@ -414,25 +394,13 @@ ${mobileHeaderHtml()}
 
     <div class="content-wrap">
       <div class="results-hdr">
-        <div class="results-count" id="resultsCount"><strong>${initialTotal.toLocaleString()}</strong> jobs found</div>
+        <div class="results-count" id="resultsCount" style="display:none"><strong>${initialTotal.toLocaleString()}</strong> jobs found</div>
         <button class="adv-toggle-btn" id="advToggleBtn" onclick="toggleAdv()">${iconFilter({ size: 13 })} Filters</button>
       </div>
       ${adSlot('homepage-results-top')}
       <div class="jobs-list" id="jobsList">${ssrJobsHtml}</div>
       <div class="pagination" id="pagination"></div>
     </div>
-
-    ${categorySections.length ? `
-    <div class="cat-sections">
-      ${categorySections.map(sec => `
-        <div class="cat-section">
-          <div class="cat-section-hdr">
-            <h2 class="cat-section-title" style="--cat-color:${sec.meta.color}"><span class="cat-section-dot"></span>Top ${escapeHtml(sec.meta.label)} Jobs</h2>
-            <button class="cat-section-more" onclick="filterCat('${sec.key}','${escapeHtml(sec.meta.label)}')">View all →</button>
-          </div>
-          <div class="jobs-list">${sec.jobs.map((j, i) => jobCardSSR(j, i)).join('')}</div>
-        </div>`).join('')}
-    </div>` : ''}
   </div>
 
   <!-- SAVED -->
@@ -456,10 +424,36 @@ ${postJobModalHtml()}
   <div class="toast-bar" id="toastBar"></div>
 </div>
 
-<script>window.__CATEGORY_META__=${JSON.stringify(CATEGORY_META)};window.__ICONS__=${JSON.stringify(CLIENT_ICONS)};</script>
+<script>window.__CATEGORY_META__=${JSON.stringify(CATEGORY_META)};window.__ICONS__=${JSON.stringify(CLIENT_ICONS)};window.__COUNTRY_ISO__=${JSON.stringify(COUNTRY_TO_ISO)};window.__JOB_TYPE_META__=${JSON.stringify(JOB_TYPE_META)};</script>
 <script>
 const CAT_META=window.__CATEGORY_META__;
 const ICONS=window.__ICONS__;
+const COUNTRY_ISO=window.__COUNTRY_ISO__;
+const JOB_TYPE_META=window.__JOB_TYPE_META__;
+function isoToFlagEmoji(iso){
+  if(!iso||iso.length!==2)return null;
+  const cps=[...iso.toUpperCase()].map(c=>127397+c.charCodeAt(0));
+  return String.fromCodePoint(...cps);
+}
+function clientCountryFlag(name){
+  if(!name)return'🌍';
+  const key=name.trim().toLowerCase();
+  if(/^(remote|worldwide|anywhere|global)$/.test(key))return'🌍';
+  const iso=COUNTRY_ISO[key];
+  if(!iso)return'🌍';
+  return isoToFlagEmoji(iso)||'🌍';
+}
+function normalizeJobType(t){return(t&&JOB_TYPE_META[t])?t:'Free';}
+function jobTypeBadge(t){
+  const type=normalizeJobType(t);
+  if(type==='Free')return'';
+  const meta=JOB_TYPE_META[type];
+  return \`<span class="jt-badge jt-badge-\${type.toLowerCase()}">\${meta.icon} \${meta.label}</span>\`;
+}
+function jobTypeCardClass(t){
+  const type=normalizeJobType(t);
+  return type==='Free'?'':' jt-card-'+type.toLowerCase();
+}
 let pg=1,cat='',srch='',advT,srchT;
 let jobs=${JSON.stringify(initialJobs)},total=${initialTotal};
 let savedIds=JSON.parse(localStorage.getItem('jn_saved')||'[]');
@@ -647,13 +641,15 @@ function renderJobsList(){
     const k=catForTitle(j.title);
     const meta=CAT_META[k];
     const bg=pastelFor(j);
-    return\`<a href="/job/\${j.id}" class="job-card" style="--cat-color:\${meta.color};background:\${bg};animation:fadeInUp .3s ease \${Math.min(idx,6)*.04}s both">
+    const locFlag=j.location?clientCountryFlag(j.location.split(',').pop().trim()):'';
+    return\`<a href="/job/\${j.id}" class="job-card\${jobTypeCardClass(j.job_type)}" style="--cat-color:\${meta.color};background:\${bg};animation:fadeInUp .3s ease \${Math.min(idx,6)*.04}s both">
       \${timeAgo?'<span class="card-time-corner">'+ICONS.clock+' '+timeAgo+'</span>':''}
       <div class="card-inner">
         <div class="card-row1">
           \${logoHtml(j.company)}
           <div class="card-body">
             <div class="card-badges">
+              \${jobTypeBadge(j.job_type)}
               <span class="cat-dot"><span class="dot"></span>\${esc(meta.label)}</span>
               \${j.featured?'<span class="tag-pinned">'+ICONS.pin+' Pinned</span>':''}
               \${nw?'<span class="tag-new">'+ICONS.sparkle+' NEW</span>':''}
@@ -662,11 +658,12 @@ function renderJobsList(){
             <div class="job-title-card">\${esc(j.title)}</div>
             <div class="job-co-card">\${esc(j.company)} <span class="verified-ico">\${ICONS.badgeCheck}</span></div>
             <div class="job-meta-row">
-              \${j.location?'<span class="tag tag-loc">'+ICONS.mapPin+' '+esc(j.location)+'</span>':''}
+              \${j.location?'<span class="tag tag-loc">'+locFlag+' '+esc(j.location)+'</span>':''}
               \${remoteTag(j.remote_type)}
               \${j.employment_type?'<span class="tag tag-type">'+esc(j.employment_type.replace(/_/g,' '))+'</span>':''}
               \${j.seniority?'<span class="tag tag-type">'+esc(j.seniority)+'</span>':''}
             </div>
+            \${normalizeJobType(j.job_type)==='Sponsored'&&j.job_type_note?'<div class="jt-note">'+esc(j.job_type_note)+'</div>':''}
           </div>
         </div>
         \${j.salary?'<div class="card-right"><div class="salary-badge">'+esc(j.salary)+'</div></div>':''}
@@ -783,6 +780,30 @@ document.addEventListener('DOMContentLoaded',()=>{
   savedIds.forEach(id=>{const b=document.getElementById('sb-'+id);if(b)b.classList.add('saved');});
   renderPagination();
 });
+
+// Filters bar slides away once the visitor scrolls down past the hero/
+// company strip into the job cards, and slides back in on scroll-up —
+// keeps the four facet chips reachable without permanently occupying
+// space while browsing.
+(function(){
+  let lastY=0,hidden=false;
+  window.addEventListener('scroll',function(){
+    const bar=document.getElementById('filtersBar');
+    if(!bar)return;
+    const curY=window.scrollY;
+    const scrollingDown=curY>lastY;
+    const pastThreshold=curY>140;
+    if(scrollingDown&&pastThreshold&&!hidden){
+      bar.classList.add('bar-hidden');
+      hidden=true;
+      FACETS.forEach(f=>{const p=document.getElementById(f+'Panel');if(p)p.classList.remove('open');});
+    }else if((!scrollingDown||!pastThreshold)&&hidden){
+      bar.classList.remove('bar-hidden');
+      hidden=false;
+    }
+    lastY=curY<=0?0:curY;
+  },{passive:true});
+})();
 </script>
 </body>
 </html>`;
