@@ -17,6 +17,7 @@ import { cleanupStaleJobs } from '../db/cleanup.js';
 import { renderJobsListContent, renderJobEditContent, renderDuplicatesContent } from '../pages/admin/jobs.js';
 import { renderCompaniesListContent } from '../pages/admin/companies.js';
 import { adminShell } from '../pages/admin/shell.js';
+import { JOB_TYPE_META } from '../config/constants.js';
 
 function errorPage(err) {
   const msg = (err && err.message ? err.message : String(err)).replace(/</g, '&lt;');
@@ -189,8 +190,10 @@ export async function handleAdminRoute(url, request, env, base) {
       const id = form.get('id');
       if (!id) return new Response(null, { status: 302, headers: { 'Location': '/admin/jobs' } });
       const skills = (form.get('skills') || '').toString().split(',').map(s => s.trim()).filter(Boolean);
+      const submittedJobType = (form.get('job_type') || '').toString();
+      const jobType = JOB_TYPE_META[submittedJobType] ? submittedJobType : 'Free';
       await env.DB.prepare(
-        `UPDATE jobs SET title=?, company=?, location=?, url=?, salary=?, seniority=?, remote_type=?, employment_type=?, skills=?, description=?, featured=? WHERE id=?`
+        `UPDATE jobs SET title=?, company=?, location=?, url=?, salary=?, seniority=?, remote_type=?, employment_type=?, skills=?, description=?, featured=?, job_type=?, job_type_note=? WHERE id=?`
       ).bind(
         (form.get('title') || '').toString().slice(0, 200),
         (form.get('company') || '').toString().slice(0, 200),
@@ -203,6 +206,8 @@ export async function handleAdminRoute(url, request, env, base) {
         JSON.stringify(skills),
         (form.get('description') || '').toString().slice(0, 20000),
         form.get('featured') ? 1 : 0,
+        jobType,
+        (form.get('job_type_note') || '').toString().slice(0, 140),
         id
       ).run();
       return new Response(null, { status: 302, headers: { 'Location': `/admin/jobs/edit?id=${id}&flash=${encodeURIComponent('Job updated')}` } });
