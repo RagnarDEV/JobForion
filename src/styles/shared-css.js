@@ -12,7 +12,10 @@ export const SHARED_CSS = `
   --green:#0FAE79;--amber:#F5A623;--coral:#FF5C7A;--cyan:#0EA5C4;--pink:#D6489B;
   --pastel-blue:#E9F1FF;--pastel-yellow:#FFF6DC;--pastel-pink:#FDEBF4;--pastel-green:#E8F9F1;
   --salary:#0FAE79;
+  --font-mono:'JetBrains Mono',ui-monospace,'SF Mono',Menlo,monospace;
   --r:14px;--shadow:0 2px 10px rgba(18,22,43,.05);--shadow-lg:0 16px 40px rgba(18,22,43,.12);
+  --shadow-card:0 1px 2px rgba(18,22,43,.04),0 8px 24px -4px rgba(18,22,43,.08);
+  --shadow-card-hover:0 4px 12px rgba(18,22,43,.06),0 20px 40px -8px rgba(53,86,255,.16);
 }
 html{scroll-behavior:smooth}
 body{font-family:'Plus Jakarta Sans',-apple-system,BlinkMacSystemFont,sans-serif;background:var(--bg);color:var(--ink);min-height:100vh;line-height:1.6;-webkit-font-smoothing:antialiased}
@@ -81,6 +84,45 @@ button{font-family:inherit}
 
 /* ── PINNED BADGE (shared across every job-card renderer) ── */
 .tag-pinned{background:var(--brand-soft);color:var(--brand);border:none;font-size:10px;padding:3px 9px;font-weight:800;letter-spacing:.3px;border-radius:20px}
+
+/* ── JOB TYPE SYSTEM (Free / Featured / Premium / Sponsored) ──────────
+   Free: no badge, no card treatment — the existing default design.
+   Visual intensity: Featured < Premium < Sponsored, matching the
+   required display-priority order (Sponsored first, then Premium, then
+   Featured, then Free). Built with CSS variables so it stays consistent
+   if/when a public-site dark mode is added. ── */
+.jt-badge{display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:800;padding:3px 9px;border-radius:20px;letter-spacing:.2px;white-space:nowrap}
+.jt-badge-featured{background:var(--brand-soft);color:var(--brand);border:1px solid rgba(53,86,255,.22)}
+.jt-badge-premium{background:linear-gradient(135deg,#FFF8E6,#FBEDC7);color:#8A6416;border:1px solid rgba(212,161,42,.4)}
+.jt-badge-sponsored{background:linear-gradient(135deg,#E8F9F1,#D9F3E7);color:#0B7A50;border:1px solid rgba(15,174,121,.35)}
+
+/* Featured: calm, understated lift — a soft brand-colored border/shadow
+   and a very slight scale, per spec ("ليست مبالغًا بها"). */
+.jt-card-featured{border-color:rgba(53,86,255,.3) !important;box-shadow:0 4px 18px rgba(53,86,255,.12);transform:scale(1.008)}
+.jt-card-featured:hover{box-shadow:0 10px 26px rgba(53,86,255,.2);transform:scale(1.015) translateY(-2px)}
+
+/* Premium: gradient border via the double-background technique (opaque
+   surface layer + gradient layer, clipped so only the border ring shows
+   the gradient), a calm gold glow, bigger logo, bolder title. */
+.jt-card-premium{position:relative;border:1.5px solid transparent !important;background-image:linear-gradient(var(--surface),var(--surface)),linear-gradient(120deg,#D4A12A,#F3DE9E 45%,#D4A12A);background-origin:border-box;background-clip:padding-box,border-box;box-shadow:0 6px 22px rgba(212,161,42,.16)}
+.jt-card-premium:hover{box-shadow:0 12px 30px rgba(212,161,42,.26);transform:translateY(-3px)}
+.jt-card-premium .co-logo{width:60px !important;height:60px !important}
+.jt-card-premium .job-title-card{font-size:15px;font-weight:800}
+
+/* Sponsored: the clearest tier, but via a tasteful tinted wash + a
+   luxurious border rather than a loud "ad" look. */
+.jt-card-sponsored{position:relative;border:1.5px solid rgba(15,174,121,.4) !important;background-image:linear-gradient(180deg,rgba(15,174,121,.07),transparent 50%);box-shadow:0 8px 26px rgba(15,174,121,.18)}
+.jt-card-sponsored:hover{box-shadow:0 14px 34px rgba(15,174,121,.28);transform:translateY(-3px)}
+.jt-card-sponsored .co-logo{width:62px !important;height:62px !important}
+.jt-card-sponsored .job-title-card{font-size:15px;font-weight:800}
+
+/* Optional one-line note (job_type_note), currently only surfaced for
+   Sponsored — reusable by any tier later without another schema change. */
+.jt-note{font-size:11.5px;color:var(--ink3);margin-top:6px;font-style:italic;line-height:1.4}
+
+/* Compact tier icon used in the directory-listing row (jobRowMini) */
+.related-jt-tier{font-size:12px}
+.related-card.jt-card-featured,.related-card.jt-card-premium,.related-card.jt-card-sponsored{padding:14px 16px}
 
 /* ── FACET PICKER PANEL (shared by the homepage's Category / Country /
    Skills / Companies chips — one visual pattern for all four facets) ── */
