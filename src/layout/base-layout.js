@@ -43,7 +43,7 @@ ${ogImage ? `<meta property="og:image" content="${ogImage}">` : `<meta property=
 <link rel="alternate" type="application/rss+xml" title="JobForion Jobs Feed" href="${BASE_URL}/feed.rss">
 ${extraHead}
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700;800&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700;800&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
 <style>
 ${SHARED_CSS}
 .page{max-width:860px;margin:0 auto;padding:36px 20px 72px}
@@ -60,7 +60,7 @@ ${SHARED_CSS}
 .job-co-loc{font-size:12px;color:var(--ink3)}
 .job-title-h1{font-family:'Space Grotesk',sans-serif;font-size:26px;font-weight:700;letter-spacing:-.5px;line-height:1.25;margin-bottom:14px;color:var(--ink)}
 .job-chips{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:16px}
-.job-salary-lg{font-size:22px;font-weight:800;color:var(--salary)}
+.job-salary-lg{font-family:var(--font-mono);font-size:21px;font-weight:700;color:var(--salary)}
 .job-body{padding:24px;border-top:1px solid var(--border)}
 .sec-label{font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--ink3);margin-bottom:12px}
 .skills-wrap{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:24px}
@@ -85,7 +85,7 @@ ${SHARED_CSS}
 .related-info{flex:1;min-width:0}
 .related-jt{font-size:13px;font-weight:700;color:var(--ink);margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .related-co{font-size:12px;color:var(--brand)}
-.related-sal{font-size:12px;font-weight:700;color:var(--salary);white-space:nowrap}
+.related-sal{font-family:var(--font-mono);font-size:11.5px;font-weight:700;color:var(--salary);white-space:nowrap}
 .article-cat{font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--brand);margin-bottom:12px}
 .article-title{font-family:'Space Grotesk',sans-serif;font-size:28px;font-weight:700;letter-spacing:-.5px;line-height:1.25;margin-bottom:14px;color:var(--ink)}
 .article-meta{font-size:12px;color:var(--ink3);display:flex;gap:16px;margin-bottom:28px;flex-wrap:wrap}
