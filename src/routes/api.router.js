@@ -4,6 +4,7 @@
 
 import { syncJobs } from '../db/sync.js';
 import { checkRateLimit } from '../lib/rate-limit.js';
+import { JOB_TYPE_SORT_SQL } from '../config/constants.js';
 
 export async function handleApiRoute(url, request, env) {
   if (url.pathname === '/api/subscribe' && request.method === 'POST') {
@@ -86,7 +87,7 @@ export async function handleApiRoute(url, request, env) {
     if (skill) { conditions.push("EXISTS (SELECT 1 FROM json_each(jobs.skills) je WHERE je.value = ?)"); params.push(skill); }
     if (company) { conditions.push("company = ?"); params.push(company); }
     const where = conditions.length ? " WHERE " + conditions.join(" AND ") : "";
-    const { results } = await env.DB.prepare(`SELECT * FROM jobs${where} ORDER BY featured DESC, id DESC LIMIT ${limit} OFFSET ${offset}`).bind(...params).all();
+    const { results } = await env.DB.prepare(`SELECT * FROM jobs${where} ORDER BY ${JOB_TYPE_SORT_SQL} ASC, featured DESC, id DESC LIMIT ${limit} OFFSET ${offset}`).bind(...params).all();
     const { results: cr } = await env.DB.prepare(`SELECT COUNT(*) as total FROM jobs${where}`).bind(...params).all();
     return new Response(JSON.stringify({ jobs: results, total: cr[0]?.total || 0, page }), { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } });
   }
