@@ -13,6 +13,8 @@
 // pages, but flagged for a future proper geo-normalization pass.
 // ════════════════════════════════════════════════════════════════
 
+import { JOB_TYPE_SORT_SQL } from '../config/constants.js';
+
 // ════════════════════════════════════════════════════════════════
 // SECURITY: escapeHtml — every field that ultimately comes from an
 // external, unmoderated source (scraped LinkedIn/JobDataLake listings,
@@ -106,7 +108,7 @@ export async function findCompanyBySlug(env, slug) {
 
 export async function jobsByCompany(env, companyName, { limit = 100 } = {}) {
   const { results } = await env.DB.prepare(
-    `SELECT * FROM jobs WHERE company = ? ORDER BY id DESC LIMIT ?`
+    `SELECT * FROM jobs WHERE company = ? ORDER BY ${JOB_TYPE_SORT_SQL} ASC, id DESC LIMIT ?`
   ).bind(companyName, limit).all();
   return results || [];
 }
@@ -145,7 +147,7 @@ export async function findCountryBySlug(env, slug) {
 export async function jobsByRegion(env, regionName, { limit = 100 } = {}) {
   // matches on the trailing "region" segment of location (country/state heuristic)
   const { results } = await env.DB.prepare(
-    `SELECT * FROM jobs WHERE location = ? OR location LIKE ? ORDER BY id DESC LIMIT ?`
+    `SELECT * FROM jobs WHERE location = ? OR location LIKE ? ORDER BY ${JOB_TYPE_SORT_SQL} ASC, id DESC LIMIT ?`
   ).bind(regionName, `%, ${regionName}`, limit).all();
   return results || [];
 }
@@ -173,7 +175,7 @@ export async function findCityBySlug(env, slug) {
 
 export async function jobsByCity(env, cityName, { limit = 100 } = {}) {
   const { results } = await env.DB.prepare(
-    `SELECT * FROM jobs WHERE location = ? OR location LIKE ? ORDER BY id DESC LIMIT ?`
+    `SELECT * FROM jobs WHERE location = ? OR location LIKE ? ORDER BY ${JOB_TYPE_SORT_SQL} ASC, id DESC LIMIT ?`
   ).bind(cityName, `${cityName},%`, limit).all();
   return results || [];
 }
@@ -209,7 +211,7 @@ export async function jobsBySkill(env, skillName, { limit = 100 } = {}) {
   try {
     const { results } = await env.DB.prepare(
       `SELECT jobs.* FROM jobs, json_each(jobs.skills)
-       WHERE json_each.value = ? ORDER BY jobs.id DESC LIMIT ?`
+       WHERE json_each.value = ? ORDER BY ${JOB_TYPE_SORT_SQL} ASC, jobs.id DESC LIMIT ?`
     ).bind(skillName, limit).all();
     return results || [];
   } catch (e) {
