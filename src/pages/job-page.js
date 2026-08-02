@@ -1,6 +1,6 @@
 // src/pages/job-page.js
 
-import { logoImgHtml, remoteTagHtml, catForTitleServer } from '../components/job-card.js';
+import { logoImgHtml, remoteTagHtml, catForTitleServer, jobTypeBadgeHtml, jobTypeCardClass, normalizeJobType } from '../components/job-card.js';
 import { CATEGORY_META } from '../config/constants.js';
 import { baseLayout } from '../layout/base-layout.js';
 import { slugify, escapeHtml, cleanDescription, parseSalaryRange, categorySalaryStats, companySnapshot } from '../lib/entities.js';
@@ -160,11 +160,11 @@ export async function renderJobPage(job, related, base, env) {
   const content = `
 <div class="page">
   <div class="breadcrumb"><a href="/">JobForion</a><span>›</span><a href="/">Jobs</a><span>›</span><span>${escapeHtml(job.title)}</span></div>
-  <div class="job-hero">
+  <div class="job-hero${jobTypeCardClass(job.job_type)}">
     <div class="job-hero-hdr">
       <div class="job-co-row">
         ${logoImgHtml(job.company, '64px', 'job-logo')}
-        <div style="flex:1"><div class="job-co-name"><a href="/companies/${slugify(job.company)}" style="color:inherit">${escapeHtml(job.company)}</a> <span class="verified-ico" title="Verified listing">${iconBadgeCheck({ size: 14 })}</span></div><div class="job-co-loc">${iconMapPin({ size: 12 })} ${escapeHtml(job.location || 'Remote')}</div></div>
+        <div style="flex:1"><div class="job-co-name"><a href="/companies/${slugify(job.company)}" style="color:inherit">${escapeHtml(job.company)}</a> <span class="verified-ico" title="Verified listing">${iconBadgeCheck({ size: 14 })}</span>${normalizeJobType(job.job_type) === 'Sponsored' ? '<span class="jt-sponsored-tag">Sponsored Company</span>' : ''}</div><div class="job-co-loc">${iconMapPin({ size: 12 })} ${escapeHtml(job.location || 'Remote')}</div>${normalizeJobType(job.job_type) === 'Sponsored' && job.job_type_note ? `<div class="jt-note" style="margin-top:4px">${escapeHtml(job.job_type_note)}</div>` : ''}</div>
         <div class="job-actions">
           <button class="job-act-btn" id="jobSaveBtn" onclick="toggleJobSave(${job.id})" title="Save job">${iconBookmark({ size: 16 })}<span class="job-act-label">Save</span></button>
           <button class="job-act-btn" id="jobCopyBtn" onclick="copyJobLink()" title="Copy link">${iconLink({ size: 16 })}<span class="job-act-label">Copy Link</span></button>
@@ -172,6 +172,7 @@ export async function renderJobPage(job, related, base, env) {
       </div>
       <h1 class="job-title-h1">${escapeHtml(job.title)}</h1>
       <div class="job-chips">
+        ${jobTypeBadgeHtml(job.job_type)}
         ${remoteTagHtml(job.remote_type)}
         <a href="/categories/${categoryKey}" class="tag tag-type" style="text-decoration:none">${categoryLabel}</a>
         ${job.employment_type ? `<span class="tag tag-type">${escapeHtml(job.employment_type.replace(/_/g, ' '))}</span>` : ''}
@@ -215,6 +216,10 @@ export async function renderJobPage(job, related, base, env) {
 .insight-card-body{font-size:13px;color:var(--ink2);line-height:1.6}
 .insight-card-body strong{color:var(--ink)}
 .insight-card-body a{color:var(--brand);font-weight:700}
+.jt-sponsored-tag{display:inline-block;font-size:10px;font-weight:800;color:#0B7A50;background:rgba(15,174,121,.12);border:1px solid rgba(15,174,121,.3);padding:2px 8px;border-radius:20px;margin-left:6px;vertical-align:middle}
+.job-hero.jt-card-premium .job-logo,.job-hero.jt-card-sponsored .job-logo{width:76px !important;height:76px !important}
+.job-hero.jt-card-premium .job-title-h1,.job-hero.jt-card-sponsored .job-title-h1{font-weight:800}
+.job-hero.jt-card-premium .apply-big,.job-hero.jt-card-sponsored .apply-big{padding:16px 40px;font-size:17px;box-shadow:0 8px 24px rgba(53,86,255,.28)}
 </style>
 <script>
 (function(){
