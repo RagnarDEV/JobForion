@@ -12,7 +12,7 @@
 // abbreviation picked up by the location-splitting heuristic) falls back
 // to a neutral globe emoji rather than guessing and showing a wrong flag.
 
-const COUNTRY_TO_ISO = {
+export const COUNTRY_TO_ISO = {
   'united states': 'US', 'usa': 'US', 'us': 'US', 'u.s.': 'US', 'u.s.a.': 'US',
   'united kingdom': 'GB', 'uk': 'GB', 'u.k.': 'GB', 'england': 'GB', 'scotland': 'GB', 'wales': 'GB', 'northern ireland': 'GB',
   'canada': 'CA',
