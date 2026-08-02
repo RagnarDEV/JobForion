@@ -3,9 +3,10 @@
 // category classification, "new/hot" pastel styling, and the two card renderers
 // (SSR full card + compact directory-page row).
 
-import { CATEGORY_META, CATEGORY_ORDER } from '../config/constants.js';
+import { CATEGORY_META, CATEGORY_ORDER, JOB_TYPE_META } from '../config/constants.js';
 import { slugify, escapeHtml } from '../lib/entities.js';
 import { iconSparkle, iconFlame, iconPin, iconMapPin, iconBadgeCheck, iconClock, iconGlobe, iconBuilding } from '../assets/icons.js';
+import { countryFlag } from '../lib/country-flags.js';
 
 export function logoImgHtml(company, size = '64px', cls = 'job-logo') {
   const safeCompany = escapeHtml(company);
@@ -30,10 +31,12 @@ export function remoteTagHtml(t) {
 
 export function jobRowMini(job) {
   const meta = CATEGORY_META[catForTitleServer(job.title)];
-  return `<a href="/job/${job.id}" class="related-card">
+  const jobType = normalizeJobType(job.job_type);
+  const tierIcon = jobType !== 'Free' ? `<span class="related-jt-tier" title="${JOB_TYPE_META[jobType].label}">${JOB_TYPE_META[jobType].icon}</span> ` : '';
+  return `<a href="/job/${job.id}" class="related-card${jobTypeCardClass(job.job_type)}">
     ${logoImgHtml(job.company, '38px', 'related-logo')}
     <div class="related-info">
-      <div class="related-jt">${escapeHtml(job.title)}</div>
+      <div class="related-jt">${tierIcon}${escapeHtml(job.title)}</div>
       <div class="related-co">${escapeHtml(job.company)} · <a href="/companies/${slugify(job.company)}" style="color:var(--ink3)" onclick="event.stopPropagation()">view company →</a></div>
     </div>
     ${job.salary ? `<div class="related-sal">${escapeHtml(job.salary)}</div>` : ''}
@@ -65,6 +68,38 @@ export function catForTitleServer(title) {
   for (const k of CATEGORY_ORDER) { if (t.includes(k)) return k; }
   return 'developer';
 }
+
+// ════════════════════════════════════════════════════════════════
+// JOB TYPE (Free / Featured / Premium / Sponsored) — shared helpers used
+// by every job-rendering surface (jobCardSSR below, home.js's client-side
+// renderJobsList(), jobRowMini, job-page.js). See config/constants.js for
+// the tier priority/labels — this file only turns that data into markup.
+// ════════════════════════════════════════════════════════════════
+
+// Any stored value that isn't one of the 4 known tiers (legacy rows,
+// unexpected data) safely falls back to 'Free' rather than rendering an
+// unstyled badge or crashing.
+export function normalizeJobType(jobType) {
+  return (jobType && JOB_TYPE_META[jobType]) ? jobType : 'Free';
+}
+
+// Free jobs get no badge at all — badges are the whole point of a paid
+// tier standing out, so a "Free" badge on every ordinary listing would
+// just be visual noise.
+export function jobTypeBadgeHtml(jobType) {
+  const type = normalizeJobType(jobType);
+  if (type === 'Free') return '';
+  const meta = JOB_TYPE_META[type];
+  return `<span class="jt-badge jt-badge-${type.toLowerCase()}">${meta.icon} ${meta.label}</span>`;
+}
+
+// Extra class applied to the card wrapper for tier-specific border/shadow/
+// scale treatment (see the .jt-card-* rules in styles/shared-css.js).
+export function jobTypeCardClass(jobType) {
+  const type = normalizeJobType(jobType);
+  return type === 'Free' ? '' : ` jt-card-${type.toLowerCase()}`;
+}
+
 export function pastelForJob(job) {
   // Background tint is now meaningful, not decorative: only pinned and
   // high-salary jobs get a tint. "New" already has its own badge, so it
@@ -90,13 +125,16 @@ export function jobCardSSR(job, idx) {
   const isHot = job.salary && parseInt(job.salary.replace(/\D/g, '').slice(0, 3)) >= 150;
   const bg = pastelForJob(job);
   const timeAgo = timeAgoServer(job.created_at);
-  return `<a href="/job/${job.id}" class="job-card" style="--cat-color:${meta.color};background:${bg};animation:fadeInUp .3s ease ${Math.min(idx, 6) * .04}s both">
+  const jobType = normalizeJobType(job.job_type);
+  const locationFlag = job.location ? countryFlag(job.location.split(',').pop().trim()) : '';
+  return `<a href="/job/${job.id}" class="job-card${jobTypeCardClass(job.job_type)}" style="--cat-color:${meta.color};background:${bg};animation:fadeInUp .3s ease ${Math.min(idx, 6) * .04}s both">
     ${timeAgo ? `<span class="card-time-corner">${iconClock({ size: 11 })} ${timeAgo}</span>` : ''}
     <div class="card-inner">
       <div class="card-row1">
         ${logoImgHtml(job.company, '54px', 'co-logo')}
         <div class="card-body">
           <div class="card-badges">
+            ${jobTypeBadgeHtml(job.job_type)}
             <span class="cat-dot"><span class="dot"></span>${meta.label}</span>
             ${job.featured ? `<span class="tag-pinned">${iconPin({ size: 11 })} Pinned</span>` : ''}
             ${isNew ? `<span class="tag-new">${iconSparkle({ size: 11 })} NEW</span>` : ''}
@@ -105,10 +143,11 @@ export function jobCardSSR(job, idx) {
           <div class="job-title-card">${escapeHtml(job.title)}</div>
           <div class="job-co-card">${escapeHtml(job.company)} <span class="verified-ico" title="Verified">${iconBadgeCheck({ size: 12 })}</span></div>
           <div class="job-meta-row">
-            ${job.location ? `<span class="tag tag-loc">${iconMapPin({ size: 11 })} ` + escapeHtml(job.location) + '</span>' : ''}
+            ${job.location ? `<span class="tag tag-loc">${locationFlag} ` + escapeHtml(job.location) + '</span>' : ''}
             ${remoteTagHtml(job.remote_type)}
             ${job.employment_type ? '<span class="tag tag-type">' + escapeHtml(job.employment_type.replace(/_/g, ' ')) + '</span>' : ''}
           </div>
+          ${jobType === 'Sponsored' && job.job_type_note ? `<div class="jt-note">${escapeHtml(job.job_type_note)}</div>` : ''}
         </div>
       </div>
       ${job.salary ? '<div class="card-right"><div class="salary-badge">' + escapeHtml(job.salary) + '</div></div>' : ''}
