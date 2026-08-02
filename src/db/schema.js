@@ -145,6 +145,26 @@ export async function ensureTable(env) {
   // removed from D1 are two independently reasoned-about steps.
   await ensureColumn(env, 'jobs', 'status', "TEXT DEFAULT 'active'");
 
+  // ── Job Type tiers (Free / Featured / Premium / Sponsored) ──────
+  // Monetization display tier — separate from the existing `featured`
+  // boolean above (that one is a simple admin "pin to top" toggle used
+  // within a tier; this is the paid-tier system requested for the
+  // Free/Featured/Premium/Sponsored badge + ordering feature). Both are
+  // kept: sort order uses job_type as the primary key and the old
+  // `featured` flag as a secondary tiebreaker within each tier, so
+  // existing pinned jobs keep working exactly as before.
+  //
+  // DEFAULT 'Free' applies to every row retroactively the moment this
+  // column is added (SQLite backfills ALTER TABLE ADD COLUMN...DEFAULT
+  // immediately), so no separate UPDATE/backfill step is needed for
+  // existing jobs.
+  await ensureColumn(env, 'jobs', 'job_type', "TEXT DEFAULT 'Free'");
+  // Optional short one-liner shown for higher tiers (e.g. Sponsored's
+  // "Sponsored Company" blurb) — nullable, rendered only when present.
+  // Admin-editable; not tied to any specific tier at the schema level so
+  // it stays reusable if future tiers want the same treatment.
+  await ensureColumn(env, 'jobs', 'job_type_note', 'TEXT');
+
   // Daily cleanup run history — mirrors sync_logs's shape so the future
   // stats dashboard can reuse the same rendering pattern for both.
   await env.DB.prepare(`
