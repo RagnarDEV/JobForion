@@ -61,28 +61,67 @@ const AD_SIZE = {
   'blog-article-footer': { w: 300, h: 250 },
 };
 
-// RELIABILITY: third-party ad networks occasionally return a "no fill",
-// mismatched-size, or broken creative — especially on slow/flaky mobile
-// connections, or when an ad blocker on the visitor's device intercepts
-// the highperformanceformat.com script/iframe partway through loading.
-// Previously the live-ad container had no fixed dimensions, so a broken
-// creative was free to render as a large blank box with a browser
-// "broken image" icon stretched across the full content width — very
-// visible and unprofessional. Every live slot now gets a hard-clipped
-// box sized to exactly what it asked Adsterra for (`overflow:hidden` +
-// fixed width/height, capped to the viewport with max-width:100% so it
-// can never force horizontal scroll on narrow phones). A failed ad is
-// now, worst case, a small contained gray box the size of a banner —
-// never a layout-breaking one. This is a client-side, defensive fix;
-// it does not address WHY a given impression failed to fill (that's an
-// Adsterra dashboard / ad-blocker / network question — see notes above
-// each BANNER_ const for the zone keys to check).
+// RELIABILITY — root cause: Adsterra's invoke.js renders the ad via
+// document.write(). Chrome (and Chromium-based mobile browsers) actively
+// DISABLES document.write() for a synchronously-loaded, cross-origin
+// <script src> whenever it detects a slow/2G-like connection — a
+// deliberate "Intervening against document.write()" protection, not a
+// bug. On a fast connection the ad renders fine; on a slow one (exactly
+// the few-KB/s connection visible in the screenshot) Chrome silently
+// no-ops the write, and whatever partial DOM the browser was left with
+// renders as a broken box. Sizing the container (below) contains the
+// damage but doesn't fix the actual cause.
+//
+// The fix — and this is what every major ad network's own embed code
+// does for document.write()-based tags — is to never let document.write()
+// run in the MAIN page document at all. Each slot now renders into its
+// own blank, same-page <iframe>; the Adsterra snippet is written into
+// that iframe's OWN document via JS (iframe.contentDocument.write()).
+// Chrome's slow-connection intervention only targets document.write()
+// reached through a parser-blocking script tag in the top-level
+// document — a JS-created iframe's document is exempt, so the ad renders
+// correctly regardless of connection speed. As a side benefit, each ad
+// now also gets a fully isolated `window`/`atOptions`, so two different
+// ad slots on the same page (job-detail-inline + job-detail-footer) can
+// never step on each other's config even in edge-case load orders.
+// SECURITY/CORRECTNESS: the Adsterra snippet embedded in `code` contains
+// literal `</script>` tags. JSON.stringify() does NOT escape "/", so
+// naively dropping JSON.stringify(code) inside a real HTML <script>
+// element would let the HTML parser see that literal "</script>" and
+// close OUR wrapping script tag early — corrupting the page and silently
+// breaking every ad slot rendered after it. Escaping "<" to its unicode
+// form keeps the JS string value byte-for-byte identical at runtime
+// while making that break-out impossible (same technique already used
+// in pages/job-page.js's safeJsonLd for the same class of issue).
+function safeJsForScriptTag(str) {
+  return JSON.stringify(str).replace(/</g, '\\u003c');
+}
+
+function adFrameScript(uid, code) {
+  return `<script>(function(){
+  var f=document.getElementById(${JSON.stringify(uid)});
+  if(!f)return;
+  try{
+    var d=f.contentWindow.document;
+    d.open();
+    d.write(${safeJsForScriptTag(code)});
+    d.close();
+  }catch(e){}
+})();</script>`;
+}
+
 export function adSlot(id, style = '') {
   const code = ADS[id];
   if (code) {
     const size = AD_SIZE[id] || { w: 300, h: 250 };
+    const uid = `adf_${id.replace(/[^a-z0-9]/gi, '')}`;
     const boxStyle = `width:${size.w}px;height:${size.h}px;max-width:100%;margin:16px auto;${style}`;
-    return `<div class="ad-slot ad-slot-live" style="${boxStyle}">${code}</div>`;
+    return `<div class="ad-slot ad-slot-live" style="${boxStyle}">` +
+      `<iframe id="${uid}" title="Advertisement" scrolling="no" ` +
+      `style="width:100%;height:100%;border:0;display:block" ` +
+      `sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox"></iframe>` +
+      adFrameScript(uid, code) +
+      `</div>`;
   }
   const styleAttr = style ? ` style="${style}"` : '';
   return `<div class="ad-slot"${styleAttr}><div class="ad-slot-label">Advertisement Slot</div><div class="ad-slot-hint">Reserved space — insert your ad network snippet here</div><!-- AD SLOT: ${id} --></div>`;
