@@ -21,6 +21,24 @@ export const CATEGORY_ORDER = Object.keys(CATEGORY_META);
 export const BASE_URL = 'https://jobforion.com';
 
 // ════════════════════════════════════════════════════════════════
+// ASSET_VERSION — single source of truth for cache-busting every
+// self-hosted brand asset (favicon.svg/.ico, favicon-32/16.png,
+// apple-touch-icon.png, icon-512.png). All six are served with a
+// long, aggressive Cache-Control (see routes/assets.router.js) for
+// performance — which means a phone that already loaded the old
+// logo will keep serving it from its local cache for days, even
+// after the Worker starts returning new bytes at the exact same
+// URL, because the browser never re-requests a URL it considers
+// still fresh. Appending `?v=${ASSET_VERSION}` to every reference
+// to these assets (nav, footer, admin shell, <head> icon links,
+// manifest.json, OG/schema logo URLs) turns each edit into a brand
+// new URL, forcing every device — desktop and mobile alike — to
+// fetch the new file immediately instead of waiting out the cache.
+// Bump this (date-based is simplest) any time the logo/icons change.
+// ════════════════════════════════════════════════════════════════
+export const ASSET_VERSION = '20260804';
+
+// ════════════════════════════════════════════════════════════════
 // JOB TYPE TIERS — Free / Featured / Premium / Sponsored
 // Single source of truth for priority order, labels, and icons. No
 // payment system yet (deliberately deferred) — this only controls
