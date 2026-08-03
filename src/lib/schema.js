@@ -38,19 +38,138 @@ export function organizationSchema(base) {
   };
 }
 
-export function jobPostingSchema(job, base) {
+// ════════════════════════════════════════════════════════════════
+// JobPosting (Google Jobs rich results) — SINGLE SOURCE OF TRUTH.
+// This used to be duplicated: an outdated, buggy copy lived here
+// (unused — nothing imported it) while pages/job-page.js kept its own
+// inline copy that received bug fixes over time. That drift is exactly
+// how bugs like these survive: a fix lands in one copy and never
+// reaches the other. From now on pages/job-page.js imports and calls
+// this function — there is only one implementation to keep correct.
+//
+// Fixed in this pass (Search Console flagged both as real errors):
+//  1. employmentType — must be the exact enum with an UNDERSCORE
+//     ("FULL_TIME"), not a space ("FULL TIME"). A previous
+//     .replace('_',' ') silently broke this for every job.
+//  2. baseSalary.value — must be a real NUMBER (e.g. 90000), not the
+//     raw display string ("$90k - $130k"). Google can't validate a
+//     string there, so it was rejecting the whole field.
+//  3. jobLocation — many jobs are remote with an EMPTY remote_type
+//     column (provider didn't set it) but a location string that says
+//     "Remote" in plain text. Previously that combination produced
+//     NEITHER jobLocationType NOR jobLocation — the field just vanished
+//     for those listings. Now free-text "Remote"/"Worldwide"/"Anywhere"
+//     is recognized as a fallback signal, but ONLY when remote_type is
+//     genuinely unset (an explicit 'hybrid'/'on_site' from the provider
+//     is never overridden by wording in the location text).
+// https://developers.google.com/search/docs/appearance/structured-data/job-posting
+// ════════════════════════════════════════════════════════════════
+
+import { isKnownCountry, US_STATE_CODES } from './country-flags.js';
+import { parseSalaryRange } from './entities.js';
+
+// Google's enum, underscore-separated. "CONTRACT" isn't valid — the
+// closest accepted value is "CONTRACTOR".
+const EMPLOYMENT_TYPE_SCHEMA_MAP = {
+  full_time: 'FULL_TIME',
+  part_time: 'PART_TIME',
+  contract: 'CONTRACTOR',
+  internship: 'INTERN',
+  temporary: 'TEMPORARY',
+  volunteer: 'VOLUNTEER',
+};
+
+// Builds a schema.org PostalAddress for jobLocation — but ONLY when the
+// country can be confidently determined from the free-text `location`
+// column (a recognized country name, or a US state code). Publishing a
+// wrong guess is worse than omitting the field entirely, since this
+// column has no normalized country data to begin with (see
+// splitLocation() in entities.js). Remote jobs don't need this at all —
+// they use jobLocationType instead (see isFullyRemoteJob below).
+function buildJobLocationSchema(location) {
+  if (!location) return null;
+  const parts = location.split(',').map(s => s.trim()).filter(Boolean);
+  const last = parts[parts.length - 1];
+  if (!last) return null;
+
+  if (isKnownCountry(last)) {
+    const address = { "@type": "PostalAddress", "addressCountry": last };
+    if (parts.length > 1) address.addressLocality = parts[0];
+    return { "@type": "Place", "address": address };
+  }
+  if (US_STATE_CODES.has(last.toUpperCase())) {
+    const address = { "@type": "PostalAddress", "addressCountry": "US", "addressRegion": last.toUpperCase() };
+    if (parts.length > 1) address.addressLocality = parts[0];
+    return { "@type": "Place", "address": address };
+  }
+  return null; // not confident enough to publish — omit rather than guess
+}
+
+// A job counts as fully remote for structured-data purposes if EITHER:
+//  - the provider explicitly set remote_type = 'fully_remote', OR
+//  - remote_type was left blank AND the free-text location itself
+//    clearly says so ("Remote", "Remote - US", "Worldwide", "Anywhere",
+//    "WFH"). This text fallback never fires when remote_type holds an
+//    explicit 'hybrid'/'on_site' — a real provider signal always wins
+//    over guessing from wording.
+function isFullyRemoteJob(job) {
+  if (job.remote_type === 'fully_remote') return true;
+  if (job.remote_type) return false;
+  const loc = (job.location || '').trim();
+  return /^remote\b/i.test(loc) || /^(anywhere|worldwide|work from home|wfh)$/i.test(loc);
+}
+
+// job.salary is stored/displayed as a "k-shorthand" string like
+// "$90k - $130k" (same convention used everywhere on the site — see
+// parseSalaryRange() in entities.js, which returns {min:90, max:130}).
+// Google's baseSalary needs the REAL annual figure, so these get
+// multiplied by 1000 here specifically for the schema output. Returns
+// null (field omitted) when the salary text has no parseable digits
+// (e.g. "Competitive") rather than emitting a value Google can't
+// validate.
+function buildBaseSalarySchema(salaryText) {
+  const range = parseSalaryRange(salaryText);
+  if (!range) return null;
+  const min = range.min * 1000, max = range.max * 1000;
+  const value = min === max
+    ? { "@type": "QuantitativeValue", "value": min, "unitText": "YEAR" }
+    : { "@type": "QuantitativeValue", "minValue": min, "maxValue": max, "unitText": "YEAR" };
+  return { "@type": "MonetaryAmount", "currency": "USD", "value": value };
+}
+
+// `overrides.description` lets callers (job-page.js) pass an already
+// HTML-stripped description (via cleanDescription()) instead of the raw
+// possibly-HTML-tagged job.description — kept as a param rather than
+// duplicating that cleanup logic here.
+export function jobPostingSchema(job, base, overrides = {}) {
   const canonical = `${base}/job/${job.id}`;
+  const isRemote = isFullyRemoteJob(job);
+  const jobLocationSchema = isRemote ? null : buildJobLocationSchema(job.location);
+  const employmentTypeSchema = job.employment_type ? EMPLOYMENT_TYPE_SCHEMA_MAP[job.employment_type] : undefined;
+  const baseSalarySchema = job.salary ? buildBaseSalarySchema(job.salary) : null;
+
   return {
     "@context": "https://schema.org", "@type": "JobPosting",
     "title": job.title,
-    "description": job.description || `${job.title} at ${job.company}. ${job.location || 'Remote'}.`,
+    "description": overrides.description || job.description || `${job.title} at ${job.company}. ${job.location || 'Remote'}.`,
+    "identifier": { "@type": "PropertyValue", "name": job.company, "value": String(job.job_handle || job.id) },
     "hiringOrganization": { "@type": "Organization", "name": job.company },
-    "jobLocation": { "@type": "Place", "address": job.location || "Remote" },
-    "employmentType": job.employment_type ? job.employment_type.toUpperCase().replace('_', ' ') : "FULL_TIME",
     "datePosted": job.created_at ? new Date(job.created_at).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
     "validThrough": new Date(Date.now() + 1000 * 60 * 60 * 24 * 45).toISOString().split('T')[0],
-    "url": canonical, "directApply": true,
-    ...(job.salary ? { "baseSalary": { "@type": "MonetaryAmount", "currency": "USD", "value": { "@type": "QuantitativeValue", "value": job.salary } } } : {})
+    "url": canonical,
+    // Required for Google's "Work from home jobs" experience.
+    // applicantLocationRequirements is intentionally omitted (no
+    // reliable data for it); per Google's docs, without it a remote job
+    // is simply shown broadly rather than being excluded.
+    ...(isRemote ? { "jobLocationType": "TELECOMMUTE" } : {}),
+    // jobLocation is required UNLESS the job is remote — for non-remote
+    // jobs we only publish it when the country is confidently known
+    // (see buildJobLocationSchema above); otherwise this listing simply
+    // won't be Google-Jobs-eligible until the location data improves,
+    // which is preferable to publishing a guessed country.
+    ...(jobLocationSchema ? { "jobLocation": jobLocationSchema } : {}),
+    ...(employmentTypeSchema ? { "employmentType": employmentTypeSchema } : {}),
+    ...(baseSalarySchema ? { "baseSalary": baseSalarySchema } : {}),
   };
 }
 
