@@ -10,7 +10,8 @@ import { SHARED_CSS } from '../styles/shared-css.js';
 import { ICON_HEAD } from '../assets/favicon.js';
 import { BASE_URL } from '../config/constants.js';
 import { escapeHtml } from '../lib/entities.js';
-import { GOOGLE_ANALYTICS_TAG } from '../lib/analytics-tag.js';
+import { GOOGLE_ANALYTICS_TAG, googleAnalyticsTag } from '../lib/analytics-tag.js';
+import { SETTINGS_DEFAULTS } from '../lib/settings.js';
 
 // SECURITY: title/description ultimately trace back to externally-sourced
 // content on many pages (job titles/companies scraped from LinkedIn,
@@ -18,13 +19,23 @@ import { GOOGLE_ANALYTICS_TAG } from '../lib/analytics-tag.js';
 // single shared template every page passes through, protects every caller
 // — including any future page that forgets to sanitize before calling
 // baseLayout() — instead of relying on each page to remember individually.
-export function baseLayout(title, description, canonical, ogImage, content, extraHead = '', robots = 'index, follow') {
+//
+// `settings` (new, optional, always the LAST parameter) is the resolved
+// object from lib/settings.js — pass it whenever the caller already has
+// it (see pages/job-page.js, pages/blog.js, pages/static-pages.js) to get
+// dynamic site name / GA id / social links threaded through nav + footer.
+// Callers that don't pass it (not yet migrated — see seo-pages.js) get
+// byte-identical output to before: every fallback below matches the old
+// hardcoded string exactly.
+export function baseLayout(title, description, canonical, ogImage, content, extraHead = '', robots = 'index, follow', settings = null) {
   const safeTitle = escapeHtml(title);
   const safeDescription = escapeHtml(description);
+  const siteName = escapeHtml(settings?.site_name || SETTINGS_DEFAULTS.site_name);
+  const gaTag = settings ? googleAnalyticsTag(settings.ga_measurement_id) : GOOGLE_ANALYTICS_TAG;
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
-${GOOGLE_ANALYTICS_TAG}
+${gaTag}
 <meta charset="UTF-8">
 <meta name="google-site-verification" content="7Q0EJk3kQKNLNzIhyzH4k5CsuHsQEa-U0Pwp_w_b0n0"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -36,11 +47,11 @@ ${ICON_HEAD}
 <meta property="og:description" content="${safeDescription}">
 <meta property="og:type" content="website">
 <meta property="og:url" content="${canonical}">
-<meta property="og:site_name" content="JobForion">
+<meta property="og:site_name" content="${siteName}">
 ${ogImage ? `<meta property="og:image" content="${ogImage}">` : `<meta property="og:image" content="${BASE_URL}/icon-512.png">`}
 <meta name="twitter:card" content="summary">
 <link rel="canonical" href="${canonical}">
-<link rel="alternate" type="application/rss+xml" title="JobForion Jobs Feed" href="${BASE_URL}/feed.rss">
+<link rel="alternate" type="application/rss+xml" title="${siteName} Jobs Feed" href="${BASE_URL}/feed.rss">
 ${extraHead}
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700;800&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
@@ -113,10 +124,10 @@ ${SHARED_CSS}
 </style>
 </head>
 <body>
-${navHtml()}
-${mobileHeaderHtml()}
+${navHtml(settings)}
+${mobileHeaderHtml(settings)}
 ${content}
-${footerHtml(BASE_URL)}
+${footerHtml(BASE_URL, settings)}
 ${postJobModalHtml()}
 </body>
 </html>`;
