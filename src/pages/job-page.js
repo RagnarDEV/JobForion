@@ -7,6 +7,7 @@ import { slugify, escapeHtml, cleanDescription, parseSalaryRange, categorySalary
 import { adSlot } from '../components/ad-slot.js';
 import { jobPostingSchema } from '../lib/schema.js';
 import { iconBadgeCheck, iconMapPin, iconSparkle, iconFlame, iconDollarSign, iconArrowRight, iconBookmark, iconLink, iconTrendingUp, iconBuilding } from '../assets/icons.js';
+import { getSettings } from '../lib/settings.js';
 
 // SECURITY: JSON.stringify() does NOT escape "<", so a malicious job title
 // like `</script><script>...` embedded in scraped/submitted data could
@@ -34,7 +35,7 @@ function safeJsonLd(obj) {
 // be reproduced verbatim by a competitor scraping the same source feed.
 // ════════════════════════════════════════════════════════════════
 
-function salaryInsightHtml(job, stats, categoryLabel) {
+function salaryInsightHtml(job, stats, categoryLabel, siteName) {
   if (!stats) return '';
   const jobRange = job.salary ? parseSalaryRange(job.salary) : null;
   let comparisonText = '';
@@ -49,22 +50,22 @@ function salaryInsightHtml(job, stats, categoryLabel) {
     }
   }
   const body = (jobRange && comparisonText)
-    ? `This role's listed salary is <strong>${comparisonText}</strong> the average for ${escapeHtml(categoryLabel)} positions on JobForion ($${stats.avgMin}k–$${stats.avgMax}k, based on ${stats.count} current listing${stats.count === 1 ? '' : 's'} with salary data).`
-    : `The average salary range for ${escapeHtml(categoryLabel)} positions on JobForion is <strong>$${stats.avgMin}k–$${stats.avgMax}k</strong>, based on ${stats.count} current listing${stats.count === 1 ? '' : 's'} with salary data.`;
+    ? `This role's listed salary is <strong>${comparisonText}</strong> the average for ${escapeHtml(categoryLabel)} positions on ${escapeHtml(siteName)} ($${stats.avgMin}k–$${stats.avgMax}k, based on ${stats.count} current listing${stats.count === 1 ? '' : 's'} with salary data).`
+    : `The average salary range for ${escapeHtml(categoryLabel)} positions on ${escapeHtml(siteName)} is <strong>$${stats.avgMin}k–$${stats.avgMax}k</strong>, based on ${stats.count} current listing${stats.count === 1 ? '' : 's'} with salary data.`;
   return `<div class="insight-card">
     <div class="insight-card-title">${iconTrendingUp({ size: 15 })} Salary Insight</div>
     <div class="insight-card-body">${body}</div>
   </div>`;
 }
 
-function companySnapshotHtml(job, snapshot) {
+function companySnapshotHtml(job, snapshot, siteName) {
   if (!snapshot || snapshot.openPositions < 1) return '';
   const since = snapshot.firstSeen
     ? new Date(snapshot.firstSeen).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
     : null;
   return `<div class="insight-card">
-    <div class="insight-card-title">${iconBuilding({ size: 15 })} About ${escapeHtml(job.company)} on JobForion</div>
-    <div class="insight-card-body">${escapeHtml(job.company)} currently has <strong>${snapshot.openPositions} open remote position${snapshot.openPositions === 1 ? '' : 's'}</strong> listed on JobForion${since ? `, hiring here since ${since}` : ''}. <a href="/companies/${slugify(job.company)}">View all openings →</a></div>
+    <div class="insight-card-title">${iconBuilding({ size: 15 })} About ${escapeHtml(job.company)} on ${escapeHtml(siteName)}</div>
+    <div class="insight-card-body">${escapeHtml(job.company)} currently has <strong>${snapshot.openPositions} open remote position${snapshot.openPositions === 1 ? '' : 's'}</strong> listed on ${escapeHtml(siteName)}${since ? `, hiring here since ${since}` : ''}. <a href="/companies/${slugify(job.company)}">View all openings →</a></div>
   </div>`;
 }
 
@@ -75,30 +76,31 @@ export async function renderJobPage(job, related, base, env) {
   const isHot = job.salary && parseInt(job.salary.replace(/\D/g, '').slice(0, 3)) >= 150;
   const canonical = `${base}/job/${job.id}`;
   const cleanDesc = cleanDescription(job.description);
-  const desc = cleanDesc.length > 20
-    ? cleanDesc.slice(0, 160).replace(/\n/g, ' ') + '...'
-    : `${job.title} at ${job.company}. ${job.location || 'Remote'}${job.salary ? ' — ' + job.salary : ''}. Apply on JobForion.`;
 
   const categoryKey = catForTitleServer(job.title);
   const categoryLabel = CATEGORY_META[categoryKey].label;
-  const [salaryStats, companyInfo] = await Promise.all([
+  const [salaryStats, companyInfo, settings] = await Promise.all([
     categorySalaryStats(env, categoryKey),
     companySnapshot(env, job.company),
+    getSettings(env),
   ]);
-  const insightsHtml = salaryInsightHtml(job, salaryStats, categoryLabel) + companySnapshotHtml(job, companyInfo);
+  const desc = cleanDesc.length > 20
+    ? cleanDesc.slice(0, 160).replace(/\n/g, ' ') + '...'
+    : `${job.title} at ${job.company}. ${job.location || 'Remote'}${job.salary ? ' — ' + job.salary : ''}. Apply on ${settings.site_name}.`;
+  const insightsHtml = salaryInsightHtml(job, salaryStats, categoryLabel, settings.site_name) + companySnapshotHtml(job, companyInfo, settings.site_name);
 
   const schema = safeJsonLd(jobPostingSchema(job, base, { description: cleanDesc || desc }));
   const breadcrumbSchema = safeJsonLd({
     "@context": "https://schema.org", "@type": "BreadcrumbList",
     "itemListElement": [
-      { "@type": "ListItem", "position": 1, "name": "JobForion", "item": base },
+      { "@type": "ListItem", "position": 1, "name": settings.site_name, "item": base },
       { "@type": "ListItem", "position": 2, "name": "Jobs", "item": base + "/" },
       { "@type": "ListItem", "position": 3, "name": job.title, "item": canonical }
     ]
   });
   const content = `
 <div class="page">
-  <div class="breadcrumb"><a href="/">JobForion</a><span>›</span><a href="/">Jobs</a><span>›</span><span>${escapeHtml(job.title)}</span></div>
+  <div class="breadcrumb"><a href="/">${escapeHtml(settings.site_name)}</a><span>›</span><a href="/">Jobs</a><span>›</span><span>${escapeHtml(job.title)}</span></div>
   <div class="job-hero${jobTypeCardClass(job.job_type)}">
     <div class="job-hero-hdr">
       <div class="job-co-row">
@@ -191,5 +193,5 @@ export async function renderJobPage(job, related, base, env) {
   refreshBtn();
 })();
 </script>`;
-  return baseLayout(`${job.title} at ${job.company} — JobForion`, desc, canonical, '', content, `<script type="application/ld+json">${schema}</script><script type="application/ld+json">${breadcrumbSchema}</script>`);
+  return baseLayout(`${job.title} at ${job.company} — ${settings.site_name}`, desc, canonical, '', content, `<script type="application/ld+json">${schema}</script><script type="application/ld+json">${breadcrumbSchema}</script>`, 'index, follow', settings);
 }
