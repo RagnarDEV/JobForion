@@ -2,11 +2,18 @@
 // Desktop nav bar + mobile header/menu (shared across every page).
 
 import { iconSearch, iconBuilding, iconFolder, iconBookmark, iconFileText, iconPlus, iconLock, iconMenu, iconGlobe, iconX } from '../assets/icons.js';
+import { escapeHtml } from '../lib/entities.js';
+import { SETTINGS_DEFAULTS } from '../lib/settings.js';
 
-export function navHtml() {
+// `settings` is optional everywhere in this file — every call site that
+// doesn't pass one gets the exact same hardcoded "JobForion" branding as
+// before (SETTINGS_DEFAULTS.site_name), so this change is zero-risk for
+// any caller not yet updated to fetch dynamic settings.
+export function navHtml(settings) {
+  const siteName = escapeHtml(settings?.site_name || SETTINGS_DEFAULTS.site_name);
   return `
 <nav class="nav">
-  <a href="/" class="nav-logo"><img src="/favicon.svg" alt="JobForion"><span>JobForion</span><span class="dot"></span></a>
+  <a href="/" class="nav-logo"><img src="/favicon.svg" alt="${siteName}"><span>${siteName}</span><span class="dot"></span></a>
   <div class="nav-links">
     <a href="/" class="nav-link">Browse Jobs</a>
     <a href="/companies" class="nav-link">Companies</a>
@@ -18,10 +25,11 @@ export function navHtml() {
 </nav>`;
 }
 
-export function mobileHeaderHtml() {
+export function mobileHeaderHtml(settings) {
+  const siteName = escapeHtml(settings?.site_name || SETTINGS_DEFAULTS.site_name);
   return `
 <div class="mob-hdr">
-  <a href="/" class="mob-logo"><img src="/favicon.svg" alt="JobForion">JobForion</a>
+  <a href="/" class="mob-logo"><img src="/favicon.svg" alt="${siteName}">${siteName}</a>
   <button class="mob-burger" onclick="toggleMobMenu()" id="mobBurgerBtn">${iconMenu({ size: 18 })}</button>
 </div>
 <div class="mob-menu" id="mobMenu">
