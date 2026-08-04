@@ -17,6 +17,8 @@ import { recordVisit } from './db/analytics.js';
 import { syncJobs } from './db/sync.js';
 import { cleanupStaleJobs } from './db/cleanup.js';
 import { BASE_URL } from './config/constants.js';
+import { getSettings } from './lib/settings.js';
+import { renderMaintenancePage } from './pages/maintenance.js';
 
 import { handleAssetsRoute, ASSET_PATHS } from './routes/assets.router.js';
 import { handleFeedRoute } from './routes/feed.router.js';
@@ -98,6 +100,18 @@ export default {
     // ── static brand assets (favicons, manifest, robots.txt) ──
     const assetResponse = handleAssetsRoute(url, base);
     if (assetResponse) return withSecurityHeaders(assetResponse);
+
+    // ── maintenance mode (toggled from /admin/settings, no redeploy) ──
+    // /admin/* is always exempt — otherwise a site owner who enables
+    // maintenance mode could lock themselves out of the one place that
+    // can turn it back off. Static assets are already handled above (so
+    // the maintenance page itself still gets its favicon/branding).
+    if (!url.pathname.startsWith('/admin')) {
+      const settings = await getSettings(env);
+      if (settings.maintenance_mode === '1') {
+        return withSecurityHeaders(renderMaintenancePage(settings.site_name, settings.maintenance_message));
+      }
+    }
 
     // ── visitor analytics (best-effort, non-blocking) ──
     const trackable = ['GET'].includes(request.method) &&
