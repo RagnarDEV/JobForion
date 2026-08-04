@@ -186,5 +186,21 @@ export async function ensureTable(env) {
     )
   `).run();
 
+  // ── Dynamic Site Settings ────────────────────────────────────────
+  // Backs lib/settings.js. Plain key/value store — deliberately NOT a
+  // fixed-column table, so adding a new admin-editable setting in the
+  // future is a one-line addition to SETTINGS_DEFAULTS in settings.js,
+  // never a schema migration here. See lib/settings.js for the full
+  // rationale (this is what lets site name, tagline, socials, GA id,
+  // and maintenance mode be edited from /admin/settings with zero
+  // redeploy).
+  await env.DB.prepare(`
+    CREATE TABLE IF NOT EXISTS site_settings (
+      key TEXT PRIMARY KEY,
+      value TEXT,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `).run();
+
   schemaEnsured = true;
 }
