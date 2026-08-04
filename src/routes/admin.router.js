@@ -16,8 +16,10 @@ import { insertApiSource } from '../db/sync.js';
 import { cleanupStaleJobs } from '../db/cleanup.js';
 import { renderJobsListContent, renderJobEditContent, renderDuplicatesContent } from '../pages/admin/jobs.js';
 import { renderCompaniesListContent } from '../pages/admin/companies.js';
+import { renderSettingsContent } from '../pages/admin/settings.js';
 import { adminShell } from '../pages/admin/shell.js';
 import { JOB_TYPE_META } from '../config/constants.js';
+import { setSettings, SETTINGS_KEYS } from '../lib/settings.js';
 
 function errorPage(err) {
   const msg = (err && err.message ? err.message : String(err)).replace(/</g, '&lt;');
@@ -179,6 +181,33 @@ export async function handleAdminRoute(url, request, env, base) {
         await env.DB.prepare("DELETE FROM hidden_companies WHERE company_lower = ?").bind(company.toLowerCase()).run();
       }
       return new Response(null, { status: 302, headers: { 'Location': `/admin/companies?flash=${encodeURIComponent('Company unhidden')}` } });
+    } catch (e) { return errorPage(e); }
+  }
+
+  if (url.pathname === '/admin/settings' && request.method === 'GET') {
+    try {
+      const ok = await verifyAdminCookie(env, request.headers.get('Cookie'));
+      if (!ok) return new Response(renderAdminLogin(false), { headers: { "Content-Type": "text/html; charset=utf-8" } });
+      const content = await renderSettingsContent(env);
+      return new Response(adminShell('settings', content), { headers: { "Content-Type": "text/html; charset=utf-8" } });
+    } catch (e) { return errorPage(e); }
+  }
+
+  if (url.pathname === '/admin/settings/update' && request.method === 'POST') {
+    try {
+      const ok = await verifyAdminCookie(env, request.headers.get('Cookie'));
+      if (!ok) return new Response('Unauthorized', { status: 401 });
+      const form = await request.formData();
+      // Explicit allow-list (SETTINGS_KEYS) rather than trusting arbitrary
+      // posted field names — setSettings() also enforces this itself, but
+      // filtering here too keeps the intent obvious at the call site.
+      const updates = {};
+      for (const key of SETTINGS_KEYS) {
+        if (key === 'maintenance_mode') { updates[key] = form.get('maintenance_mode') ? '1' : '0'; continue; }
+        if (form.has(key)) updates[key] = (form.get(key) || '').toString().slice(0, 2000);
+      }
+      await setSettings(env, updates);
+      return new Response(null, { status: 302, headers: { 'Location': `/admin/settings?flash=${encodeURIComponent('Settings saved')}` } });
     } catch (e) { return errorPage(e); }
   }
 
