@@ -10,6 +10,7 @@ import { BLOG_POSTS } from '../data/blog-posts.js';
 import { getActiveApiKeys } from '../db/sync.js';
 import { baseLayout } from '../layout/base-layout.js';
 import { BASE_URL } from '../config/constants.js';
+import { getSettings } from '../lib/settings.js';
 
 // A deleted/expired job's row is hard-removed from D1 (see
 // db/cleanup.js), so at request time there's no way to tell "this id
@@ -35,6 +36,7 @@ async function renderJobGonePage(env, base, requestedId) {
     ? 'This listing has expired or been removed by the employer. It may have been filled, or the posting period ended.'
     : "We couldn't find a job at this address. It may have been mistyped, or the link may be out of date.";
 
+  const settings = await getSettings(env);
   const content = `
 <div class="page-sm" style="text-align:center;padding-top:60px">
   <div style="font-size:56px;margin-bottom:8px;opacity:.35">${isGone ? '⏳' : '🔍'}</div>
@@ -44,7 +46,7 @@ async function renderJobGonePage(env, base, requestedId) {
 </div>`;
 
   return new Response(
-    baseLayout(`${headline} — JobForion`, body, `${base}/job/${requestedId}`, '', content, '', 'noindex, nofollow'),
+    baseLayout(`${headline} — ${settings.site_name}`, body, `${base}/job/${requestedId}`, '', content, '', 'noindex, nofollow', settings),
     { status, headers: { "Content-Type": "text/html; charset=utf-8" } }
   );
 }
@@ -73,18 +75,18 @@ export async function handlePagesRoute(url, request, env, base) {
     return new Response(await renderJobPage(job, related, base, env), { headers: { "Content-Type": "text/html; charset=utf-8" } });
   }
 
-  if (url.pathname === '/blog') return new Response(renderBlogIndex(base), { headers: { "Content-Type": "text/html; charset=utf-8" } });
+  if (url.pathname === '/blog') return new Response(await renderBlogIndex(base, env), { headers: { "Content-Type": "text/html; charset=utf-8" } });
 
   const blogMatch = url.pathname.match(/^\/blog\/(\d+)$/);
   if (blogMatch) {
     const post = BLOG_POSTS.find(p => p.id === parseInt(blogMatch[1]));
     if (!post) return new Response('Not found', { status: 404 });
-    return new Response(renderArticlePage(post, base), { headers: { "Content-Type": "text/html; charset=utf-8" } });
+    return new Response(await renderArticlePage(post, base, env), { headers: { "Content-Type": "text/html; charset=utf-8" } });
   }
 
-  if (url.pathname === '/privacy') return new Response(renderStaticPage('privacy', base), { headers: { "Content-Type": "text/html; charset=utf-8" } });
-  if (url.pathname === '/terms') return new Response(renderStaticPage('terms', base), { headers: { "Content-Type": "text/html; charset=utf-8" } });
-  if (url.pathname === '/disclaimer') return new Response(renderStaticPage('disclaimer', base), { headers: { "Content-Type": "text/html; charset=utf-8" } });
+  if (url.pathname === '/privacy') return new Response(await renderStaticPage('privacy', base, env), { headers: { "Content-Type": "text/html; charset=utf-8" } });
+  if (url.pathname === '/terms') return new Response(await renderStaticPage('terms', base, env), { headers: { "Content-Type": "text/html; charset=utf-8" } });
+  if (url.pathname === '/disclaimer') return new Response(await renderStaticPage('disclaimer', base, env), { headers: { "Content-Type": "text/html; charset=utf-8" } });
 
   if (url.pathname === '/') {
     const html = await renderMainHTML(env, base);
