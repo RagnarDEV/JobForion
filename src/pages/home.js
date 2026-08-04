@@ -13,7 +13,8 @@ import { jobCardSSR } from '../components/job-card.js';
 import { adSlot } from '../components/ad-slot.js';
 import { escapeHtml, slugify, listCountries, listSkills, listCompanies } from '../lib/entities.js';
 import { countryFlag, COUNTRY_TO_ISO } from '../lib/country-flags.js';
-import { GOOGLE_ANALYTICS_TAG } from '../lib/analytics-tag.js';
+import { googleAnalyticsTag } from '../lib/analytics-tag.js';
+import { getSettings } from '../lib/settings.js';
 import { iconSparkle, iconFlame, iconPin, iconMapPin, iconBookmark, iconLink, iconArrowRight, iconBadgeCheck, iconClock, iconGlobe, iconBuilding, iconSearch, iconX, iconFilter, iconCheck, iconInfo, iconAlertTriangle, iconFolder, iconTag } from '../assets/icons.js';
 
 // Same icon markup used by the server-rendered cards (job-card.js) is
@@ -119,6 +120,7 @@ async function getCategoryCounts(env) {
 
 export async function renderMainHTML(env, base) {
   await ensureTable(env);
+  const settings = await getSettings(env);
   let initialJobs = [], initialTotal = 0, totalJobsCount = 0, companiesCount = 0;
   try {
     const { results } = await env.DB.prepare(`SELECT * FROM jobs ORDER BY ${JOB_TYPE_SORT_SQL} ASC, featured DESC, id DESC LIMIT 20`).all();
@@ -153,34 +155,37 @@ export async function renderMainHTML(env, base) {
   });
   const orgSchema = JSON.stringify({
     "@context": "https://schema.org", "@type": "Organization",
-    "name": "JobForion", "url": base, "logo": `${base}/icon-512.png`
+    "name": settings.site_name, "url": base, "logo": `${base}/icon-512.png`
   });
 
   const ssrJobsHtml = initialJobs.length
     ? initialJobs.map((j, i) => jobCardSSR(j, i)).join('')
     : `<div class="loader-wrap"><div class="loader"></div></div>`;
 
+  const siteName = escapeHtml(settings.site_name);
+  const siteDescription = settings.site_description || `${settings.site_name} is a curated remote job board with ${totalJobsCount ? totalJobsCount.toLocaleString() + '+' : ''} verified positions in development, design, marketing, data and more. Updated every few hours.`;
+
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
-${GOOGLE_ANALYTICS_TAG}
+${googleAnalyticsTag(settings.ga_measurement_id)}
 <meta charset="UTF-8">
 <meta name="google-site-verification" content="7Q0EJk3kQKNLNzIhyzH4k5CsuHsQEa-U0Pwp_w_b0n0"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>JobForion — Find Your Next Remote Job</title>
-<meta name="description" content="JobForion is a curated remote job board with ${totalJobsCount ? totalJobsCount.toLocaleString() + '+' : ''} verified positions in development, design, marketing, data and more. Updated every few hours.">
+<title>${siteName} — ${escapeHtml(settings.site_tagline)}</title>
+<meta name="description" content="${escapeHtml(siteDescription)}">
 <meta name="robots" content="index, follow">
 ${ICON_HEAD}
-<meta property="og:title" content="JobForion — Find Your Next Remote Job">
-<meta property="og:description" content="Curated remote jobs updated every few hours. Browse, save, and apply — or post your own opening.">
+<meta property="og:title" content="${siteName} — ${escapeHtml(settings.site_tagline)}">
+<meta property="og:description" content="${escapeHtml(siteDescription)}">
 <meta property="og:type" content="website">
 <meta property="og:url" content="${base}">
-<meta property="og:site_name" content="JobForion">
+<meta property="og:site_name" content="${siteName}">
 <meta property="og:image" content="${base}/icon-512.png">
 <meta name="twitter:card" content="summary">
 <link rel="canonical" href="${base}">
-<link rel="alternate" type="application/rss+xml" title="JobForion Jobs Feed" href="${base}/feed.rss">
-<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebSite","name":"JobForion","url":"${base}","potentialAction":{"@type":"SearchAction","target":"${base}/?search={search_term_string}","query-input":"required name=search_term_string"}}</script>
+<link rel="alternate" type="application/rss+xml" title="${siteName} Jobs Feed" href="${base}/feed.rss">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebSite","name":${JSON.stringify(settings.site_name)},"url":"${base}","potentialAction":{"@type":"SearchAction","target":"${base}/?search={search_term_string}","query-input":"required name=search_term_string"}}</script>
 <script type="application/ld+json">${orgSchema}</script>
 <script type="application/ld+json">${itemListSchema}</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -336,8 +341,8 @@ ${SHARED_CSS}
 </style>
 </head>
 <body>
-${navHtml()}
-${mobileHeaderHtml()}
+${navHtml(settings)}
+${mobileHeaderHtml(settings)}
 
 <main>
   <!-- JOBS VIEW -->
@@ -415,7 +420,7 @@ ${mobileHeaderHtml()}
   </div>
 </main>
 
-${footerHtml(base)}
+${footerHtml(base, settings)}
 ${postJobModalHtml()}
 
 <div class="toast" id="toast">

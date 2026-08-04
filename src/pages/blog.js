@@ -3,11 +3,19 @@
 import { baseLayout } from '../layout/base-layout.js';
 import { BLOG_POSTS } from '../data/blog-posts.js';
 import { adSlot } from '../components/ad-slot.js';
+import { escapeHtml } from '../lib/entities.js';
+import { getSettings, SETTINGS_DEFAULTS } from '../lib/settings.js';
 
-export function renderBlogIndex(base) {
+// `env` is optional (backward compatible with any caller that only has
+// `base`) — when provided, settings are fetched from D1 and threaded
+// through baseLayout for dynamic site name / GA id / socials. See
+// routes/pages.router.js for the real call site.
+export async function renderBlogIndex(base, env) {
+  const settings = env ? await getSettings(env) : SETTINGS_DEFAULTS;
+  const siteName = escapeHtml(settings.site_name);
   const content = `
 <div class="page">
-  <div class="breadcrumb"><a href="/">JobForion</a><span>›</span><span>Blog</span></div>
+  <div class="breadcrumb"><a href="/">${siteName}</a><span>›</span><span>Blog</span></div>
   <h1 style="font-family:'Space Grotesk',sans-serif;font-size:28px;font-weight:700;margin-bottom:8px;color:var(--ink)">📝 Career Blog</h1>
   <p style="color:var(--ink2);font-size:14px;margin-bottom:24px">Insights and career advice for remote job seekers.</p>
   ${adSlot('blog-index-top')}
@@ -21,19 +29,21 @@ export function renderBlogIndex(base) {
       </a>`).join('')}
   </div>
 </div>`;
-  return baseLayout('Career Blog — JobForion', 'Career insights for remote job seekers.', `${base}/blog`, '', content,
-    `<script type="application/ld+json">${JSON.stringify({ "@context": "https://schema.org", "@type": "Blog", "name": "JobForion Career Blog", "url": `${base}/blog` })}</script>`);
+  return baseLayout(`Career Blog — ${settings.site_name}`, 'Career insights for remote job seekers.', `${base}/blog`, '', content,
+    `<script type="application/ld+json">${JSON.stringify({ "@context": "https://schema.org", "@type": "Blog", "name": `${settings.site_name} Career Blog`, "url": `${base}/blog` })}</script>`,
+    'index, follow', settings);
 }
 
-export function renderArticlePage(post, base) {
+export async function renderArticlePage(post, base, env) {
+  const settings = env ? await getSettings(env) : SETTINGS_DEFAULTS;
   const canonical = `${base}/blog/${post.id}`;
-  const schema = JSON.stringify({ "@context": "https://schema.org", "@type": "Article", "headline": post.title, "description": post.excerpt, "datePublished": post.date, "author": { "@type": "Organization", "name": "JobForion" }, "url": canonical });
+  const schema = JSON.stringify({ "@context": "https://schema.org", "@type": "Article", "headline": post.title, "description": post.excerpt, "datePublished": post.date, "author": { "@type": "Organization", "name": settings.site_name }, "url": canonical });
   const content = `
 <div class="page-sm">
   <a href="/blog" class="back-link">← Back to Blog</a>
   <div class="article-cat">${post.cat}</div>
   <h1 class="article-title">${post.title}</h1>
-  <div class="article-meta"><span>📅 ${post.date}</span><span>⏱ ${post.readTime}</span><span>✍️ JobForion Team</span></div>
+  <div class="article-meta"><span>📅 ${post.date}</span><span>⏱ ${post.readTime}</span><span>✍️ ${escapeHtml(settings.site_name)} Team</span></div>
   <div class="article-body">${post.body}</div>
   ${adSlot('blog-article-footer', 'margin-top:28px')}
   <div style="margin-top:28px;display:flex;gap:10px;flex-wrap:wrap">
@@ -41,5 +51,5 @@ export function renderArticlePage(post, base) {
     <a href="/" style="display:inline-flex;align-items:center;gap:7px;background:var(--ink);color:#fff;padding:9px 18px;border-radius:10px;font-size:13px;font-weight:700;text-decoration:none">Browse Remote Jobs →</a>
   </div>
 </div>`;
-  return baseLayout(`${post.title} — JobForion Blog`, post.excerpt, canonical, '', content, `<script type="application/ld+json">${schema}</script>`);
+  return baseLayout(`${post.title} — ${settings.site_name} Blog`, post.excerpt, canonical, '', content, `<script type="application/ld+json">${schema}</script>`, 'index, follow', settings);
 }
