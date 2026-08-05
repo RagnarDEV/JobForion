@@ -1,11 +1,12 @@
 // src/pages/seo-pages.js
 // Programmatic SEO directory + detail pages: categories, companies, skills,
-// countries, and search. All data is derived live from D1 (see
-// src/lib/entities.js) — no hardcoded lists.
+// countries, and search. Job/company/skill/country data is derived live
+// from D1 (see src/lib/entities.js). Categories are now ALSO fully dynamic
+// (see src/lib/categories.js) — /admin/categories is the only place that
+// creates/edits/reorders/removes them, no code edit required.
 
 import { baseLayout } from '../layout/base-layout.js';
-import { logoImgHtml, jobRowMini, directoryGridHtml, catForTitleServer } from '../components/job-card.js';
-import { CATEGORY_META, CATEGORY_ORDER } from '../config/constants.js';
+import { logoImgHtml, jobRowMini, directoryGridHtml } from '../components/job-card.js';
 import {
   listCompanies, findCompanyBySlug, jobsByCompany,
   listSkills, findSkillBySlug, jobsBySkill,
@@ -17,52 +18,68 @@ import { collectionPageSchema, itemListSchema, ldJsonTag } from '../lib/schema.j
 import { buildBreadcrumb } from '../lib/breadcrumbs.js';
 import { truncateDescription } from '../lib/seo.js';
 import { JOB_TYPE_SORT_SQL } from '../config/constants.js';
+import { getSettings } from '../lib/settings.js';
+import { getCategories } from '../lib/categories.js';
 
-export function renderCategoriesIndex(base) {
-  const items = CATEGORY_ORDER.map(k => ({ name: CATEGORY_META[k].label, slug: k, count: '' }));
+// Shared by every function below: resolves site settings + the dynamic
+// category list (as both an ordered array and a {order, map} bundle
+// ready to hand straight to baseLayout() for the "Post a Job" dropdown).
+async function loadPageContext(env) {
+  const [settings, categories] = await Promise.all([getSettings(env), getCategories(env)]);
+  const categoryOrder = categories.map(c => c.key);
+  const categoryMap = Object.fromEntries(categories.map(c => [c.key, { label: c.label, emoji: c.emoji, color: c.color }]));
+  return { settings, categories, categoryOrder, categoryMap, categoryBundle: { order: categoryOrder, map: categoryMap } };
+}
+
+// ── /categories ──
+export async function renderCategoriesIndex(env, base) {
+  const { settings, categoryOrder, categoryMap, categoryBundle } = await loadPageContext(env);
   const { html: bc, jsonLd: bcSchema } = buildBreadcrumb(base, [{ name: 'Categories', path: '/categories' }]);
   const content = `<div class="page">${bc}
     <h1 style="font-family:'Space Grotesk',sans-serif;font-size:26px;font-weight:700;margin-bottom:8px;color:var(--ink)">Browse Jobs by Category</h1>
     <p style="color:var(--ink2);font-size:14px;margin-bottom:24px">Explore remote roles grouped by discipline.</p>
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px">
-      ${CATEGORY_ORDER.map(k => `<a href="/categories/${k}" style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:18px;text-decoration:none;display:flex;align-items:center;gap:10px;transition:all .2s" onmouseover="this.style.borderColor='var(--brand)'" onmouseout="this.style.borderColor='var(--border)'">
-        <span style="font-size:22px">${CATEGORY_META[k].emoji}</span><span style="font-size:14px;font-weight:700;color:var(--ink)">${CATEGORY_META[k].label}</span>
+      ${categoryOrder.map(k => `<a href="/categories/${k}" style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:18px;text-decoration:none;display:flex;align-items:center;gap:10px;transition:all .2s" onmouseover="this.style.borderColor='var(--brand)'" onmouseout="this.style.borderColor='var(--border)'">
+        <span style="font-size:22px">${categoryMap[k].emoji}</span><span style="font-size:14px;font-weight:700;color:var(--ink)">${escapeHtml(categoryMap[k].label)}</span>
       </a>`).join('')}
     </div>
   </div>`;
-  const schema = ldJsonTag(collectionPageSchema('Job Categories — JobForion', 'Browse remote jobs by category.', `${base}/categories`));
-  return baseLayout('Browse Remote Jobs by Category — JobForion', 'Explore curated remote job listings grouped by discipline: development, design, marketing, data, DevOps, management and writing.', `${base}/categories`, '', content, schema + bcSchema);
+  const schema = ldJsonTag(collectionPageSchema(`Job Categories — ${settings.site_name}`, 'Browse remote jobs by category.', `${base}/categories`));
+  return baseLayout(`Browse Remote Jobs by Category — ${settings.site_name}`, 'Explore curated remote job listings grouped by discipline: development, design, marketing, data, DevOps, management and writing.', `${base}/categories`, '', content, schema + bcSchema, 'index, follow', settings, categoryBundle);
 }
 
 export async function renderCategoryDetail(env, base, key) {
-  const meta = CATEGORY_META[key];
+  const { settings, categoryMap, categoryBundle } = await loadPageContext(env);
+  const meta = categoryMap[key];
   if (!meta) return null;
   const { results } = await env.DB.prepare(`SELECT * FROM jobs WHERE LOWER(title) LIKE ? ORDER BY ${JOB_TYPE_SORT_SQL} ASC, id DESC LIMIT 60`).bind(`%${key}%`).all();
   const { html: bc, jsonLd: bcSchema } = buildBreadcrumb(base, [{ name: 'Categories', path: '/categories' }, { name: meta.label, path: `/categories/${key}` }]);
   const content = `<div class="page">${bc}
-    <h1 style="font-family:'Space Grotesk',sans-serif;font-size:26px;font-weight:700;margin-bottom:8px;color:var(--ink)">${meta.emoji} ${meta.label} Remote Jobs</h1>
-    <p style="color:var(--ink2);font-size:14px;margin-bottom:24px">${(results || []).length} open remote ${meta.label.toLowerCase()} positions, updated hourly.</p>
+    <h1 style="font-family:'Space Grotesk',sans-serif;font-size:26px;font-weight:700;margin-bottom:8px;color:var(--ink)">${meta.emoji} ${escapeHtml(meta.label)} Remote Jobs</h1>
+    <p style="color:var(--ink2);font-size:14px;margin-bottom:24px">${(results || []).length} open remote ${escapeHtml(meta.label.toLowerCase())} positions, updated hourly.</p>
     <div class="related-grid">${(results || []).map(jobRowMini).join('') || '<div class="empty"><div class="e-icon">📭</div><h3>No jobs in this category yet</h3></div>'}</div>
   </div>`;
-  const desc = truncateDescription(`Browse ${(results || []).length} remote ${meta.label.toLowerCase()} jobs updated hourly. Filter by seniority, salary, and location on JobForion.`);
+  const desc = truncateDescription(`Browse ${(results || []).length} remote ${meta.label.toLowerCase()} jobs updated hourly. Filter by seniority, salary, and location on ${settings.site_name}.`);
   const schema = ldJsonTag(itemListSchema((results || []).slice(0, 20).map(j => ({ url: `${base}/job/${j.id}` }))));
-  return baseLayout(`${meta.label} Remote Jobs — JobForion`, desc, `${base}/categories/${key}`, '', content, schema + bcSchema);
+  return baseLayout(`${meta.label} Remote Jobs — ${settings.site_name}`, desc, `${base}/categories/${key}`, '', content, schema + bcSchema, 'index, follow', settings, categoryBundle);
 }
 
 // ── /companies ──
 export async function renderCompaniesIndex(env, base) {
+  const { settings, categoryBundle } = await loadPageContext(env);
   const companies = await listCompanies(env, { limit: 200 });
   const { html: bc, jsonLd: bcSchema } = buildBreadcrumb(base, [{ name: 'Companies', path: '/companies' }]);
   const content = `<div class="page">${bc}
     <h1 style="font-family:'Space Grotesk',sans-serif;font-size:26px;font-weight:700;margin-bottom:8px;color:var(--ink)">Companies Hiring Remotely</h1>
-    <p style="color:var(--ink2);font-size:14px;margin-bottom:24px">${companies.length} companies with active remote listings on JobForion.</p>
+    <p style="color:var(--ink2);font-size:14px;margin-bottom:24px">${companies.length} companies with active remote listings on ${escapeHtml(settings.site_name)}.</p>
     ${directoryGridHtml(companies, '/companies')}
   </div>`;
-  const schema = ldJsonTag(collectionPageSchema('Companies Hiring Remotely — JobForion', 'Directory of companies with active remote job listings.', `${base}/companies`));
-  return baseLayout('Companies Hiring Remotely — JobForion', `Browse ${companies.length} companies with active remote job openings, updated hourly on JobForion.`, `${base}/companies`, '', content, schema + bcSchema);
+  const schema = ldJsonTag(collectionPageSchema(`Companies Hiring Remotely — ${settings.site_name}`, 'Directory of companies with active remote job listings.', `${base}/companies`));
+  return baseLayout(`Companies Hiring Remotely — ${settings.site_name}`, `Browse ${companies.length} companies with active remote job openings, updated hourly on ${settings.site_name}.`, `${base}/companies`, '', content, schema + bcSchema, 'index, follow', settings, categoryBundle);
 }
 
 export async function renderCompanyDetail(env, base, slug) {
+  const { settings, categoryBundle } = await loadPageContext(env);
   const company = await findCompanyBySlug(env, slug);
   if (!company) return null;
   const jobs = await jobsByCompany(env, company.name, { limit: 60 });
@@ -79,9 +96,9 @@ export async function renderCompanyDetail(env, base, slug) {
     <p style="color:var(--ink2);font-size:14px;margin-bottom:24px">${jobs.length} open remote position${jobs.length === 1 ? '' : 's'} at ${safeName}, sourced from verified listings.</p>
     <div class="related-grid">${jobs.map(jobRowMini).join('') || '<div class="empty"><div class="e-icon">📭</div><h3>No open jobs right now</h3></div>'}</div>
   </div>`;
-  const desc = truncateDescription(`${company.name} has ${jobs.length} open remote job${jobs.length === 1 ? '' : 's'} on JobForion. Browse roles and apply directly with the employer.`);
+  const desc = truncateDescription(`${company.name} has ${jobs.length} open remote job${jobs.length === 1 ? '' : 's'} on ${settings.site_name}. Browse roles and apply directly with the employer.`);
   const schema = ldJsonTag({ "@context": "https://schema.org", "@type": "Organization", "name": company.name, "url": `${base}/companies/${slug}` });
-  return baseLayout(`Remote Jobs at ${company.name} — JobForion`, desc, `${base}/companies/${slug}`, '', content, schema + bcSchema);
+  return baseLayout(`Remote Jobs at ${company.name} — ${settings.site_name}`, desc, `${base}/companies/${slug}`, '', content, schema + bcSchema, 'index, follow', settings, categoryBundle);
 }
 
 // ── /countries ──
@@ -91,18 +108,20 @@ export async function renderCompanyDetail(env, base, slug) {
 // Every country name is prefixed with a flag emoji via countryFlag()
 // (lib/country-flags.js), both in the directory grid and the detail heading.
 export async function renderCountriesIndex(env, base) {
+  const { settings, categoryBundle } = await loadPageContext(env);
   const countries = await listCountries(env, { limit: 200 });
   const { html: bc, jsonLd: bcSchema } = buildBreadcrumb(base, [{ name: 'Countries', path: '/countries' }]);
   const content = `<div class="page">${bc}
     <h1 style="font-family:'Space Grotesk',sans-serif;font-size:26px;font-weight:700;margin-bottom:8px;color:var(--ink)">Browse Remote Jobs by Country</h1>
-    <p style="color:var(--ink2);font-size:14px;margin-bottom:24px">${countries.length} countries and regions with active remote listings on JobForion.</p>
+    <p style="color:var(--ink2);font-size:14px;margin-bottom:24px">${countries.length} countries and regions with active remote listings on ${escapeHtml(settings.site_name)}.</p>
     ${directoryGridHtml(countries, '/countries', (c) => `<span aria-hidden="true">${countryFlag(c.name)}</span> `)}
   </div>`;
-  const schema = ldJsonTag(collectionPageSchema('Countries — JobForion', 'Browse remote jobs by country or region.', `${base}/countries`));
-  return baseLayout('Browse Remote Jobs by Country — JobForion', `Explore remote job listings across ${countries.length} countries and regions, updated hourly on JobForion.`, `${base}/countries`, '', content, schema + bcSchema);
+  const schema = ldJsonTag(collectionPageSchema(`Countries — ${settings.site_name}`, 'Browse remote jobs by country or region.', `${base}/countries`));
+  return baseLayout(`Browse Remote Jobs by Country — ${settings.site_name}`, `Explore remote job listings across ${countries.length} countries and regions, updated hourly on ${settings.site_name}.`, `${base}/countries`, '', content, schema + bcSchema, 'index, follow', settings, categoryBundle);
 }
 
 export async function renderCountryDetail(env, base, slug) {
+  const { settings, categoryBundle } = await loadPageContext(env);
   const country = await findCountryBySlug(env, slug);
   if (!country) return null;
   const jobs = await jobsByRegion(env, country.name, { limit: 60 });
@@ -116,13 +135,14 @@ export async function renderCountryDetail(env, base, slug) {
     <p style="color:var(--ink2);font-size:14px;margin-bottom:24px">${jobs.length} open remote position${jobs.length === 1 ? '' : 's'} located in or hiring from ${safeName}.</p>
     <div class="related-grid">${jobs.map(jobRowMini).join('') || '<div class="empty"><div class="e-icon">📭</div><h3>No open jobs in this location yet</h3></div>'}</div>
   </div>`;
-  const desc = truncateDescription(`Browse ${jobs.length} remote jobs in ${country.name}. Updated hourly on JobForion.`);
+  const desc = truncateDescription(`Browse ${jobs.length} remote jobs in ${country.name}. Updated hourly on ${settings.site_name}.`);
   const schema = ldJsonTag(itemListSchema(jobs.slice(0, 20).map(j => ({ url: `${base}/job/${j.id}` }))));
-  return baseLayout(`Remote Jobs in ${country.name} — JobForion`, desc, `${base}/countries/${slug}`, '', content, schema + bcSchema);
+  return baseLayout(`Remote Jobs in ${country.name} — ${settings.site_name}`, desc, `${base}/countries/${slug}`, '', content, schema + bcSchema, 'index, follow', settings, categoryBundle);
 }
 
 // ── /skills ──
 export async function renderSkillsIndex(env, base) {
+  const { settings, categoryBundle } = await loadPageContext(env);
   const skills = await listSkills(env, { limit: 200 });
   const { html: bc, jsonLd: bcSchema } = buildBreadcrumb(base, [{ name: 'Skills', path: '/skills' }]);
   const content = `<div class="page">${bc}
@@ -130,11 +150,12 @@ export async function renderSkillsIndex(env, base) {
     <p style="color:var(--ink2);font-size:14px;margin-bottom:24px">${skills.length} in-demand skills across current listings.</p>
     ${directoryGridHtml(skills, '/skills')}
   </div>`;
-  const schema = ldJsonTag(collectionPageSchema('Skills — JobForion', 'Browse remote jobs by required skill.', `${base}/skills`));
-  return baseLayout('Browse Remote Jobs by Skill — JobForion', `Explore ${skills.length} in-demand skills across current remote job listings on JobForion.`, `${base}/skills`, '', content, schema + bcSchema);
+  const schema = ldJsonTag(collectionPageSchema(`Skills — ${settings.site_name}`, 'Browse remote jobs by required skill.', `${base}/skills`));
+  return baseLayout(`Browse Remote Jobs by Skill — ${settings.site_name}`, `Explore ${skills.length} in-demand skills across current remote job listings on ${settings.site_name}.`, `${base}/skills`, '', content, schema + bcSchema, 'index, follow', settings, categoryBundle);
 }
 
 export async function renderSkillDetail(env, base, slug) {
+  const { settings, categoryBundle } = await loadPageContext(env);
   const skill = await findSkillBySlug(env, slug);
   if (!skill) return null;
   const jobs = await jobsBySkill(env, skill.name, { limit: 60 });
@@ -147,13 +168,14 @@ export async function renderSkillDetail(env, base, slug) {
     <p style="color:var(--ink2);font-size:14px;margin-bottom:24px">${jobs.length} open remote positions listing ${safeName} as a required skill.</p>
     <div class="related-grid">${jobs.map(jobRowMini).join('') || '<div class="empty"><div class="e-icon">📭</div><h3>No jobs currently require this skill</h3></div>'}</div>
   </div>`;
-  const desc = truncateDescription(`Browse ${jobs.length} remote jobs requiring ${skill.name}. Updated hourly on JobForion.`);
+  const desc = truncateDescription(`Browse ${jobs.length} remote jobs requiring ${skill.name}. Updated hourly on ${settings.site_name}.`);
   const schema = ldJsonTag(itemListSchema(jobs.slice(0, 20).map(j => ({ url: `${base}/job/${j.id}` }))));
-  return baseLayout(`Remote ${skill.name} Jobs — JobForion`, desc, `${base}/skills/${slug}`, '', content, schema + bcSchema);
+  return baseLayout(`Remote ${skill.name} Jobs — ${settings.site_name}`, desc, `${base}/skills/${slug}`, '', content, schema + bcSchema, 'index, follow', settings, categoryBundle);
 }
 
 // ── /search/:query — indexable only when it returns real content ──
 export async function renderSearchPage(env, base, query) {
+  const { settings, categoryBundle } = await loadPageContext(env);
   const q = decodeURIComponent(query || '').trim();
   const { results } = await env.DB.prepare(
     `SELECT * FROM jobs WHERE LOWER(title) LIKE ? OR LOWER(company) LIKE ? OR LOWER(location) LIKE ? ORDER BY ${JOB_TYPE_SORT_SQL} ASC, id DESC LIMIT 50`
@@ -173,10 +195,10 @@ export async function renderSearchPage(env, base, query) {
     <div class="related-grid">${(results || []).map(jobRowMini).join('') || `<div class="empty"><div class="e-icon">🔍</div><h3>No matches for "${safeQ}"</h3><p>Try browsing <a href="/categories" style="color:var(--brand)">categories</a> instead.</p></div>`}</div>
   </div>`;
   const desc = hasResults
-    ? truncateDescription(`${results.length} remote "${q}" jobs available now. Browse and apply directly on JobForion.`)
-    : `No current openings match "${q}" — browse all remote job categories on JobForion.`;
+    ? truncateDescription(`${results.length} remote "${q}" jobs available now. Browse and apply directly on ${settings.site_name}.`)
+    : `No current openings match "${q}" — browse all remote job categories on ${settings.site_name}.`;
   const schema = hasResults ? ldJsonTag(itemListSchema(results.slice(0, 20).map(j => ({ url: `${base}/job/${j.id}` })))) : '';
   // thin/empty search pages are noindexed to avoid low-quality-page SEO penalties
   const robots = hasResults ? 'index, follow' : 'noindex, follow';
-  return baseLayout(`Remote "${q}" Jobs — JobForion`, desc, `${base}/search/${encodeURIComponent(q)}`, '', content, schema + bcSchema, robots);
+  return baseLayout(`Remote "${q}" Jobs — ${settings.site_name}`, desc, `${base}/search/${encodeURIComponent(q)}`, '', content, schema + bcSchema, robots, settings, categoryBundle);
 }
