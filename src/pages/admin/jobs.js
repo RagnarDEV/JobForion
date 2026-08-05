@@ -3,15 +3,19 @@
 // copy-link, preview, duplicate-detection (manual review, never auto-delete),
 // and stale-job cleanup (configurable age threshold, confirmed before running).
 
-import { CATEGORY_META, CATEGORY_ORDER, BASE_URL, JOB_TYPE_META, JOB_TYPE_ORDER, JOB_TYPE_SORT_SQL } from '../../config/constants.js';
+import { BASE_URL, JOB_TYPE_META, JOB_TYPE_ORDER, JOB_TYPE_SORT_SQL } from '../../config/constants.js';
+import { getCategories } from '../../lib/categories.js';
 import { ensureTable } from '../../db/schema.js';
 import { escapeHtml } from '../../lib/entities.js';
 
 const PAGE_SIZE = 30;
 
-function jobRow(j) {
-  const cat = CATEGORY_ORDER.find(k => (j.title || '').toLowerCase().includes(k));
-  const catMeta = cat ? CATEGORY_META[cat] : null;
+// `categoryOrder`/`categoryMap` are optional — default to empty (no
+// category column shown) only if a caller somehow forgets to pass them;
+// every real call site below always supplies the live D1-backed list.
+function jobRow(j, categoryOrder = [], categoryMap = {}) {
+  const cat = categoryOrder.find(k => (j.title || '').toLowerCase().includes(k));
+  const catMeta = cat ? categoryMap[cat] : null;
   const jt = (j.job_type && JOB_TYPE_META[j.job_type]) ? j.job_type : 'Free';
   const jtBadge = jt !== 'Free' ? `<span class="adm-jt-badge">${JOB_TYPE_META[jt].icon} ${jt}</span> ` : '';
   return `<tr>
@@ -50,6 +54,9 @@ function currentQueryString() { return '__REDIRECT__'; }
 
 export async function renderJobsListContent(env, params) {
   await ensureTable(env);
+  const categories = await getCategories(env);
+  const categoryOrder = categories.map(c => c.key);
+  const categoryMap = Object.fromEntries(categories.map(c => [c.key, { label: c.label, emoji: c.emoji, color: c.color }]));
   const qText = (params.get('q') || '').trim();
   const category = params.get('category') || '';
   const remote = params.get('remote') || '';
@@ -81,7 +88,7 @@ export async function renderJobsListContent(env, params) {
   ).all();
   const staleCount = staleCountRows[0]?.c || 0;
 
-  const rowsHtml = (rows || []).map(jobRow).join('').replaceAll('__REDIRECT__', escapeHtml(redirectTarget));
+  const rowsHtml = (rows || []).map(j => jobRow(j, categoryOrder, categoryMap)).join('').replaceAll('__REDIRECT__', escapeHtml(redirectTarget));
 
   const qs = (overrides) => {
     const p = new URLSearchParams(params);
@@ -115,7 +122,7 @@ export async function renderJobsListContent(env, params) {
         <input class="adm-input" name="q" placeholder="Search title or company…" value="${escapeHtml(qText)}" style="flex:1;min-width:180px">
         <select class="adm-input" name="category" onchange="this.form.submit()">
           <option value="">All categories</option>
-          ${CATEGORY_ORDER.map(k => `<option value="${k}" ${category === k ? 'selected' : ''}>${CATEGORY_META[k].emoji} ${CATEGORY_META[k].label}</option>`).join('')}
+          ${categoryOrder.map(k => `<option value="${k}" ${category === k ? 'selected' : ''}>${categoryMap[k].emoji} ${escapeHtml(categoryMap[k].label)}</option>`).join('')}
         </select>
         <select class="adm-input" name="remote" onchange="this.form.submit()">
           <option value="">Any remote type</option>

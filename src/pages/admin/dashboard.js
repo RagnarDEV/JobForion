@@ -3,7 +3,7 @@
 // category breakdown, sync history, API sources, pending postings.
 // Returns inner HTML only — adminShell() in shell.js wraps it.
 
-import { CATEGORY_META, CATEGORY_ORDER } from '../../config/constants.js';
+import { getCategories } from '../../lib/categories.js';
 import { ensureTable } from '../../db/schema.js';
 import { escapeHtml } from '../../lib/entities.js';
 import { PROVIDERS } from '../../providers/index.js';
@@ -109,9 +109,10 @@ export async function renderDashboardContent(env) {
     "SELECT country, COUNT(*) c FROM visits WHERE created_at >= datetime('now','-7 day') GROUP BY country ORDER BY c DESC LIMIT 8"
   );
 
-  const catCounts = await Promise.all(CATEGORY_ORDER.map(async k => {
-    const { results } = await q("SELECT COUNT(*) c FROM jobs WHERE LOWER(title) LIKE ?", `%${k}%`);
-    return { label: CATEGORY_META[k].label, count: results[0]?.c || 0 };
+  const categories = await getCategories(env);
+  const catCounts = await Promise.all(categories.map(async cat => {
+    const { results } = await q("SELECT COUNT(*) c FROM jobs WHERE LOWER(title) LIKE ?", `%${cat.key}%`);
+    return { label: cat.label, count: results[0]?.c || 0 };
   }));
 
   const { results: syncLogs } = await q("SELECT * FROM sync_logs ORDER BY id DESC LIMIT 10");
