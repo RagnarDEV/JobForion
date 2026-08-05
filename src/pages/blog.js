@@ -5,6 +5,15 @@ import { BLOG_POSTS } from '../data/blog-posts.js';
 import { adSlot } from '../components/ad-slot.js';
 import { escapeHtml } from '../lib/entities.js';
 import { getSettings, SETTINGS_DEFAULTS } from '../lib/settings.js';
+import { getCategories } from '../lib/categories.js';
+
+// Builds the `{order, map}` shape baseLayout() expects for the dynamic
+// "Post a Job" category dropdown. `env` optional — see renderBlogIndex.
+async function loadCategoryData(env) {
+  if (!env) return null;
+  const categories = await getCategories(env);
+  return { order: categories.map(c => c.key), map: Object.fromEntries(categories.map(c => [c.key, { label: c.label, emoji: c.emoji, color: c.color }])) };
+}
 
 // `env` is optional (backward compatible with any caller that only has
 // `base`) — when provided, settings are fetched from D1 and threaded
@@ -12,6 +21,7 @@ import { getSettings, SETTINGS_DEFAULTS } from '../lib/settings.js';
 // routes/pages.router.js for the real call site.
 export async function renderBlogIndex(base, env) {
   const settings = env ? await getSettings(env) : SETTINGS_DEFAULTS;
+  const categories = await loadCategoryData(env);
   const siteName = escapeHtml(settings.site_name);
   const content = `
 <div class="page">
@@ -31,11 +41,12 @@ export async function renderBlogIndex(base, env) {
 </div>`;
   return baseLayout(`Career Blog — ${settings.site_name}`, 'Career insights for remote job seekers.', `${base}/blog`, '', content,
     `<script type="application/ld+json">${JSON.stringify({ "@context": "https://schema.org", "@type": "Blog", "name": `${settings.site_name} Career Blog`, "url": `${base}/blog` })}</script>`,
-    'index, follow', settings);
+    'index, follow', settings, categories);
 }
 
 export async function renderArticlePage(post, base, env) {
   const settings = env ? await getSettings(env) : SETTINGS_DEFAULTS;
+  const categories = await loadCategoryData(env);
   const canonical = `${base}/blog/${post.id}`;
   const schema = JSON.stringify({ "@context": "https://schema.org", "@type": "Article", "headline": post.title, "description": post.excerpt, "datePublished": post.date, "author": { "@type": "Organization", "name": settings.site_name }, "url": canonical });
   const content = `
@@ -51,5 +62,5 @@ export async function renderArticlePage(post, base, env) {
     <a href="/" style="display:inline-flex;align-items:center;gap:7px;background:var(--ink);color:#fff;padding:9px 18px;border-radius:10px;font-size:13px;font-weight:700;text-decoration:none">Browse Remote Jobs →</a>
   </div>
 </div>`;
-  return baseLayout(`${post.title} — ${settings.site_name} Blog`, post.excerpt, canonical, '', content, `<script type="application/ld+json">${schema}</script>`, 'index, follow', settings);
+  return baseLayout(`${post.title} — ${settings.site_name} Blog`, post.excerpt, canonical, '', content, `<script type="application/ld+json">${schema}</script>`, 'index, follow', settings, categories);
 }
