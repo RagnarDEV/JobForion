@@ -1,13 +1,13 @@
 // src/pages/job-page.js
 
 import { logoImgHtml, remoteTagHtml, catForTitleServer, jobTypeBadgeHtml, jobTypeCardClass, normalizeJobType } from '../components/job-card.js';
-import { CATEGORY_META } from '../config/constants.js';
 import { baseLayout } from '../layout/base-layout.js';
 import { slugify, escapeHtml, cleanDescription, parseSalaryRange, categorySalaryStats, companySnapshot } from '../lib/entities.js';
 import { adSlot } from '../components/ad-slot.js';
 import { jobPostingSchema } from '../lib/schema.js';
 import { iconBadgeCheck, iconMapPin, iconSparkle, iconFlame, iconDollarSign, iconArrowRight, iconBookmark, iconLink, iconTrendingUp, iconBuilding } from '../assets/icons.js';
 import { getSettings } from '../lib/settings.js';
+import { getCategories } from '../lib/categories.js';
 
 // SECURITY: JSON.stringify() does NOT escape "<", so a malicious job title
 // like `</script><script>...` embedded in scraped/submitted data could
@@ -77,12 +77,14 @@ export async function renderJobPage(job, related, base, env) {
   const canonical = `${base}/job/${job.id}`;
   const cleanDesc = cleanDescription(job.description);
 
-  const categoryKey = catForTitleServer(job.title);
-  const categoryLabel = CATEGORY_META[categoryKey].label;
-  const [salaryStats, companyInfo, settings] = await Promise.all([
+  const [categories, settings] = await Promise.all([getCategories(env), getSettings(env)]);
+  const categoryOrder = categories.map(c => c.key);
+  const categoryMap = Object.fromEntries(categories.map(c => [c.key, { label: c.label, emoji: c.emoji, color: c.color }]));
+  const categoryKey = catForTitleServer(job.title, categoryOrder);
+  const categoryLabel = (categoryMap[categoryKey] || { label: 'General' }).label;
+  const [salaryStats, companyInfo] = await Promise.all([
     categorySalaryStats(env, categoryKey),
     companySnapshot(env, job.company),
-    getSettings(env),
   ]);
   const desc = cleanDesc.length > 20
     ? cleanDesc.slice(0, 160).replace(/\n/g, ' ') + '...'
@@ -193,5 +195,5 @@ export async function renderJobPage(job, related, base, env) {
   refreshBtn();
 })();
 </script>`;
-  return baseLayout(`${job.title} at ${job.company} — ${settings.site_name}`, desc, canonical, '', content, `<script type="application/ld+json">${schema}</script><script type="application/ld+json">${breadcrumbSchema}</script>`, 'index, follow', settings);
+  return baseLayout(`${job.title} at ${job.company} — ${settings.site_name}`, desc, canonical, '', content, `<script type="application/ld+json">${schema}</script><script type="application/ld+json">${breadcrumbSchema}</script>`, 'index, follow', settings, { order: categoryOrder, map: categoryMap });
 }
