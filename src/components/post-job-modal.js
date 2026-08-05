@@ -2,8 +2,12 @@
 // The "Post a Job" modal + its client-side submit handler (site-wide, works on every page).
 
 import { CATEGORY_ORDER, CATEGORY_META } from '../config/constants.js';
+import { escapeHtml } from '../lib/entities.js';
 
-export function postJobModalHtml() {
+// `categoryOrder`/`categoryMap` are optional — default to the static
+// CATEGORY_ORDER/CATEGORY_META import (unchanged behavior) for any
+// caller not yet passing dynamic categories (see lib/categories.js).
+export function postJobModalHtml(categoryOrder = CATEGORY_ORDER, categoryMap = CATEGORY_META) {
   return `
 <div class="pj-overlay" id="pjOverlay" onclick="if(event.target===this)closePostJobModal()">
   <div class="pj-modal">
@@ -27,7 +31,7 @@ export function postJobModalHtml() {
         <div class="pj-row">
           <div class="pj-group"><label class="pj-label">Category</label>
             <select class="pj-select" name="category">
-              ${CATEGORY_ORDER.map(k => `<option value="${k}">${CATEGORY_META[k].label}</option>`).join('')}
+              ${categoryOrder.map(k => `<option value="${k}">${escapeHtml(categoryMap[k].label)}</option>`).join('')}
             </select>
           </div>
           <div class="pj-group"><label class="pj-label">Remote Type</label>
