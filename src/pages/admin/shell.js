@@ -15,9 +15,10 @@ const NAV_ITEMS = [
   { id: 'jobs', label: 'Jobs', icon: '💼', href: '/admin/jobs' },
   { id: 'companies', label: 'Companies', icon: '🏢', href: '/admin/companies' },
   { id: 'categories', label: 'Categories', icon: '🗂️', href: '/admin/categories' },
+  { id: 'directory', label: 'Directory', icon: '🌐', href: '/admin/directory' },
   { id: 'settings', label: 'Settings', icon: '⚙️', href: '/admin/settings' },
   // Future phases plug in here, e.g.:
-  // { id: 'skills', label: 'Skills', icon: '🏷️', href: '/admin/skills' },
+  // { id: 'pages', label: 'Pages', icon: '📄', href: '/admin/pages' },
 ];
 
 const DARK_THEME_CSS = `
