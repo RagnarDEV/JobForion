@@ -7,7 +7,8 @@ import {
   buildCompaniesSitemapXml, buildSkillsSitemapXml, buildCountriesSitemapXml,
 } from '../lib/sitemap.js';
 import { BLOG_POSTS } from '../data/blog-posts.js';
-import { CATEGORY_ORDER } from '../config/constants.js';
+import { getCategoryOrder } from '../lib/categories.js';
+import { getSettings } from '../lib/settings.js';
 
 // PERFORMANCE + RELIABILITY: cache every sitemap variant at Cloudflare's
 // edge for 1 hour. Without this, EVERY request (including repeated crawler
@@ -60,8 +61,9 @@ export async function handleFeedRoute(url, env, base, ctx) {
   }
 
   if (url.pathname === '/sitemap-static.xml') {
+    const categoryOrder = await getCategoryOrder(env);
     return cachedXmlResponse(url, ctx, 'urlset', () =>
-      buildStaticSitemapXml(base, { blogPosts: BLOG_POSTS, categoryOrder: CATEGORY_ORDER })
+      buildStaticSitemapXml(base, { blogPosts: BLOG_POSTS, categoryOrder })
     );
   }
 
@@ -84,6 +86,7 @@ export async function handleFeedRoute(url, env, base, ctx) {
   }
 
   if (url.pathname === '/feed.rss') {
+    const settings = await getSettings(env);
     const { results } = await env.DB.prepare("SELECT * FROM jobs ORDER BY id DESC LIMIT 50").all();
     const jobItems = results.map(j => `<item>
         <title><![CDATA[${j.title} at ${j.company}]]></title>
@@ -102,8 +105,8 @@ export async function handleFeedRoute(url, env, base, ctx) {
         <category>Article</category>
       </item>`).join('');
     return new Response(`<?xml version="1.0" encoding="UTF-8"?><rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
-<channel><title>JobForion — Remote Jobs &amp; Career Advice</title><link>${base}</link>
-<description>Latest remote job listings and career articles from JobForion</description>
+<channel><title><![CDATA[${settings.site_name} — Remote Jobs & Career Advice]]></title><link>${base}</link>
+<description><![CDATA[Latest remote job listings and career articles from ${settings.site_name}]]></description>
 <atom:link href="${base}/feed.rss" rel="self" type="application/rss+xml"/>
 ${jobItems}${articleItems}</channel></rss>`, { headers: { "Content-Type": "application/rss+xml" } });
   }
