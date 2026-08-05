@@ -17,9 +17,11 @@ import { cleanupStaleJobs } from '../db/cleanup.js';
 import { renderJobsListContent, renderJobEditContent, renderDuplicatesContent } from '../pages/admin/jobs.js';
 import { renderCompaniesListContent } from '../pages/admin/companies.js';
 import { renderSettingsContent } from '../pages/admin/settings.js';
+import { renderCategoriesContent } from '../pages/admin/categories.js';
 import { adminShell } from '../pages/admin/shell.js';
 import { JOB_TYPE_META } from '../config/constants.js';
 import { setSettings, SETTINGS_KEYS } from '../lib/settings.js';
+import { createCategory, updateCategory, deleteCategory, moveCategory } from '../lib/categories.js';
 
 function errorPage(err) {
   const msg = (err && err.message ? err.message : String(err)).replace(/</g, '&lt;');
@@ -208,6 +210,69 @@ export async function handleAdminRoute(url, request, env, base) {
       }
       await setSettings(env, updates);
       return new Response(null, { status: 302, headers: { 'Location': `/admin/settings?flash=${encodeURIComponent('Settings saved')}` } });
+    } catch (e) { return errorPage(e); }
+  }
+
+  if (url.pathname === '/admin/categories' && request.method === 'GET') {
+    try {
+      const ok = await verifyAdminCookie(env, request.headers.get('Cookie'));
+      if (!ok) return new Response(renderAdminLogin(false), { headers: { "Content-Type": "text/html; charset=utf-8" } });
+      const content = await renderCategoriesContent(env);
+      return new Response(adminShell('categories', content), { headers: { "Content-Type": "text/html; charset=utf-8" } });
+    } catch (e) { return errorPage(e); }
+  }
+
+  if (url.pathname === '/admin/categories/create' && request.method === 'POST') {
+    try {
+      const ok = await verifyAdminCookie(env, request.headers.get('Cookie'));
+      if (!ok) return new Response('Unauthorized', { status: 401 });
+      const form = await request.formData();
+      await createCategory(env, {
+        key: (form.get('key') || '').toString(),
+        label: (form.get('label') || '').toString(),
+        emoji: (form.get('emoji') || '').toString(),
+        color: (form.get('color') || '').toString(),
+      });
+      return new Response(null, { status: 302, headers: { 'Location': `/admin/categories?flash=${encodeURIComponent('Category added')}` } });
+    } catch (e) { return errorPage(e); }
+  }
+
+  if (url.pathname === '/admin/categories/update' && request.method === 'POST') {
+    try {
+      const ok = await verifyAdminCookie(env, request.headers.get('Cookie'));
+      if (!ok) return new Response('Unauthorized', { status: 401 });
+      const form = await request.formData();
+      const key = (form.get('key') || '').toString();
+      await updateCategory(env, key, {
+        label: (form.get('label') || '').toString(),
+        emoji: (form.get('emoji') || '').toString(),
+        color: (form.get('color') || '').toString(),
+        active: !!form.get('active'),
+      });
+      return new Response(null, { status: 302, headers: { 'Location': `/admin/categories?flash=${encodeURIComponent('Category updated')}` } });
+    } catch (e) { return errorPage(e); }
+  }
+
+  if (url.pathname === '/admin/categories/move' && request.method === 'POST') {
+    try {
+      const ok = await verifyAdminCookie(env, request.headers.get('Cookie'));
+      if (!ok) return new Response('Unauthorized', { status: 401 });
+      const form = await request.formData();
+      const key = (form.get('key') || '').toString();
+      const direction = (form.get('direction') || '').toString() === 'up' ? 'up' : 'down';
+      await moveCategory(env, key, direction);
+      return new Response(null, { status: 302, headers: { 'Location': '/admin/categories' } });
+    } catch (e) { return errorPage(e); }
+  }
+
+  if (url.pathname === '/admin/categories/delete' && request.method === 'POST') {
+    try {
+      const ok = await verifyAdminCookie(env, request.headers.get('Cookie'));
+      if (!ok) return new Response('Unauthorized', { status: 401 });
+      const form = await request.formData();
+      const key = (form.get('key') || '').toString();
+      await deleteCategory(env, key);
+      return new Response(null, { status: 302, headers: { 'Location': `/admin/categories?flash=${encodeURIComponent('Category deleted')}` } });
     } catch (e) { return errorPage(e); }
   }
 
