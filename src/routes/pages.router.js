@@ -11,6 +11,7 @@ import { getActiveApiKeys } from '../db/sync.js';
 import { baseLayout } from '../layout/base-layout.js';
 import { BASE_URL } from '../config/constants.js';
 import { getSettings } from '../lib/settings.js';
+import { getCategoryData } from '../lib/categories.js';
 
 // A deleted/expired job's row is hard-removed from D1 (see
 // db/cleanup.js), so at request time there's no way to tell "this id
@@ -37,6 +38,7 @@ async function renderJobGonePage(env, base, requestedId) {
     : "We couldn't find a job at this address. It may have been mistyped, or the link may be out of date.";
 
   const settings = await getSettings(env);
+  const categories = await getCategoryData(env);
   const content = `
 <div class="page-sm" style="text-align:center;padding-top:60px">
   <div style="font-size:56px;margin-bottom:8px;opacity:.35">${isGone ? '⏳' : '🔍'}</div>
@@ -46,7 +48,7 @@ async function renderJobGonePage(env, base, requestedId) {
 </div>`;
 
   return new Response(
-    baseLayout(`${headline} — ${settings.site_name}`, body, `${base}/job/${requestedId}`, '', content, '', 'noindex, nofollow', settings),
+    baseLayout(`${headline} — ${settings.site_name}`, body, `${base}/job/${requestedId}`, '', content, '', 'noindex, nofollow', settings, categories),
     { status, headers: { "Content-Type": "text/html; charset=utf-8" } }
   );
 }
