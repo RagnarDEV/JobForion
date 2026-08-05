@@ -20,14 +20,17 @@ import { SETTINGS_DEFAULTS } from '../lib/settings.js';
 // — including any future page that forgets to sanitize before calling
 // baseLayout() — instead of relying on each page to remember individually.
 //
-// `settings` (new, optional, always the LAST parameter) is the resolved
-// object from lib/settings.js — pass it whenever the caller already has
-// it (see pages/job-page.js, pages/blog.js, pages/static-pages.js) to get
-// dynamic site name / GA id / social links threaded through nav + footer.
-// Callers that don't pass it (not yet migrated — see seo-pages.js) get
-// byte-identical output to before: every fallback below matches the old
-// hardcoded string exactly.
-export function baseLayout(title, description, canonical, ogImage, content, extraHead = '', robots = 'index, follow', settings = null) {
+// `settings` (optional) is the resolved object from lib/settings.js —
+// pass it whenever the caller already has it (see pages/job-page.js,
+// pages/blog.js, pages/static-pages.js) to get dynamic site name / GA id
+// / social links threaded through nav + footer.
+//
+// `categories` (optional, new) is `{ order: string[], map: object }` from
+// lib/categories.js — pass it to get the live, admin-managed category
+// list into the "Post a Job" modal's category dropdown. Neither param
+// changes behavior for callers that omit it: every fallback below
+// matches the old hardcoded output exactly.
+export function baseLayout(title, description, canonical, ogImage, content, extraHead = '', robots = 'index, follow', settings = null, categories = null) {
   const safeTitle = escapeHtml(title);
   const safeDescription = escapeHtml(description);
   const siteName = escapeHtml(settings?.site_name || SETTINGS_DEFAULTS.site_name);
@@ -128,7 +131,7 @@ ${navHtml(settings)}
 ${mobileHeaderHtml(settings)}
 ${content}
 ${footerHtml(BASE_URL, settings)}
-${postJobModalHtml()}
+${postJobModalHtml(categories?.order, categories?.map)}
 </body>
 </html>`;
 }
