@@ -9,6 +9,8 @@
 // live schema via PRAGMA table_info and adds only what's missing, via
 // ALTER TABLE ADD COLUMN — existing rows and data are never touched.
 
+import { CATEGORY_META } from '../config/constants.js';
+
 async function ensureColumn(env, table, column, definition) {
   try {
     const { results } = await env.DB.prepare(`PRAGMA table_info(${table})`).all();
@@ -201,6 +203,32 @@ export async function ensureTable(env) {
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )
   `).run();
+
+  // ── Dynamic Job Categories ──────────────────────────────────────
+  // Backs lib/categories.js. Replaces the old hardcoded CATEGORY_META
+  // constant — /admin/categories can now create/edit/reorder/deactivate
+  // categories with zero code edits. Seeded ONCE from the original
+  // CATEGORY_META so every existing category/URL keeps working exactly
+  // as before after this upgrade; INSERT OR IGNORE makes the seed
+  // idempotent (safe to run on every cold isolate start).
+  await env.DB.prepare(`
+    CREATE TABLE IF NOT EXISTS categories (
+      key TEXT PRIMARY KEY,
+      label TEXT NOT NULL,
+      emoji TEXT,
+      color TEXT,
+      sort_order INTEGER DEFAULT 0,
+      active INTEGER DEFAULT 1
+    )
+  `).run();
+  const seedEntries = Object.entries(CATEGORY_META);
+  if (seedEntries.length) {
+    await env.DB.batch(seedEntries.map(([key, v], i) =>
+      env.DB.prepare(
+        `INSERT OR IGNORE INTO categories (key, label, emoji, color, sort_order, active) VALUES (?, ?, ?, ?, ?, 1)`
+      ).bind(key, v.label, v.emoji, v.color, i)
+    ));
+  }
 
   schemaEnsured = true;
 }
