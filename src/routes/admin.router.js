@@ -18,10 +18,12 @@ import { renderJobsListContent, renderJobEditContent, renderDuplicatesContent } 
 import { renderCompaniesListContent } from '../pages/admin/companies.js';
 import { renderSettingsContent } from '../pages/admin/settings.js';
 import { renderCategoriesContent } from '../pages/admin/categories.js';
+import { renderDirectoryContent } from '../pages/admin/directory.js';
 import { adminShell } from '../pages/admin/shell.js';
 import { JOB_TYPE_META } from '../config/constants.js';
 import { setSettings, SETTINGS_KEYS } from '../lib/settings.js';
 import { createCategory, updateCategory, deleteCategory, moveCategory } from '../lib/categories.js';
+import { setOverride, clearOverride, DIRECTORY_KINDS } from '../lib/directory-overrides.js';
 
 function errorPage(err) {
   const msg = (err && err.message ? err.message : String(err)).replace(/</g, '&lt;');
@@ -273,6 +275,44 @@ export async function handleAdminRoute(url, request, env, base) {
       const key = (form.get('key') || '').toString();
       await deleteCategory(env, key);
       return new Response(null, { status: 302, headers: { 'Location': `/admin/categories?flash=${encodeURIComponent('Category deleted')}` } });
+    } catch (e) { return errorPage(e); }
+  }
+
+  if (url.pathname === '/admin/directory' && request.method === 'GET') {
+    try {
+      const ok = await verifyAdminCookie(env, request.headers.get('Cookie'));
+      if (!ok) return new Response(renderAdminLogin(false), { headers: { "Content-Type": "text/html; charset=utf-8" } });
+      const content = await renderDirectoryContent(env, url.searchParams);
+      return new Response(adminShell('directory', content), { headers: { "Content-Type": "text/html; charset=utf-8" } });
+    } catch (e) { return errorPage(e); }
+  }
+
+  if (url.pathname === '/admin/directory/save' && request.method === 'POST') {
+    try {
+      const ok = await verifyAdminCookie(env, request.headers.get('Cookie'));
+      if (!ok) return new Response('Unauthorized', { status: 401 });
+      const form = await request.formData();
+      const kind = (form.get('kind') || '').toString();
+      if (!DIRECTORY_KINDS.includes(kind)) return new Response('Invalid kind', { status: 400 });
+      const name = (form.get('name') || '').toString();
+      await setOverride(env, kind, name, {
+        displayName: (form.get('display_name') || '').toString(),
+        hidden: !!form.get('hidden'),
+      });
+      return new Response(null, { status: 302, headers: { 'Location': `/admin/directory?flash=${encodeURIComponent('Saved')}` } });
+    } catch (e) { return errorPage(e); }
+  }
+
+  if (url.pathname === '/admin/directory/reset' && request.method === 'POST') {
+    try {
+      const ok = await verifyAdminCookie(env, request.headers.get('Cookie'));
+      if (!ok) return new Response('Unauthorized', { status: 401 });
+      const form = await request.formData();
+      const kind = (form.get('kind') || '').toString();
+      if (!DIRECTORY_KINDS.includes(kind)) return new Response('Invalid kind', { status: 400 });
+      const name = (form.get('name') || '').toString();
+      await clearOverride(env, kind, name);
+      return new Response(null, { status: 302, headers: { 'Location': `/admin/directory?flash=${encodeURIComponent('Reset to auto-detected')}` } });
     } catch (e) { return errorPage(e); }
   }
 

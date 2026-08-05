@@ -5,6 +5,7 @@
 import { syncJobs } from '../db/sync.js';
 import { checkRateLimit } from '../lib/rate-limit.js';
 import { JOB_TYPE_SORT_SQL } from '../config/constants.js';
+import { resolveRawNames } from '../lib/directory-overrides.js';
 
 export async function handleApiRoute(url, request, env) {
   if (url.pathname === '/api/subscribe' && request.method === 'POST') {
@@ -83,8 +84,29 @@ export async function handleApiRoute(url, request, env) {
     if (seniority) { conditions.push("LOWER(seniority) LIKE ?"); params.push(`%${seniority.toLowerCase()}%`); }
     if (salaryMin) { conditions.push("CAST(REPLACE(REPLACE(salary,'$',''),'k','') AS INTEGER) >= ?"); params.push(parseInt(salaryMin)); }
     if (days) { conditions.push("created_at >= datetime('now', '-' || ? || ' days')"); params.push(parseInt(days)); }
-    if (country) { conditions.push("(location = ? OR location LIKE ?)"); params.push(country, `%, ${country}`); }
-    if (skill) { conditions.push("EXISTS (SELECT 1 FROM json_each(jobs.skills) je WHERE je.value = ?)"); params.push(skill); }
+    if (country) {
+      // See lib/directory-overrides.js: `country` here is the DISPLAY
+      // name a user clicked in the filter panel, which may differ from
+      // what's literally stored in jobs.location if an admin renamed it
+      // at /admin/directory. Resolve back to the raw name(s) first, or
+      // this filter would silently return zero results after a rename.
+      const rawCountryNames = await resolveRawNames(env, 'country', country);
+      if (rawCountryNames.length) {
+        conditions.push('(' + rawCountryNames.map(() => '(location = ? OR location LIKE ?)').join(' OR ') + ')');
+        params.push(...rawCountryNames.flatMap(n => [n, `%, ${n}`]));
+      } else {
+        conditions.push('1 = 0'); // renamed-away/hidden country — no matches, not "ignore filter"
+      }
+    }
+    if (skill) {
+      const rawSkillNames = await resolveRawNames(env, 'skill', skill);
+      if (rawSkillNames.length) {
+        conditions.push(`EXISTS (SELECT 1 FROM json_each(jobs.skills) je WHERE je.value IN (${rawSkillNames.map(() => '?').join(',')}))`);
+        params.push(...rawSkillNames);
+      } else {
+        conditions.push('1 = 0');
+      }
+    }
     if (company) { conditions.push("company = ?"); params.push(company); }
     const where = conditions.length ? " WHERE " + conditions.join(" AND ") : "";
     const { results } = await env.DB.prepare(`SELECT * FROM jobs${where} ORDER BY ${JOB_TYPE_SORT_SQL} ASC, featured DESC, id DESC LIMIT ${limit} OFFSET ${offset}`).bind(...params).all();
