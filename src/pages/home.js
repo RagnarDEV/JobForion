@@ -8,13 +8,14 @@ import { footerHtml } from '../components/footer.js';
 import { postJobModalHtml } from '../components/post-job-modal.js';
 import { SHARED_CSS } from '../styles/shared-css.js';
 import { ICON_HEAD } from '../assets/favicon.js';
-import { CATEGORY_ORDER, CATEGORY_META, JOB_TYPE_META, JOB_TYPE_SORT_SQL } from '../config/constants.js';
+import { JOB_TYPE_META, JOB_TYPE_SORT_SQL } from '../config/constants.js';
 import { jobCardSSR } from '../components/job-card.js';
 import { adSlot } from '../components/ad-slot.js';
 import { escapeHtml, slugify, listCountries, listSkills, listCompanies } from '../lib/entities.js';
 import { countryFlag, COUNTRY_TO_ISO } from '../lib/country-flags.js';
 import { googleAnalyticsTag } from '../lib/analytics-tag.js';
 import { getSettings } from '../lib/settings.js';
+import { getCategories } from '../lib/categories.js';
 import { iconSparkle, iconFlame, iconPin, iconMapPin, iconBookmark, iconLink, iconArrowRight, iconBadgeCheck, iconClock, iconGlobe, iconBuilding, iconSearch, iconX, iconFilter, iconCheck, iconInfo, iconAlertTriangle, iconFolder, iconTag } from '../assets/icons.js';
 
 // Same icon markup used by the server-rendered cards (job-card.js) is
@@ -35,8 +36,8 @@ const CLIENT_ICONS = {
 // Kept for backward compatibility with anything still calling it directly;
 // the homepage itself now renders categories via the panel below instead
 // of an always-expanded chip row.
-export function categoryChipsServer() {
-  return CATEGORY_ORDER.map(k => `<button class="chip" data-cat="${k}" onclick="filterCat('${k}','${CATEGORY_META[k].label}')">${CATEGORY_META[k].label}</button>`).join('');
+export function categoryChipsServer(categoryOrder, categoryMap) {
+  return categoryOrder.map(k => `<button class="chip" data-cat="${k}" onclick="filterCat('${k}','${escapeHtml(categoryMap[k].label)}')">${escapeHtml(categoryMap[k].label)}</button>`).join('');
 }
 
 // ── Generic facet-picker panel builder ──────────────────────────────
@@ -70,8 +71,8 @@ function facetPanelServer(facet, defaultIconSvg, allLabel, items, iconInDataLabe
   return allBtn + rest;
 }
 
-function categoryPanelItemsServer(counts) {
-  const items = CATEGORY_ORDER.map(k => ({ icon: CATEGORY_META[k].emoji, name: CATEGORY_META[k].label, value: k, count: counts[k] || 0 }));
+function categoryPanelItemsServer(counts, categoryOrder, categoryMap) {
+  const items = categoryOrder.map(k => ({ icon: categoryMap[k].emoji, name: categoryMap[k].label, value: k, count: counts[k] || 0 }));
   return facetPanelServer('category', iconFolder({ size: 11 }), 'All Categories', items, true);
 }
 
@@ -109,18 +110,33 @@ function companyPanelItemsServer(companies) {
 // Single-query category counts: one SUM(CASE WHEN...) column per category
 // instead of 13 separate COUNT queries, to keep the homepage's D1
 // subrequest budget in check (see the free-tier notes in README.md).
-async function getCategoryCounts(env) {
+//
+// SECURITY: category keys are admin-editable (lib/categories.js) as of
+// this update, so they can no longer be trusted as raw SQL identifiers
+// (a key was previously interpolated directly as a column alias here,
+// which was only safe while CATEGORY_ORDER was a fixed, hardcoded
+// whitelist). Aliases are now purely positional (c0, c1, ...) — the key
+// text itself only ever flows in as a bound parameter (`%${k}%`), never
+// concatenated into the SQL string.
+async function getCategoryCounts(env, categoryOrder) {
+  if (!categoryOrder.length) return {};
   try {
-    const caseExprs = CATEGORY_ORDER.map(k => `SUM(CASE WHEN LOWER(title) LIKE ? THEN 1 ELSE 0 END) AS ${k}`).join(', ');
-    const binds = CATEGORY_ORDER.map(k => `%${k}%`);
+    const caseExprs = categoryOrder.map((_, i) => `SUM(CASE WHEN LOWER(title) LIKE ? THEN 1 ELSE 0 END) AS c${i}`).join(', ');
+    const binds = categoryOrder.map(k => `%${k}%`);
     const { results } = await env.DB.prepare(`SELECT ${caseExprs} FROM jobs`).bind(...binds).all();
-    return results[0] || {};
+    const row = results[0] || {};
+    const out = {};
+    categoryOrder.forEach((k, i) => { out[k] = row[`c${i}`] || 0; });
+    return out;
   } catch (e) { return {}; }
 }
 
 export async function renderMainHTML(env, base) {
   await ensureTable(env);
   const settings = await getSettings(env);
+  const categories = await getCategories(env);
+  const categoryOrder = categories.map(c => c.key);
+  const categoryMap = Object.fromEntries(categories.map(c => [c.key, { label: c.label, emoji: c.emoji, color: c.color }]));
   let initialJobs = [], initialTotal = 0, totalJobsCount = 0, companiesCount = 0;
   try {
     const { results } = await env.DB.prepare(`SELECT * FROM jobs ORDER BY ${JOB_TYPE_SORT_SQL} ASC, featured DESC, id DESC LIMIT 20`).all();
@@ -140,9 +156,9 @@ export async function renderMainHTML(env, base) {
   try { topCountries = await listCountries(env, { limit: 40 }); } catch (e) {}
   try { topSkills = await listSkills(env, { limit: 40 }); } catch (e) {}
   try { topCompanies = await listCompanies(env, { limit: 40 }); } catch (e) {}
-  categoryCounts = await getCategoryCounts(env);
+  categoryCounts = await getCategoryCounts(env, categoryOrder);
 
-  const categoryPanelHtml = categoryPanelItemsServer(categoryCounts);
+  const categoryPanelHtml = categoryPanelItemsServer(categoryCounts, categoryOrder, categoryMap);
   const countryPanelHtml = countryPanelItemsServer(topCountries);
   const skillPanelHtml = skillPanelItemsServer(topSkills);
   const companyPanelHtml = companyPanelItemsServer(topCompanies);
@@ -159,7 +175,7 @@ export async function renderMainHTML(env, base) {
   });
 
   const ssrJobsHtml = initialJobs.length
-    ? initialJobs.map((j, i) => jobCardSSR(j, i)).join('')
+    ? initialJobs.map((j, i) => jobCardSSR(j, i, categoryMap, categoryOrder)).join('')
     : `<div class="loader-wrap"><div class="loader"></div></div>`;
 
   const siteName = escapeHtml(settings.site_name);
@@ -421,7 +437,7 @@ ${mobileHeaderHtml(settings)}
 </main>
 
 ${footerHtml(base, settings)}
-${postJobModalHtml()}
+${postJobModalHtml(categoryOrder, categoryMap)}
 
 <div class="toast" id="toast">
   <span id="toastIcon" style="font-size:16px;display:inline-flex"></span>
@@ -429,9 +445,10 @@ ${postJobModalHtml()}
   <div class="toast-bar" id="toastBar"></div>
 </div>
 
-<script>window.__CATEGORY_META__=${JSON.stringify(CATEGORY_META)};window.__ICONS__=${JSON.stringify(CLIENT_ICONS)};window.__COUNTRY_ISO__=${JSON.stringify(COUNTRY_TO_ISO)};window.__JOB_TYPE_META__=${JSON.stringify(JOB_TYPE_META)};</script>
+<script>window.__CATEGORY_META__=${JSON.stringify(categoryMap)};window.__CATEGORY_ORDER__=${JSON.stringify(categoryOrder)};window.__ICONS__=${JSON.stringify(CLIENT_ICONS)};window.__COUNTRY_ISO__=${JSON.stringify(COUNTRY_TO_ISO)};window.__JOB_TYPE_META__=${JSON.stringify(JOB_TYPE_META)};</script>
 <script>
 const CAT_META=window.__CATEGORY_META__;
+const CAT_ORDER=window.__CATEGORY_ORDER__;
 const ICONS=window.__ICONS__;
 const COUNTRY_ISO=window.__COUNTRY_ISO__;
 const JOB_TYPE_META=window.__JOB_TYPE_META__;
@@ -486,9 +503,8 @@ function remoteTag(t){
 }
 function catForTitle(title){
   const t=(title||'').toLowerCase();
-  const order=['developer','designer','marketing','data','devops','manager','writer'];
-  for(const k of order){if(t.includes(k))return k;}
-  return 'developer';
+  for(const k of CAT_ORDER){if(t.includes(k))return k;}
+  return CAT_ORDER[0]||'developer';
 }
 function pastelFor(j){
   if(j.featured)return'var(--pastel-blue)';
