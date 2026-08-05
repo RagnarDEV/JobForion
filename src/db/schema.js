@@ -230,5 +230,23 @@ export async function ensureTable(env) {
     ));
   }
 
+  // ── Directory Overrides (Countries / Cities / Skills) ────────────
+  // Backs lib/directory-overrides.js. Countries/cities/skills have no
+  // independent existence — they're aggregated live from free-text
+  // `jobs.location` / `jobs.skills` (see the NOTE at the top of
+  // lib/entities.js). This table lets /admin/directory rename or hide
+  // an auto-detected entry (e.g. fix "CA" → "California", or hide a
+  // misclassified value) without ever touching job rows.
+  await env.DB.prepare(`
+    CREATE TABLE IF NOT EXISTS directory_overrides (
+      kind TEXT NOT NULL,
+      name TEXT NOT NULL,
+      display_name TEXT,
+      hidden INTEGER DEFAULT 0,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (kind, name)
+    )
+  `).run();
+
   schemaEnsured = true;
 }
