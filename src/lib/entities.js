@@ -14,6 +14,7 @@
 // ════════════════════════════════════════════════════════════════
 
 import { JOB_TYPE_SORT_SQL } from '../config/constants.js';
+import { getOverrides, applyDirectoryOverrides } from './directory-overrides.js';
 
 // ════════════════════════════════════════════════════════════════
 // SECURITY: escapeHtml — every field that ultimately comes from an
@@ -123,7 +124,11 @@ function splitLocation(location) {
   return { city: null, region: parts[0] || 'Remote' };
 }
 
-export async function listCountries(env, { limit = 300 } = {}) {
+// Raw aggregation, BEFORE overrides are applied — exported so
+// /admin/directory can show hidden entries too (with a badge, so they
+// can be un-hidden), which listCountries()/listCities() below
+// deliberately can't do since they're the public-facing view.
+export async function listCountriesRaw(env) {
   const { results } = await env.DB.prepare(
     `SELECT location, COUNT(*) c FROM jobs WHERE location IS NOT NULL AND location != '' GROUP BY location`
   ).all();
@@ -136,7 +141,14 @@ export async function listCountries(env, { limit = 300 } = {}) {
     prev.count += row.c;
     map.set(slug, prev);
   }
-  return [...map.values()].sort((a, b) => b.count - a.count).slice(0, limit);
+  return [...map.values()].sort((a, b) => b.count - a.count);
+}
+
+export async function listCountries(env, { limit = 300 } = {}) {
+  const raw = await listCountriesRaw(env);
+  const overrides = await getOverrides(env, 'country');
+  const all = applyDirectoryOverrides(raw, overrides, slugify);
+  return all.sort((a, b) => b.count - a.count).slice(0, limit);
 }
 
 export async function findCountryBySlug(env, slug) {
@@ -144,15 +156,23 @@ export async function findCountryBySlug(env, slug) {
   return countries.find(c => c.slug === slug) || null;
 }
 
-export async function jobsByRegion(env, regionName, { limit = 100 } = {}) {
+export async function jobsByRegion(env, regionNames, { limit = 100 } = {}) {
+  // Accepts either a single region string (legacy call shape) or an
+  // array of raw names (see the rawNames note on applyDirectoryOverrides
+  // in lib/directory-overrides.js — required so a renamed/merged country
+  // still matches the original, un-renamed text stored in jobs.location).
+  const names = (Array.isArray(regionNames) ? regionNames : [regionNames]).filter(Boolean);
+  if (!names.length) return [];
   // matches on the trailing "region" segment of location (country/state heuristic)
+  const conditions = names.map(() => '(location = ? OR location LIKE ?)').join(' OR ');
+  const binds = names.flatMap(n => [n, `%, ${n}`]);
   const { results } = await env.DB.prepare(
-    `SELECT * FROM jobs WHERE location = ? OR location LIKE ? ORDER BY ${JOB_TYPE_SORT_SQL} ASC, id DESC LIMIT ?`
-  ).bind(regionName, `%, ${regionName}`, limit).all();
+    `SELECT * FROM jobs WHERE (${conditions}) ORDER BY ${JOB_TYPE_SORT_SQL} ASC, id DESC LIMIT ?`
+  ).bind(...binds, limit).all();
   return results || [];
 }
 
-export async function listCities(env, { limit = 300 } = {}) {
+export async function listCitiesRaw(env) {
   const { results } = await env.DB.prepare(
     `SELECT location, COUNT(*) c FROM jobs WHERE location IS NOT NULL AND location != '' GROUP BY location`
   ).all();
@@ -165,7 +185,14 @@ export async function listCities(env, { limit = 300 } = {}) {
     prev.count += row.c;
     map.set(slug, prev);
   }
-  return [...map.values()].sort((a, b) => b.count - a.count).slice(0, limit);
+  return [...map.values()].sort((a, b) => b.count - a.count);
+}
+
+export async function listCities(env, { limit = 300 } = {}) {
+  const raw = await listCitiesRaw(env);
+  const overrides = await getOverrides(env, 'city');
+  const all = applyDirectoryOverrides(raw, overrides, slugify);
+  return all.sort((a, b) => b.count - a.count).slice(0, limit);
 }
 
 export async function findCityBySlug(env, slug) {
@@ -173,10 +200,14 @@ export async function findCityBySlug(env, slug) {
   return cities.find(c => c.slug === slug) || null;
 }
 
-export async function jobsByCity(env, cityName, { limit = 100 } = {}) {
+export async function jobsByCity(env, cityNames, { limit = 100 } = {}) {
+  const names = (Array.isArray(cityNames) ? cityNames : [cityNames]).filter(Boolean);
+  if (!names.length) return [];
+  const conditions = names.map(() => '(location = ? OR location LIKE ?)').join(' OR ');
+  const binds = names.flatMap(n => [n, `${n},%`]);
   const { results } = await env.DB.prepare(
-    `SELECT * FROM jobs WHERE location = ? OR location LIKE ? ORDER BY ${JOB_TYPE_SORT_SQL} ASC, id DESC LIMIT ?`
-  ).bind(cityName, `${cityName},%`, limit).all();
+    `SELECT * FROM jobs WHERE (${conditions}) ORDER BY ${JOB_TYPE_SORT_SQL} ASC, id DESC LIMIT ?`
+  ).bind(...binds, limit).all();
   return results || [];
 }
 
@@ -187,19 +218,25 @@ export async function jobsByCity(env, cityName, { limit = 100 } = {}) {
 // on every /skills page load and every /sitemap.xml request. Bounding to
 // the most recent 5000 jobs (same sample size already used for the admin
 // dashboard's skill-count estimate) keeps it fast at any table size.
-export async function listSkills(env, { limit = 200 } = {}) {
+export async function listSkillsRaw(env) {
   try {
     const { results } = await env.DB.prepare(
       `SELECT value AS skill, COUNT(*) c FROM (
          SELECT skills FROM jobs WHERE skills IS NOT NULL AND skills != '' AND skills != '[]' ORDER BY id DESC LIMIT 5000
        ), json_each(skills)
-       GROUP BY value ORDER BY c DESC LIMIT ?`
-    ).bind(limit).all();
+       GROUP BY value ORDER BY c DESC`
+    ).all();
     return (results || []).map(r => ({ name: r.skill, slug: slugify(r.skill), count: r.c })).filter(s => s.name);
   } catch (e) {
-    // json_each unsupported/edge case — fail gracefully, directory just empty
     return [];
   }
+}
+
+export async function listSkills(env, { limit = 200 } = {}) {
+  const raw = await listSkillsRaw(env);
+  const overrides = await getOverrides(env, 'skill');
+  const all = applyDirectoryOverrides(raw, overrides, slugify);
+  return all.sort((a, b) => b.count - a.count).slice(0, limit);
 }
 
 export async function findSkillBySlug(env, slug) {
@@ -207,12 +244,15 @@ export async function findSkillBySlug(env, slug) {
   return skills.find(s => s.slug === slug) || null;
 }
 
-export async function jobsBySkill(env, skillName, { limit = 100 } = {}) {
+export async function jobsBySkill(env, skillNames, { limit = 100 } = {}) {
+  const names = (Array.isArray(skillNames) ? skillNames : [skillNames]).filter(Boolean);
+  if (!names.length) return [];
   try {
+    const placeholders = names.map(() => '?').join(',');
     const { results } = await env.DB.prepare(
       `SELECT jobs.* FROM jobs, json_each(jobs.skills)
-       WHERE json_each.value = ? ORDER BY ${JOB_TYPE_SORT_SQL} ASC, jobs.id DESC LIMIT ?`
-    ).bind(skillName, limit).all();
+       WHERE json_each.value IN (${placeholders}) ORDER BY ${JOB_TYPE_SORT_SQL} ASC, jobs.id DESC LIMIT ?`
+    ).bind(...names, limit).all();
     return results || [];
   } catch (e) {
     return [];
