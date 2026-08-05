@@ -14,9 +14,9 @@ import { withCache, CACHE_PRESETS } from '../lib/cache.js';
 
 export async function handleSeoPagesRoute(url, request, env, ctx, base) {
   if (url.pathname === '/categories') {
-    return await withCache(ctx, request, CACHE_PRESETS.directory, async () => renderCategoriesIndex(base));
+    return await withCache(ctx, request, CACHE_PRESETS.directory, async () => renderCategoriesIndex(env, base));
   }
-  const catMatch = url.pathname.match(/^\/categories\/([a-z]+)$/);
+  const catMatch = url.pathname.match(/^\/categories\/([a-z][a-z0-9]{1,19})$/);
   if (catMatch) {
     const html = await renderCategoryDetail(env, base, catMatch[1]);
     if (!html) return new Response('Not found', { status: 404 });
