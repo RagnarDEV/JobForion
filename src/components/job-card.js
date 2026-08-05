@@ -30,7 +30,6 @@ export function remoteTagHtml(t) {
 }
 
 export function jobRowMini(job) {
-  const meta = CATEGORY_META[catForTitleServer(job.title)];
   const jobType = normalizeJobType(job.job_type);
   const tierIcon = jobType !== 'Free' ? `<span class="related-jt-tier" title="${JOB_TYPE_META[jobType].label}">${JOB_TYPE_META[jobType].icon}</span> ` : '';
   return `<a href="/job/${job.id}" class="related-card${jobTypeCardClass(job.job_type)}">
@@ -63,10 +62,17 @@ export function directoryGridHtml(items, hrefBase, iconFn) {
 }
 
 
-export function catForTitleServer(title) {
+// `categoryOrder` is optional — defaults to the static CATEGORY_ORDER
+// import so any caller not yet migrated to dynamic categories (see
+// lib/categories.js) behaves exactly as before. Callers that already
+// have a request-scoped dynamic order (home.js, job-page.js,
+// seo-pages.js) should pass it explicitly. Falls back to the first
+// entry in whatever order was given (rather than a hardcoded key) so
+// this never breaks if an admin renames/removes the 'developer' category.
+export function catForTitleServer(title, categoryOrder = CATEGORY_ORDER) {
   const t = (title || '').toLowerCase();
-  for (const k of CATEGORY_ORDER) { if (t.includes(k)) return k; }
-  return 'developer';
+  for (const k of categoryOrder) { if (t.includes(k)) return k; }
+  return categoryOrder[0] || 'developer';
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -119,8 +125,17 @@ export function timeAgoServer(dateStr) {
   if (h < 24) return h + 'h ago';
   return d + 'd ago';
 }
-export function jobCardSSR(job, idx) {
-  const meta = CATEGORY_META[catForTitleServer(job.title)];
+const FALLBACK_CATEGORY_META = { label: 'General', emoji: '🏷️', color: '#3556FF' };
+
+// `categoryMap`/`categoryOrder` are optional — default to the static
+// CATEGORY_META/CATEGORY_ORDER import, so any caller not yet migrated to
+// dynamic categories renders exactly as before. If a resolved key is
+// somehow missing from the map (e.g. briefly, right after an admin
+// deletes the category a job was classified under), FALLBACK_CATEGORY_META
+// keeps the card rendering instead of throwing.
+export function jobCardSSR(job, idx, categoryMap = CATEGORY_META, categoryOrder = CATEGORY_ORDER) {
+  const catKey = catForTitleServer(job.title, categoryOrder);
+  const meta = categoryMap[catKey] || FALLBACK_CATEGORY_META;
   const isNew = job.created_at && Date.now() - new Date(job.created_at).getTime() < 86400000;
   const isHot = job.salary && parseInt(job.salary.replace(/\D/g, '').slice(0, 3)) >= 150;
   const bg = pastelForJob(job);
