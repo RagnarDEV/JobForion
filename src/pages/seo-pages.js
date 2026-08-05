@@ -124,7 +124,7 @@ export async function renderCountryDetail(env, base, slug) {
   const { settings, categoryBundle } = await loadPageContext(env);
   const country = await findCountryBySlug(env, slug);
   if (!country) return null;
-  const jobs = await jobsByRegion(env, country.name, { limit: 60 });
+  const jobs = await jobsByRegion(env, country.rawNames || country.name, { limit: 60 });
   const { html: bc, jsonLd: bcSchema } = buildBreadcrumb(base, [{ name: 'Countries', path: '/countries' }, { name: country.name, path: `/countries/${slug}` }]);
   // SECURITY: country.name is derived from jobs.location, which ultimately
   // traces back to external provider data — escape before rendering.
@@ -158,7 +158,7 @@ export async function renderSkillDetail(env, base, slug) {
   const { settings, categoryBundle } = await loadPageContext(env);
   const skill = await findSkillBySlug(env, slug);
   if (!skill) return null;
-  const jobs = await jobsBySkill(env, skill.name, { limit: 60 });
+  const jobs = await jobsBySkill(env, skill.rawNames || skill.name, { limit: 60 });
   const { html: bc, jsonLd: bcSchema } = buildBreadcrumb(base, [{ name: 'Skills', path: '/skills' }, { name: skill.name, path: `/skills/${slug}` }]);
   // SECURITY: skill.name is parsed from the jobs.skills JSON column,
   // itself sourced from external providers — escape before rendering.
