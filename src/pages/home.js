@@ -17,6 +17,7 @@ import { googleAnalyticsTag } from '../lib/analytics-tag.js';
 import { getSettings } from '../lib/settings.js';
 import { getCategories } from '../lib/categories.js';
 import { getCardStyles } from '../lib/job-card-styles.js';
+import { getAdSlotsConfig } from '../lib/ad-slots.js';
 import { iconSparkle, iconFlame, iconPin, iconMapPin, iconBookmark, iconLink, iconArrowRight, iconBadgeCheck, iconClock, iconGlobe, iconBuilding, iconSearch, iconX, iconFilter, iconCheck, iconInfo, iconAlertTriangle, iconFolder, iconTag } from '../assets/icons.js';
 
 // Same icon markup used by the server-rendered cards (job-card.js) is
@@ -139,6 +140,8 @@ export async function renderMainHTML(env, base) {
   const categoryOrder = categories.map(c => c.key);
   const categoryMap = Object.fromEntries(categories.map(c => [c.key, { label: c.label, emoji: c.emoji, color: c.color }]));
   const cardStyles = await getCardStyles(env);
+  const adConfig = await getAdSlotsConfig(env);
+  const adsEnabled = settings.ads_enabled !== '0';
   let initialJobs = [], initialTotal = 0, totalJobsCount = 0, companiesCount = 0;
   try {
     const { results } = await env.DB.prepare(`SELECT * FROM jobs ORDER BY ${JOB_TYPE_SORT_SQL} ASC, featured DESC, id DESC LIMIT 20`).all();
@@ -420,7 +423,7 @@ ${mobileHeaderHtml(settings)}
         <div class="results-count" id="resultsCount" style="display:none"><strong>${initialTotal.toLocaleString()}</strong> jobs found</div>
         <button class="adv-toggle-btn" id="advToggleBtn" onclick="toggleAdv()">${iconFilter({ size: 13 })} Filters</button>
       </div>
-      ${adSlot('homepage-results-top')}
+      ${adSlot('homepage-results-top', '', adConfig, adsEnabled)}
       <div class="jobs-list" id="jobsList">${ssrJobsHtml}</div>
       <div class="pagination" id="pagination"></div>
     </div>
