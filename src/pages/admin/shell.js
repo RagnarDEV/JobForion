@@ -19,6 +19,7 @@ const NAV_ITEMS = [
   { id: 'pages', label: 'Pages', icon: '📄', href: '/admin/pages' },
   { id: 'blog', label: 'Blog', icon: '📝', href: '/admin/blog' },
   { id: 'card-styles', label: 'Card Styles', icon: '🎨', href: '/admin/card-styles' },
+  { id: 'ads', label: 'Ads', icon: '📢', href: '/admin/ads' },
   { id: 'settings', label: 'Settings', icon: '⚙️', href: '/admin/settings' },
   // Future phases plug in here, e.g.:
   // { id: 'theme', label: 'Theme', icon: '🖌️', href: '/admin/theme' },
