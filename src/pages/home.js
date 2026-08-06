@@ -16,6 +16,7 @@ import { countryFlag, COUNTRY_TO_ISO } from '../lib/country-flags.js';
 import { googleAnalyticsTag } from '../lib/analytics-tag.js';
 import { getSettings } from '../lib/settings.js';
 import { getCategories } from '../lib/categories.js';
+import { getCardStyles } from '../lib/job-card-styles.js';
 import { iconSparkle, iconFlame, iconPin, iconMapPin, iconBookmark, iconLink, iconArrowRight, iconBadgeCheck, iconClock, iconGlobe, iconBuilding, iconSearch, iconX, iconFilter, iconCheck, iconInfo, iconAlertTriangle, iconFolder, iconTag } from '../assets/icons.js';
 
 // Same icon markup used by the server-rendered cards (job-card.js) is
@@ -137,6 +138,7 @@ export async function renderMainHTML(env, base) {
   const categories = await getCategories(env);
   const categoryOrder = categories.map(c => c.key);
   const categoryMap = Object.fromEntries(categories.map(c => [c.key, { label: c.label, emoji: c.emoji, color: c.color }]));
+  const cardStyles = await getCardStyles(env);
   let initialJobs = [], initialTotal = 0, totalJobsCount = 0, companiesCount = 0;
   try {
     const { results } = await env.DB.prepare(`SELECT * FROM jobs ORDER BY ${JOB_TYPE_SORT_SQL} ASC, featured DESC, id DESC LIMIT 20`).all();
@@ -175,7 +177,7 @@ export async function renderMainHTML(env, base) {
   });
 
   const ssrJobsHtml = initialJobs.length
-    ? initialJobs.map((j, i) => jobCardSSR(j, i, categoryMap, categoryOrder)).join('')
+    ? initialJobs.map((j, i) => jobCardSSR(j, i, categoryMap, categoryOrder, cardStyles)).join('')
     : `<div class="loader-wrap"><div class="loader"></div></div>`;
 
   const siteName = escapeHtml(settings.site_name);
@@ -445,13 +447,14 @@ ${postJobModalHtml(categoryOrder, categoryMap)}
   <div class="toast-bar" id="toastBar"></div>
 </div>
 
-<script>window.__CATEGORY_META__=${JSON.stringify(categoryMap)};window.__CATEGORY_ORDER__=${JSON.stringify(categoryOrder)};window.__ICONS__=${JSON.stringify(CLIENT_ICONS)};window.__COUNTRY_ISO__=${JSON.stringify(COUNTRY_TO_ISO)};window.__JOB_TYPE_META__=${JSON.stringify(JOB_TYPE_META)};</script>
+<script>window.__CATEGORY_META__=${JSON.stringify(categoryMap)};window.__CATEGORY_ORDER__=${JSON.stringify(categoryOrder)};window.__ICONS__=${JSON.stringify(CLIENT_ICONS)};window.__COUNTRY_ISO__=${JSON.stringify(COUNTRY_TO_ISO)};window.__JOB_TYPE_META__=${JSON.stringify(JOB_TYPE_META)};window.__JOB_CARD_STYLES__=${JSON.stringify(cardStyles)};</script>
 <script>
 const CAT_META=window.__CATEGORY_META__;
 const CAT_ORDER=window.__CATEGORY_ORDER__;
 const ICONS=window.__ICONS__;
 const COUNTRY_ISO=window.__COUNTRY_ISO__;
 const JOB_TYPE_META=window.__JOB_TYPE_META__;
+const JOB_CARD_STYLES=window.__JOB_CARD_STYLES__;
 function isoToFlagEmoji(iso){
   if(!iso||iso.length!==2)return null;
   const cps=[...iso.toUpperCase()].map(c=>127397+c.charCodeAt(0));
@@ -466,11 +469,26 @@ function clientCountryFlag(name){
   return isoToFlagEmoji(iso)||'🌍';
 }
 function normalizeJobType(t){return(t&&JOB_TYPE_META[t])?t:'Free';}
+// Mirrors lib/job-card-styles.js's buildCardStyleAttr/buildBadgeStyleAttr
+// exactly (same shadow presets, same gradient/solid logic) so cards
+// re-rendered client-side after a filter/search look identical to the
+// server-rendered ones — both read from the same JOB_CARD_STYLES data.
+const JT_SHADOWS={none:'none',soft:'0 4px 18px rgba(18,22,43,.10)',strong:'0 8px 26px rgba(18,22,43,.18)'};
+function jtStyleFor(t){return JOB_CARD_STYLES[normalizeJobType(t)];}
+function jtCardStyleAttr(t,freeTint){
+  const s=jtStyleFor(t);
+  const bg=s.bg_type==='gradient'?\`linear-gradient(\${s.gradient_angle}deg, \${s.bg_color1}, \${s.bg_color2})\`:s.bg_color1;
+  const border=s.border_style==='none'?'none':\`\${s.border_width}px \${s.border_style} \${s.border_color}\`;
+  const shadow=JT_SHADOWS[s.shadow]||JT_SHADOWS.none;
+  const finalBg=(normalizeJobType(t)==='Free'&&freeTint)?freeTint:bg;
+  return \`background:\${finalBg};border:\${border};box-shadow:\${shadow}\`;
+}
 function jobTypeBadge(t){
   const type=normalizeJobType(t);
   if(type==='Free')return'';
   const meta=JOB_TYPE_META[type];
-  return \`<span class="jt-badge jt-badge-\${type.toLowerCase()}">\${meta.icon} \${meta.label}</span>\`;
+  const s=jtStyleFor(type);
+  return \`<span class="jt-badge" style="background:\${s.badge_bg_color};color:\${s.badge_text_color}">\${meta.icon} \${meta.label}</span>\`;
 }
 function jobTypeCardClass(t){
   const type=normalizeJobType(t);
@@ -662,12 +680,13 @@ function renderJobsList(){
     const k=catForTitle(j.title);
     const meta=CAT_META[k];
     const bg=pastelFor(j);
+    const jts=jtStyleFor(j.job_type);
     const locFlag=j.location?clientCountryFlag(j.location.split(',').pop().trim()):'';
-    return\`<a href="/job/\${j.id}" class="job-card\${jobTypeCardClass(j.job_type)}" style="--cat-color:\${meta.color};background:\${bg};animation:fadeInUp .3s ease \${Math.min(idx,6)*.04}s both">
+    return\`<a href="/job/\${j.id}" class="job-card\${jobTypeCardClass(j.job_type)}" style="--cat-color:\${meta.color};\${jtCardStyleAttr(j.job_type,bg)};animation:fadeInUp .3s ease \${Math.min(idx,6)*.04}s both">
       \${timeAgo?'<span class="card-time-corner">'+ICONS.clock+' '+timeAgo+'</span>':''}
-      <div class="card-inner">
+      <div class="card-inner" style="padding:\${jts.card_padding}px 16px">
         <div class="card-row1">
-          \${logoHtml(j.company)}
+          \${logoHtml(j.company,jts.logo_size+'px')}
           <div class="card-body">
             <div class="card-badges">
               \${jobTypeBadge(j.job_type)}

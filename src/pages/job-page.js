@@ -8,6 +8,7 @@ import { jobPostingSchema } from '../lib/schema.js';
 import { iconBadgeCheck, iconMapPin, iconSparkle, iconFlame, iconDollarSign, iconArrowRight, iconBookmark, iconLink, iconTrendingUp, iconBuilding } from '../assets/icons.js';
 import { getSettings } from '../lib/settings.js';
 import { getCategories } from '../lib/categories.js';
+import { getCardStyles } from '../lib/job-card-styles.js';
 
 // SECURITY: JSON.stringify() does NOT escape "<", so a malicious job title
 // like `</script><script>...` embedded in scraped/submitted data could
@@ -77,7 +78,7 @@ export async function renderJobPage(job, related, base, env) {
   const canonical = `${base}/job/${job.id}`;
   const cleanDesc = cleanDescription(job.description);
 
-  const [categories, settings] = await Promise.all([getCategories(env), getSettings(env)]);
+  const [categories, settings, cardStyles] = await Promise.all([getCategories(env), getSettings(env), getCardStyles(env)]);
   const categoryOrder = categories.map(c => c.key);
   const categoryMap = Object.fromEntries(categories.map(c => [c.key, { label: c.label, emoji: c.emoji, color: c.color }]));
   const categoryKey = catForTitleServer(job.title, categoryOrder);
@@ -115,7 +116,7 @@ export async function renderJobPage(job, related, base, env) {
       </div>
       <h1 class="job-title-h1">${escapeHtml(job.title)}</h1>
       <div class="job-chips">
-        ${jobTypeBadgeHtml(job.job_type)}
+        ${jobTypeBadgeHtml(job.job_type, cardStyles)}
         ${remoteTagHtml(job.remote_type)}
         <a href="/categories/${categoryKey}" class="tag tag-type" style="text-decoration:none">${categoryLabel}</a>
         ${job.employment_type ? `<span class="tag tag-type">${escapeHtml(job.employment_type.replace(/_/g, ' '))}</span>` : ''}
