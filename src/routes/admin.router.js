@@ -22,6 +22,7 @@ import { renderDirectoryContent } from '../pages/admin/directory.js';
 import { renderPagesListContent, renderPageEditContent, renderPageNewContent } from '../pages/admin/pages-cms.js';
 import { renderBlogListContent, renderBlogEditContent, renderBlogNewContent } from '../pages/admin/blog-cms.js';
 import { renderCardStylesContent } from '../pages/admin/card-styles.js';
+import { renderAdsContent } from '../pages/admin/ads.js';
 import { adminShell } from '../pages/admin/shell.js';
 import { JOB_TYPE_META } from '../config/constants.js';
 import { setSettings, SETTINGS_KEYS } from '../lib/settings.js';
@@ -30,6 +31,7 @@ import { setOverride, clearOverride, DIRECTORY_KINDS } from '../lib/directory-ov
 import { getPageBySlug, createPage, updatePage, deletePage, movePage } from '../lib/pages-cms.js';
 import { getPostById, createPost, updatePost, deletePost } from '../lib/blog-cms.js';
 import { updateCardStyle, resetCardStyle, CARD_STYLE_JOB_TYPES } from '../lib/job-card-styles.js';
+import { updateAdSlot, resetAdSlot, AD_SLOT_DEFS } from '../lib/ad-slots.js';
 
 function errorPage(err) {
   const msg = (err && err.message ? err.message : String(err)).replace(/</g, '&lt;');
@@ -531,6 +533,55 @@ export async function handleAdminRoute(url, request, env, base) {
       if (!CARD_STYLE_JOB_TYPES.includes(jobType)) return new Response('Invalid job type', { status: 400 });
       await resetCardStyle(env, jobType);
       return new Response(null, { status: 302, headers: { 'Location': `/admin/card-styles?flash=${encodeURIComponent(jobType + ' reset to default')}` } });
+    } catch (e) { return errorPage(e); }
+  }
+
+  // ── Ads ────────────────────────────────────────────────────────
+  if (url.pathname === '/admin/ads' && request.method === 'GET') {
+    try {
+      const ok = await verifyAdminCookie(env, request.headers.get('Cookie'));
+      if (!ok) return new Response(renderAdminLogin(false), { headers: { "Content-Type": "text/html; charset=utf-8" } });
+      const content = await renderAdsContent(env);
+      return new Response(adminShell('ads', content), { headers: { "Content-Type": "text/html; charset=utf-8" } });
+    } catch (e) { return errorPage(e); }
+  }
+
+  if (url.pathname === '/admin/ads/toggle-global' && request.method === 'POST') {
+    try {
+      const ok = await verifyAdminCookie(env, request.headers.get('Cookie'));
+      if (!ok) return new Response('Unauthorized', { status: 401 });
+      const form = await request.formData();
+      await setSettings(env, { ads_enabled: form.get('ads_enabled') ? '1' : '0' });
+      return new Response(null, { status: 302, headers: { 'Location': `/admin/ads?flash=${encodeURIComponent('Saved')}` } });
+    } catch (e) { return errorPage(e); }
+  }
+
+  if (url.pathname === '/admin/ads/update' && request.method === 'POST') {
+    try {
+      const ok = await verifyAdminCookie(env, request.headers.get('Cookie'));
+      if (!ok) return new Response('Unauthorized', { status: 401 });
+      const form = await request.formData();
+      const slotId = (form.get('slot_id') || '').toString();
+      if (!AD_SLOT_DEFS.some(s => s.id === slotId)) return new Response('Invalid slot', { status: 400 });
+      await updateAdSlot(env, slotId, {
+        code: (form.get('code') || '').toString(),
+        enabled: !!form.get('enabled'),
+        width: form.get('width'),
+        height: form.get('height'),
+      });
+      return new Response(null, { status: 302, headers: { 'Location': `/admin/ads?flash=${encodeURIComponent('Ad slot saved')}` } });
+    } catch (e) { return errorPage(e); }
+  }
+
+  if (url.pathname === '/admin/ads/reset' && request.method === 'POST') {
+    try {
+      const ok = await verifyAdminCookie(env, request.headers.get('Cookie'));
+      if (!ok) return new Response('Unauthorized', { status: 401 });
+      const form = await request.formData();
+      const slotId = (form.get('slot_id') || '').toString();
+      if (!AD_SLOT_DEFS.some(s => s.id === slotId)) return new Response('Invalid slot', { status: 400 });
+      await resetAdSlot(env, slotId);
+      return new Response(null, { status: 302, headers: { 'Location': `/admin/ads?flash=${encodeURIComponent('Reset to default')}` } });
     } catch (e) { return errorPage(e); }
   }
 
