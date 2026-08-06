@@ -10,6 +10,9 @@
 // ALTER TABLE ADD COLUMN — existing rows and data are never touched.
 
 import { CATEGORY_META } from '../config/constants.js';
+import { STATIC_PAGES } from '../data/static-content.js';
+import { BLOG_POSTS } from '../data/blog-posts.js';
+import { slugify } from '../lib/entities.js';
 
 async function ensureColumn(env, table, column, definition) {
   try {
@@ -245,6 +248,94 @@ export async function ensureTable(env) {
       hidden INTEGER DEFAULT 0,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       PRIMARY KEY (kind, name)
+    )
+  `).run();
+
+  // ── CMS: Static Pages ─────────────────────────────────────────
+  // Backs lib/pages-cms.js. Replaces the old hardcoded STATIC_PAGES
+  // constant (src/data/static-content.js) — /admin/pages can now edit
+  // Privacy/Terms/Disclaimer AND create brand-new pages (About, FAQ,
+  // Cookie Policy, Advertise With Us, ...) at any slug, with zero code
+  // edits. Seeded ONCE from STATIC_PAGES so the 3 existing pages and
+  // their URLs keep working unchanged after this upgrade.
+  await env.DB.prepare(`
+    CREATE TABLE IF NOT EXISTS pages (
+      slug TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      meta_description TEXT,
+      body TEXT,
+      status TEXT DEFAULT 'published',
+      scheduled_at DATETIME,
+      show_in_footer INTEGER DEFAULT 1,
+      sort_order INTEGER DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `).run();
+  const pageSeedEntries = Object.entries(STATIC_PAGES);
+  if (pageSeedEntries.length) {
+    await env.DB.batch(pageSeedEntries.map(([slug, p], i) =>
+      env.DB.prepare(
+        `INSERT OR IGNORE INTO pages (slug, title, meta_description, body, status, show_in_footer, sort_order) VALUES (?, ?, ?, ?, 'published', 1, ?)`
+      ).bind(slug, p.title, p.description, p.body, i)
+    ));
+  }
+
+  // ── CMS: Blog ─────────────────────────────────────────────────
+  // Backs lib/blog-cms.js. Replaces the old hardcoded BLOG_POSTS
+  // constant (src/data/blog-posts.js). `id` keeps the same 1..6
+  // AUTOINCREMENT-compatible numbering the static array used, so every
+  // existing /blog/1 .. /blog/6 URL (already indexed/shared) keeps
+  // resolving unchanged — see routes/pages.router.js, which looks posts
+  // up by id OR slug.
+  await env.DB.prepare(`
+    CREATE TABLE IF NOT EXISTS blog_posts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      slug TEXT UNIQUE,
+      title TEXT NOT NULL,
+      excerpt TEXT,
+      body TEXT,
+      category TEXT,
+      tags TEXT DEFAULT '[]',
+      cover_image_url TEXT,
+      status TEXT DEFAULT 'published',
+      scheduled_at DATETIME,
+      read_time TEXT,
+      published_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `).run();
+  if (BLOG_POSTS.length) {
+    await env.DB.batch(BLOG_POSTS.map(p =>
+      env.DB.prepare(
+        `INSERT OR IGNORE INTO blog_posts (id, slug, title, excerpt, body, category, read_time, status, published_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'published', ?)`
+      ).bind(p.id, slugify(p.title), p.title, p.excerpt, p.body, p.cat, p.readTime, p.date)
+    ));
+  }
+
+  // ── Job Card Style Manager ────────────────────────────────────
+  // Backs lib/job-card-styles.js. Per-tier (Free/Featured/Premium/
+  // Sponsored) card background/border/logo-size/padding/badge colors,
+  // fully admin-controlled at /admin/card-styles. Deliberately NOT
+  // seeded — lib/job-card-styles.js's DEFAULT_CARD_STYLES supplies the
+  // current hand-tuned look for any row that doesn't exist yet, so an
+  // empty table renders identically to before this feature existed.
+  await env.DB.prepare(`
+    CREATE TABLE IF NOT EXISTS job_card_styles (
+      job_type TEXT PRIMARY KEY,
+      bg_type TEXT DEFAULT 'solid',
+      bg_color1 TEXT,
+      bg_color2 TEXT,
+      gradient_angle INTEGER DEFAULT 135,
+      border_style TEXT DEFAULT 'solid',
+      border_color TEXT,
+      border_width INTEGER DEFAULT 1,
+      logo_size INTEGER DEFAULT 54,
+      card_padding INTEGER DEFAULT 14,
+      shadow TEXT DEFAULT 'none',
+      badge_bg_color TEXT,
+      badge_text_color TEXT,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )
   `).run();
 
