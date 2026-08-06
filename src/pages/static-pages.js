@@ -1,29 +1,31 @@
 // src/pages/static-pages.js
+// Renders any CMS-managed page (Privacy/Terms/Disclaimer, and any new
+// page created at /admin/pages) — see lib/pages-cms.js for the data
+// layer. `title` is admin-form-submitted text and is escaped here for
+// defense in depth; `body` is intentionally raw HTML from the rich
+// editor (see the security note in components/rich-editor.js).
 
 import { baseLayout } from '../layout/base-layout.js';
-import { STATIC_PAGES } from '../data/static-content.js';
-import { getSettings, SETTINGS_DEFAULTS } from '../lib/settings.js';
+import { getPageBySlug } from '../lib/pages-cms.js';
+import { escapeHtml } from '../lib/entities.js';
+import { getSettings } from '../lib/settings.js';
 import { getCategories } from '../lib/categories.js';
 
-// `env` optional — see blog.js for the same pattern/rationale.
-export async function renderStaticPage(key, base, env) {
-  const page = STATIC_PAGES[key];
+export async function renderStaticPage(slug, base, env) {
+  const page = await getPageBySlug(env, slug);
   if (!page) return null;
-  const settings = env ? await getSettings(env) : SETTINGS_DEFAULTS;
-  let categories = null;
-  if (env) {
-    const cats = await getCategories(env);
-    categories = { order: cats.map(c => c.key), map: Object.fromEntries(cats.map(c => [c.key, { label: c.label, emoji: c.emoji, color: c.color }])) };
-  }
+  const settings = await getSettings(env);
+  const cats = await getCategories(env);
+  const categories = { order: cats.map(c => c.key), map: Object.fromEntries(cats.map(c => [c.key, { label: c.label, emoji: c.emoji, color: c.color }])) };
   const content = `
 <div class="page-sm">
   <a href="/" class="back-link">← Back to Jobs</a>
-  <h1 class="static-title">${page.title}</h1>
-  <div class="static-date">${page.date}</div>
+  <h1 class="static-title">${escapeHtml(page.title)}</h1>
+  <div class="static-date">Last updated: ${new Date(page.updated_at || page.created_at).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</div>
   <div class="static-body">${page.body}</div>
   <div style="margin-top:32px"><a href="/" class="back-link" style="margin-bottom:0">← Back to Jobs</a></div>
 </div>`;
-  return baseLayout(`${page.title} — ${settings.site_name}`, page.description, `${base}/${key}`, '', content, '', 'index, follow', settings, categories);
+  return baseLayout(`${page.title} — ${settings.site_name}`, page.meta_description || page.title, `${base}/${slug}`, '', content, '', 'index, follow', settings, categories);
 }
 
 // ══════════════════════════════════════════════════════════════════
