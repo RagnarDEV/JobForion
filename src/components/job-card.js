@@ -7,6 +7,7 @@ import { CATEGORY_META, CATEGORY_ORDER, JOB_TYPE_META } from '../config/constant
 import { slugify, escapeHtml } from '../lib/entities.js';
 import { iconSparkle, iconFlame, iconPin, iconMapPin, iconBadgeCheck, iconClock, iconGlobe, iconBuilding } from '../assets/icons.js';
 import { countryFlag } from '../lib/country-flags.js';
+import { DEFAULT_CARD_STYLES, buildCardStyleAttr, buildBadgeStyleAttr } from '../lib/job-card-styles.js';
 
 export function logoImgHtml(company, size = '64px', cls = 'job-logo') {
   const safeCompany = escapeHtml(company);
@@ -91,16 +92,23 @@ export function normalizeJobType(jobType) {
 
 // Free jobs get no badge at all — badges are the whole point of a paid
 // tier standing out, so a "Free" badge on every ordinary listing would
-// just be visual noise.
-export function jobTypeBadgeHtml(jobType) {
+// just be visual noise. `cardStyles` optional — defaults to
+// DEFAULT_CARD_STYLES (see lib/job-card-styles.js) so any caller not
+// yet passing dynamic per-tier colors renders exactly as before.
+export function jobTypeBadgeHtml(jobType, cardStyles = DEFAULT_CARD_STYLES) {
   const type = normalizeJobType(jobType);
   if (type === 'Free') return '';
   const meta = JOB_TYPE_META[type];
-  return `<span class="jt-badge jt-badge-${type.toLowerCase()}">${meta.icon} ${meta.label}</span>`;
+  const style = cardStyles[type] || DEFAULT_CARD_STYLES[type];
+  return `<span class="jt-badge" style="${buildBadgeStyleAttr(style)}">${meta.icon} ${meta.label}</span>`;
 }
 
-// Extra class applied to the card wrapper for tier-specific border/shadow/
-// scale treatment (see the .jt-card-* rules in styles/shared-css.js).
+// Extra class applied to the card wrapper — kept only as a styling
+// HOOK (e.g. .jt-card-premium:hover in styles/shared-css.js still adds
+// a bigger lift/shadow on hover for paid tiers). All AT-REST visual
+// styling (background/border/shadow) is now applied inline via
+// buildCardStyleAttr() so it can be admin-controlled per tier — see
+// lib/job-card-styles.js.
 export function jobTypeCardClass(jobType) {
   const type = normalizeJobType(jobType);
   return type === 'Free' ? '' : ` jt-card-${type.toLowerCase()}`;
@@ -133,23 +141,36 @@ const FALLBACK_CATEGORY_META = { label: 'General', emoji: '🏷️', color: '#35
 // somehow missing from the map (e.g. briefly, right after an admin
 // deletes the category a job was classified under), FALLBACK_CATEGORY_META
 // keeps the card rendering instead of throwing.
-export function jobCardSSR(job, idx, categoryMap = CATEGORY_META, categoryOrder = CATEGORY_ORDER) {
+//
+// `cardStyles` (optional, new) is the resolved {Free,Featured,Premium,
+// Sponsored} object from lib/job-card-styles.js — defaults to
+// DEFAULT_CARD_STYLES so this renders identically whether or not a
+// caller has fetched dynamic styles yet.
+export function jobCardSSR(job, idx, categoryMap = CATEGORY_META, categoryOrder = CATEGORY_ORDER, cardStyles = DEFAULT_CARD_STYLES) {
   const catKey = catForTitleServer(job.title, categoryOrder);
   const meta = categoryMap[catKey] || FALLBACK_CATEGORY_META;
   const isNew = job.created_at && Date.now() - new Date(job.created_at).getTime() < 86400000;
   const isHot = job.salary && parseInt(job.salary.replace(/\D/g, '').slice(0, 3)) >= 150;
-  const bg = pastelForJob(job);
   const timeAgo = timeAgoServer(job.created_at);
   const jobType = normalizeJobType(job.job_type);
+  const jtStyle = cardStyles[jobType] || DEFAULT_CARD_STYLES[jobType];
+  // Paid tiers always show their own admin-configured background; a Free
+  // job keeps the existing "hot/pinned" pastel-tint signal, which is
+  // orthogonal to (and more useful than) a per-tier background on the
+  // free tier specifically. Appending `;background:${bg}` after
+  // buildCardStyleAttr()'s own background declaration lets the later
+  // one win within the same inline style attribute.
+  const freeTint = jobType === 'Free' ? pastelForJob(job) : null;
+  const cardStyleAttr = buildCardStyleAttr(jtStyle) + (freeTint ? `;background:${freeTint}` : '');
   const locationFlag = job.location ? countryFlag(job.location.split(',').pop().trim()) : '';
-  return `<a href="/job/${job.id}" class="job-card${jobTypeCardClass(job.job_type)}" style="--cat-color:${meta.color};background:${bg};animation:fadeInUp .3s ease ${Math.min(idx, 6) * .04}s both">
+  return `<a href="/job/${job.id}" class="job-card${jobTypeCardClass(job.job_type)}" style="--cat-color:${meta.color};${cardStyleAttr};animation:fadeInUp .3s ease ${Math.min(idx, 6) * .04}s both">
     ${timeAgo ? `<span class="card-time-corner">${iconClock({ size: 11 })} ${timeAgo}</span>` : ''}
-    <div class="card-inner">
+    <div class="card-inner" style="padding:${jtStyle.card_padding}px 16px">
       <div class="card-row1">
-        ${logoImgHtml(job.company, '54px', 'co-logo')}
+        ${logoImgHtml(job.company, `${jtStyle.logo_size}px`, 'co-logo')}
         <div class="card-body">
           <div class="card-badges">
-            ${jobTypeBadgeHtml(job.job_type)}
+            ${jobTypeBadgeHtml(job.job_type, cardStyles)}
             <span class="cat-dot"><span class="dot"></span>${meta.label}</span>
             ${job.featured ? `<span class="tag-pinned">${iconPin({ size: 11 })} Pinned</span>` : ''}
             ${isNew ? `<span class="tag-new">${iconSparkle({ size: 11 })} NEW</span>` : ''}
