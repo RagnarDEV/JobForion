@@ -1,0 +1,113 @@
+// src/pages/admin/blog-cms.js
+// Blog management: list, create, edit, publish/draft/schedule, delete.
+// See lib/blog-cms.js for the data layer. Category and tags are kept as
+// free text (matching how the original hardcoded BLOG_POSTS worked) —
+// a full separate blog-taxonomy CRUD is intentionally out of scope here
+// to keep this shippable; categories/tags typed consistently still work
+// fine for grouping and filtering.
+
+import { escapeHtml } from '../../lib/entities.js';
+import { getPosts } from '../../lib/blog-cms.js';
+import { richEditorHtml } from '../../components/rich-editor.js';
+
+const STATUS_BADGE = {
+  published: '<span style="font-size:10px;font-weight:800;color:var(--green);background:rgba(15,174,121,.1);padding:2px 8px;border-radius:20px">● PUBLISHED</span>',
+  draft: '<span style="font-size:10px;font-weight:800;color:var(--ink3);background:var(--surface2);padding:2px 8px;border-radius:20px">○ DRAFT</span>',
+  scheduled: '<span style="font-size:10px;font-weight:800;color:var(--amber);background:rgba(245,166,35,.12);padding:2px 8px;border-radius:20px">◷ SCHEDULED</span>',
+};
+
+export async function renderBlogListContent(env) {
+  const posts = await getPosts(env, { includeUnpublished: true, limit: 200 });
+
+  const rows = posts.map(p => `
+    <div class="pp-row">
+      <div class="pp-info">
+        <div class="pp-title">${escapeHtml(p.title)} ${STATUS_BADGE[p.status] || ''}</div>
+        <div class="pp-meta">${escapeHtml(p.category || 'General')} · /blog/${escapeHtml(p.slug || p.id)} · ${p.published_at ? new Date(p.published_at).toLocaleDateString() : ''}${p.status === 'scheduled' && p.scheduled_at ? ` · publishes ${new Date(p.scheduled_at).toLocaleString()}` : ''}</div>
+      </div>
+      <div class="pp-actions">
+        <a href="/blog/${p.slug || p.id}" target="_blank" class="adm-btn-sm" style="color:var(--ink2)">Preview</a>
+        <a href="/admin/blog/edit?id=${p.id}" class="adm-btn-sm" style="color:var(--brand)">Edit</a>
+        <form method="POST" action="/admin/blog/delete" onsubmit="return confirm('Delete this article permanently?')" style="display:inline">
+          <input type="hidden" name="id" value="${p.id}">
+          <button class="adm-btn-sm" type="submit">Delete</button>
+        </form>
+      </div>
+    </div>`).join('');
+
+  return `
+  <div class="adm-wrap">
+    <div class="adm-hdr">
+      <div>
+        <div class="adm-title">📝 Blog</div>
+        <div class="adm-sub">${posts.length} articles</div>
+      </div>
+      <a href="/admin/blog/new" class="adm-btn adm-btn-primary">+ New Article</a>
+    </div>
+    <div class="adm-card">
+      ${rows || '<div class="adm-empty">No articles yet.</div>'}
+    </div>
+  </div>`;
+}
+
+function postForm(post, isNew) {
+  const p = post || { id: '', title: '', excerpt: '', body: '', category: 'Career Advice', tags: [], cover_image_url: '', status: 'published', scheduled_at: '', read_time: '5 min read' };
+  const action = isNew ? '/admin/blog/create' : '/admin/blog/update';
+  return `
+  <div class="adm-wrap" style="max-width:820px">
+    <div class="adm-hdr">
+      <div>
+        <div class="adm-title">${isNew ? '📝 New Article' : `✏️ Edit — ${escapeHtml(p.title)}`}</div>
+      </div>
+      <a href="/admin/blog" class="adm-btn">← Back</a>
+    </div>
+    <form method="POST" action="${action}" class="adm-card" style="display:flex;flex-direction:column;gap:14px">
+      ${isNew ? '' : `<input type="hidden" name="id" value="${p.id}">`}
+      <label style="display:block"><span style="font-size:11px;font-weight:700;color:var(--ink3);text-transform:uppercase;display:block;margin-bottom:6px">Title</span>
+        <input class="adm-input" style="width:100%" name="title" value="${escapeHtml(p.title)}" required></label>
+
+      <label style="display:block"><span style="font-size:11px;font-weight:700;color:var(--ink3);text-transform:uppercase;display:block;margin-bottom:6px">Excerpt</span>
+        <input class="adm-input" style="width:100%" name="excerpt" value="${escapeHtml(p.excerpt || '')}" maxlength="300"></label>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px">
+        <label style="display:block"><span style="font-size:11px;font-weight:700;color:var(--ink3);text-transform:uppercase;display:block;margin-bottom:6px">Category</span>
+          <input class="adm-input" style="width:100%" name="category" value="${escapeHtml(p.category || '')}"></label>
+        <label style="display:block"><span style="font-size:11px;font-weight:700;color:var(--ink3);text-transform:uppercase;display:block;margin-bottom:6px">Tags (comma-separated)</span>
+          <input class="adm-input" style="width:100%" name="tags" value="${escapeHtml((p.tags || []).join(', '))}"></label>
+        <label style="display:block"><span style="font-size:11px;font-weight:700;color:var(--ink3);text-transform:uppercase;display:block;margin-bottom:6px">Read Time</span>
+          <input class="adm-input" style="width:100%" name="read_time" value="${escapeHtml(p.read_time || '5 min read')}"></label>
+      </div>
+
+      <label style="display:block"><span style="font-size:11px;font-weight:700;color:var(--ink3);text-transform:uppercase;display:block;margin-bottom:6px">Cover Image URL <span style="font-weight:400;text-transform:none;color:var(--ink3)">(optional — paste a hosted image link)</span></span>
+        <input class="adm-input" style="width:100%" type="url" name="cover_image_url" value="${escapeHtml(p.cover_image_url || '')}" placeholder="https://..."></label>
+
+      <label style="display:block"><span style="font-size:11px;font-weight:700;color:var(--ink3);text-transform:uppercase;display:block;margin-bottom:6px">Content</span>
+        ${richEditorHtml('body', p.body || '')}
+      </label>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+        <label style="display:block"><span style="font-size:11px;font-weight:700;color:var(--ink3);text-transform:uppercase;display:block;margin-bottom:6px">Status</span>
+          <select class="adm-input" style="width:100%" name="status" onchange="document.getElementById('schedRowB').style.display=this.value==='scheduled'?'block':'none'">
+            <option value="published" ${p.status === 'published' ? 'selected' : ''}>Published</option>
+            <option value="draft" ${p.status === 'draft' ? 'selected' : ''}>Draft</option>
+            <option value="scheduled" ${p.status === 'scheduled' ? 'selected' : ''}>Scheduled</option>
+          </select></label>
+        <label style="display:block" id="schedRowB" ${p.status === 'scheduled' ? '' : 'style="display:none"'}><span style="font-size:11px;font-weight:700;color:var(--ink3);text-transform:uppercase;display:block;margin-bottom:6px">Publish At</span>
+          <input class="adm-input" style="width:100%" type="datetime-local" name="scheduled_at" value="${p.scheduled_at ? escapeHtml(String(p.scheduled_at).slice(0, 16)) : ''}"></label>
+      </div>
+
+      <div style="display:flex;gap:10px">
+        <button class="adm-btn adm-btn-primary" type="submit">${isNew ? 'Create Article' : 'Save Changes'}</button>
+        ${isNew ? '' : `<a href="/blog/${escapeHtml(p.slug || p.id)}" target="_blank" class="adm-btn">Preview Live</a>`}
+      </div>
+    </form>
+  </div>`;
+}
+
+export function renderBlogEditContent(post) {
+  return postForm(post, false);
+}
+
+export function renderBlogNewContent() {
+  return postForm(null, true);
+}
