@@ -1,65 +1,19 @@
 // src/components/ad-slot.js
-// Single source of truth for every advertisement placement on JobForion.
-// Every page imports adSlot(id) and drops it wherever an ad belongs — the
-// actual ad network embed code (Adsterra or any future network) is edited
-// in ONE place, the ADS map below, instead of hunting through five
-// different page files every time it changes.
-//
-// To activate a real ad: paste the network's exact embed code (script
-// tags, etc.) as the value for that slot's id in ADS. Leave it as '' to
-// keep showing the reserved placeholder box instead — nothing breaks
-// either way, so slots can be turned on one at a time.
+// Single rendering point for every advertisement placement on JobForion.
+// Every page calls adSlot(id, style, config, globalAdsEnabled) and drops
+// it wherever an ad belongs. The actual embed code, on/off state, and
+// box size per slot are now fully admin-controlled at /admin/ads (see
+// lib/ad-slots.js) — no code edit, no redeploy — this file only turns
+// that config into safe, isolated markup.
 //
 // Current slots in use (see each page for exact position):
 //   'homepage-results-top'   — src/pages/home.js, above the job list
-//   'job-detail-inline'      — src/pages/job-page.js, after the description (reserved 320×50)
+//   'job-detail-inline'      — src/pages/job-page.js, after the description (default 320×50)
 //   'job-detail-footer'      — src/pages/job-page.js, after "Similar Jobs"
 //   'blog-index-top'         — src/pages/blog.js, above the article grid
 //   'blog-article-footer'    — src/pages/blog.js, after each article body
 
-// Banner 300×250 (Adsterra key: 69d7d3b2e8807dbd363b797829276c0c) — used for
-// every slot except the one explicitly reserved at 320×50.
-const BANNER_300x250 = `<script>
-atOptions = {
-  'key' : '69d7d3b2e8807dbd363b797829276c0c',
-  'format' : 'iframe',
-  'height' : 250,
-  'width' : 300,
-  'params' : {}
-};
-</script>
-<script src="https://www.highperformanceformat.com/69d7d3b2e8807dbd363b797829276c0c/invoke.js"></script>`;
-
-// Banner 320×50 (Adsterra key: 136b80686b183d9484dc35c4136e3b57) — the
-// mobile-friendly size reserved specifically for job-detail-inline.
-const BANNER_320x50 = `<script>
-atOptions = {
-  'key' : '136b80686b183d9484dc35c4136e3b57',
-  'format' : 'iframe',
-  'height' : 50,
-  'width' : 320,
-  'params' : {}
-};
-</script>
-<script src="https://www.highperformanceformat.com/136b80686b183d9484dc35c4136e3b57/invoke.js"></script>`;
-
-const ADS = {
-  'homepage-results-top': BANNER_320x50,
-  'job-detail-inline': BANNER_320x50,
-  'job-detail-footer': BANNER_300x250,
-  'blog-index-top': BANNER_300x250,
-  'blog-article-footer': BANNER_300x250,
-};
-
-// Declared creative size per slot — MUST match the width/height each slot's
-// atOptions above actually requests from Adsterra.
-const AD_SIZE = {
-  'homepage-results-top': { w: 320, h: 50 },
-  'job-detail-inline': { w: 320, h: 50 },
-  'job-detail-footer': { w: 300, h: 250 },
-  'blog-index-top': { w: 300, h: 250 },
-  'blog-article-footer': { w: 300, h: 250 },
-};
+import { DEFAULT_AD_CONFIG } from '../lib/ad-slots.js';
 
 // RELIABILITY — root cause: Adsterra's invoke.js renders the ad via
 // document.write(). Chrome (and Chromium-based mobile browsers) actively
@@ -84,7 +38,7 @@ const AD_SIZE = {
 // now also gets a fully isolated `window`/`atOptions`, so two different
 // ad slots on the same page (job-detail-inline + job-detail-footer) can
 // never step on each other's config even in edge-case load orders.
-// SECURITY/CORRECTNESS: the Adsterra snippet embedded in `code` contains
+// SECURITY/CORRECTNESS: the ad snippet embedded in `code` may contain
 // literal `</script>` tags. JSON.stringify() does NOT escape "/", so
 // naively dropping JSON.stringify(code) inside a real HTML <script>
 // element would let the HTML parser see that literal "</script>" and
@@ -92,7 +46,12 @@ const AD_SIZE = {
 // breaking every ad slot rendered after it. Escaping "<" to its unicode
 // form keeps the JS string value byte-for-byte identical at runtime
 // while making that break-out impossible (same technique already used
-// in pages/job-page.js's safeJsonLd for the same class of issue).
+// in pages/job-page.js's safeJsonLd for the same class of issue). This
+// matters MORE now than when the code was hardcoded: `code` can be
+// ANYTHING an admin pastes at /admin/ads, not just the one Adsterra
+// snippet a developer wrote — the isolation below is what makes that
+// safe (worst case, a bad/malicious paste is contained inside its own
+// sandboxed iframe, never able to touch the parent page's DOM/cookies).
 function safeJsForScriptTag(str) {
   return JSON.stringify(str).replace(/</g, '\\u003c');
 }
@@ -110,19 +69,33 @@ function adFrameScript(uid, code) {
 })();</script>`;
 }
 
-export function adSlot(id, style = '') {
-  const code = ADS[id];
-  if (code) {
-    const size = AD_SIZE[id] || { w: 300, h: 250 };
+// `config` (optional) is the resolved {slotId: {code,enabled,width,height}}
+// object from lib/ad-slots.js — defaults to DEFAULT_AD_CONFIG (the site's
+// hardcoded Adsterra setup) so any caller not yet passing dynamic config
+// renders exactly as before. `globalAdsEnabled` (optional, default true)
+// is site_settings.ads_enabled — the master kill switch: when false,
+// EVERY slot renders nothing at all, site-wide, instantly.
+//
+// Three distinct outcomes per slot, by design:
+//  - global off, OR this slot's `enabled` is false → render nothing
+//    (a deliberately hidden ad leaves no visual gap/placeholder)
+//  - enabled but no code configured → the dev-facing "reserved space"
+//    placeholder (useful while setting a new placement up)
+//  - enabled with code → the real, sandboxed ad iframe
+export function adSlot(id, style = '', config = DEFAULT_AD_CONFIG, globalAdsEnabled = true) {
+  if (!globalAdsEnabled) return '';
+  const slot = config[id] || DEFAULT_AD_CONFIG[id];
+  if (!slot || !slot.enabled) return '';
+  if (slot.code) {
     const uid = `adf_${id.replace(/[^a-z0-9]/gi, '')}`;
-    const boxStyle = `width:${size.w}px;height:${size.h}px;max-width:100%;margin:16px auto;${style}`;
+    const boxStyle = `width:${slot.width}px;height:${slot.height}px;max-width:100%;margin:16px auto;${style}`;
     return `<div class="ad-slot ad-slot-live" style="${boxStyle}">` +
       `<iframe id="${uid}" title="Advertisement" scrolling="no" ` +
       `style="width:100%;height:100%;border:0;display:block" ` +
       `sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox"></iframe>` +
-      adFrameScript(uid, code) +
+      adFrameScript(uid, slot.code) +
       `</div>`;
   }
   const styleAttr = style ? ` style="${style}"` : '';
-  return `<div class="ad-slot"${styleAttr}><div class="ad-slot-label">Advertisement Slot</div><div class="ad-slot-hint">Reserved space — insert your ad network snippet here</div><!-- AD SLOT: ${id} --></div>`;
+  return `<div class="ad-slot"${styleAttr}><div class="ad-slot-label">Advertisement Slot</div><div class="ad-slot-hint">Reserved space — add a code at /admin/ads</div><!-- AD SLOT: ${id} --></div>`;
 }
