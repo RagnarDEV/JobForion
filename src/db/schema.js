@@ -339,5 +339,22 @@ export async function ensureTable(env) {
     )
   `).run();
 
+  // ── Ad Slot Manager ────────────────────────────────────────────
+  // Backs lib/ad-slots.js. Per-slot ad embed code, enabled state, and
+  // box size — /admin/ads. Deliberately NOT seeded, same reasoning as
+  // job_card_styles above: lib/ad-slots.js's DEFAULT_AD_CONFIG (the
+  // site's current live Adsterra setup) covers any row that doesn't
+  // exist yet.
+  await env.DB.prepare(`
+    CREATE TABLE IF NOT EXISTS ad_slots (
+      slot_id TEXT PRIMARY KEY,
+      code TEXT,
+      enabled INTEGER DEFAULT 1,
+      width INTEGER,
+      height INTEGER,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `).run();
+
   schemaEnsured = true;
 }
