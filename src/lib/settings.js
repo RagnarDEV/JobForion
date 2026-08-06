@@ -39,6 +39,7 @@ export const SETTINGS_DEFAULTS = {
   ga_measurement_id: 'G-NQJM1B95TS',
   maintenance_mode: '0',
   maintenance_message: 'JobForion is currently undergoing scheduled maintenance. We will be back online shortly — thank you for your patience.',
+  ads_enabled: '1',
 };
 
 // Keys the general Settings form is allowed to write. Kept as an
