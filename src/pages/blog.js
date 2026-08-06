@@ -6,6 +6,7 @@ import { adSlot } from '../components/ad-slot.js';
 import { escapeHtml } from '../lib/entities.js';
 import { getSettings, SETTINGS_DEFAULTS } from '../lib/settings.js';
 import { getCategories } from '../lib/categories.js';
+import { getAdSlotsConfig, DEFAULT_AD_CONFIG } from '../lib/ad-slots.js';
 
 // Builds the `{order, map}` shape baseLayout() expects for the dynamic
 // "Post a Job" category dropdown. `env` optional — see renderBlogIndex.
@@ -26,13 +27,15 @@ export async function renderBlogIndex(base, env) {
   const settings = env ? await getSettings(env) : SETTINGS_DEFAULTS;
   const categories = await loadCategoryData(env);
   const posts = env ? await getPosts(env) : [];
+  const adConfig = env ? await getAdSlotsConfig(env) : DEFAULT_AD_CONFIG;
+  const adsEnabled = settings.ads_enabled !== '0';
   const siteName = escapeHtml(settings.site_name);
   const content = `
 <div class="page">
   <div class="breadcrumb"><a href="/">${siteName}</a><span>›</span><span>Blog</span></div>
   <h1 style="font-family:'Space Grotesk',sans-serif;font-size:28px;font-weight:700;margin-bottom:8px;color:var(--ink)">📝 Career Blog</h1>
   <p style="color:var(--ink2);font-size:14px;margin-bottom:24px">Insights and career advice for remote job seekers.</p>
-  ${adSlot('blog-index-top')}
+  ${adSlot('blog-index-top', '', adConfig, adsEnabled)}
   <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px;margin-top:20px">
     ${posts.map(p => `
       <a href="/blog/${escapeHtml(p.slug || p.id)}" style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:20px;display:block;transition:all .25s;text-decoration:none;box-shadow:var(--shadow)" onmouseover="this.style.borderColor='var(--brand)';this.style.transform='translateY(-2px)'" onmouseout="this.style.borderColor='var(--border)';this.style.transform='none'">
@@ -52,6 +55,8 @@ export async function renderBlogIndex(base, env) {
 export async function renderArticlePage(post, base, env) {
   const settings = env ? await getSettings(env) : SETTINGS_DEFAULTS;
   const categories = await loadCategoryData(env);
+  const adConfig = env ? await getAdSlotsConfig(env) : DEFAULT_AD_CONFIG;
+  const adsEnabled = settings.ads_enabled !== '0';
   const canonical = `${base}/blog/${post.slug || post.id}`;
   const publishedDate = post.published_at ? new Date(post.published_at).toISOString().split('T')[0] : '';
   const schema = JSON.stringify({ "@context": "https://schema.org", "@type": "Article", "headline": post.title, "description": post.excerpt, "datePublished": publishedDate, "author": { "@type": "Organization", "name": settings.site_name }, "url": canonical });
@@ -64,7 +69,7 @@ export async function renderArticlePage(post, base, env) {
   ${post.cover_image_url ? `<img src="${escapeHtml(post.cover_image_url)}" alt="" style="width:100%;max-height:360px;object-fit:cover;border-radius:14px;margin-bottom:22px">` : ''}
   <div class="article-body">${post.body}</div>
   ${(post.tags || []).length ? `<div style="margin-top:20px;display:flex;flex-wrap:wrap;gap:6px">${post.tags.map(t => `<span class="skill-tag">${escapeHtml(t)}</span>`).join('')}</div>` : ''}
-  ${adSlot('blog-article-footer', 'margin-top:28px')}
+  ${adSlot('blog-article-footer', 'margin-top:28px', adConfig, adsEnabled)}
   <div style="margin-top:28px;display:flex;gap:10px;flex-wrap:wrap">
     <a href="/blog" class="back-link" style="margin-bottom:0">← Back to Blog</a>
     <a href="/" style="display:inline-flex;align-items:center;gap:7px;background:var(--ink);color:#fff;padding:9px 18px;border-radius:10px;font-size:13px;font-weight:700;text-decoration:none">Browse Remote Jobs →</a>
