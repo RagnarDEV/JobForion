@@ -89,31 +89,25 @@ button{font-family:inherit}
    Free: no badge, no card treatment — the existing default design.
    Visual intensity: Featured < Premium < Sponsored, matching the
    required display-priority order (Sponsored first, then Premium, then
-   Featured, then Free). Built with CSS variables so it stays consistent
-   if/when a public-site dark mode is added. ── */
+   Featured, then Free).
+   AT-REST styling (background/border/shadow/logo size/padding/badge
+   colors) is now applied INLINE per-card from lib/job-card-styles.js —
+   fully admin-controlled at /admin/card-styles — so none of that lives
+   here as CSS anymore. What's left below is deliberately just the
+   HOVER-state enhancements (a bigger lift/shadow for paid tiers feels
+   good in every color scheme, so it isn't worth making configurable)
+   and typography tweaks that aren't part of the color/size system. ── */
 .jt-badge{display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:800;padding:3px 9px;border-radius:20px;letter-spacing:.2px;white-space:nowrap}
-.jt-badge-featured{background:var(--brand-soft);color:var(--brand);border:1px solid rgba(53,86,255,.22)}
-.jt-badge-premium{background:linear-gradient(135deg,#FFF8E6,#FBEDC7);color:#8A6416;border:1px solid rgba(212,161,42,.4)}
-.jt-badge-sponsored{background:linear-gradient(135deg,#E8F9F1,#D9F3E7);color:#0B7A50;border:1px solid rgba(15,174,121,.35)}
 
-/* Featured: calm, understated lift — a soft brand-colored border/shadow
-   and a very slight scale, per spec ("ليست مبالغًا بها"). */
-.jt-card-featured{border-color:rgba(53,86,255,.3) !important;box-shadow:0 4px 18px rgba(53,86,255,.12);transform:scale(1.008)}
+.jt-card-featured{transform:scale(1.008)}
 .jt-card-featured:hover{box-shadow:0 10px 26px rgba(53,86,255,.2);transform:scale(1.015) translateY(-2px)}
 
-/* Premium: gradient border via the double-background technique (opaque
-   surface layer + gradient layer, clipped so only the border ring shows
-   the gradient), a calm gold glow, bigger logo, bolder title. */
-.jt-card-premium{position:relative;border:1.5px solid transparent !important;background-image:linear-gradient(var(--surface),var(--surface)),linear-gradient(120deg,#D4A12A,#F3DE9E 45%,#D4A12A);background-origin:border-box;background-clip:padding-box,border-box;box-shadow:0 6px 22px rgba(212,161,42,.16)}
+.jt-card-premium{position:relative}
 .jt-card-premium:hover{box-shadow:0 12px 30px rgba(212,161,42,.26);transform:translateY(-3px)}
-.jt-card-premium .co-logo{width:60px !important;height:60px !important}
 .jt-card-premium .job-title-card{font-size:15px;font-weight:800}
 
-/* Sponsored: the clearest tier, but via a tasteful tinted wash + a
-   luxurious border rather than a loud "ad" look. */
-.jt-card-sponsored{position:relative;border:1.5px solid rgba(15,174,121,.4) !important;background-image:linear-gradient(180deg,rgba(15,174,121,.07),transparent 50%);box-shadow:0 8px 26px rgba(15,174,121,.18)}
+.jt-card-sponsored{position:relative}
 .jt-card-sponsored:hover{box-shadow:0 14px 34px rgba(15,174,121,.28);transform:translateY(-3px)}
-.jt-card-sponsored .co-logo{width:62px !important;height:62px !important}
 .jt-card-sponsored .job-title-card{font-size:15px;font-weight:800}
 
 /* Optional one-line note (job_type_note), currently only surfaced for
