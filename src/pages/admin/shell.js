@@ -16,9 +16,12 @@ const NAV_ITEMS = [
   { id: 'companies', label: 'Companies', icon: '🏢', href: '/admin/companies' },
   { id: 'categories', label: 'Categories', icon: '🗂️', href: '/admin/categories' },
   { id: 'directory', label: 'Directory', icon: '🌐', href: '/admin/directory' },
+  { id: 'pages', label: 'Pages', icon: '📄', href: '/admin/pages' },
+  { id: 'blog', label: 'Blog', icon: '📝', href: '/admin/blog' },
+  { id: 'card-styles', label: 'Card Styles', icon: '🎨', href: '/admin/card-styles' },
   { id: 'settings', label: 'Settings', icon: '⚙️', href: '/admin/settings' },
   // Future phases plug in here, e.g.:
-  // { id: 'pages', label: 'Pages', icon: '📄', href: '/admin/pages' },
+  // { id: 'theme', label: 'Theme', icon: '🖌️', href: '/admin/theme' },
 ];
 
 const DARK_THEME_CSS = `
