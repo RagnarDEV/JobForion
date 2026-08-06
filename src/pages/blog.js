@@ -1,7 +1,7 @@
 // src/pages/blog.js
 
 import { baseLayout } from '../layout/base-layout.js';
-import { BLOG_POSTS } from '../data/blog-posts.js';
+import { getPosts } from '../lib/blog-cms.js';
 import { adSlot } from '../components/ad-slot.js';
 import { escapeHtml } from '../lib/entities.js';
 import { getSettings, SETTINGS_DEFAULTS } from '../lib/settings.js';
@@ -16,12 +16,16 @@ async function loadCategoryData(env) {
 }
 
 // `env` is optional (backward compatible with any caller that only has
-// `base`) — when provided, settings are fetched from D1 and threaded
-// through baseLayout for dynamic site name / GA id / socials. See
-// routes/pages.router.js for the real call site.
+// `base`) — when provided, settings/categories/posts are all fetched
+// from D1. Posts now come from lib/blog-cms.js (see that file) instead
+// of the old hardcoded BLOG_POSTS array — title/excerpt/category are
+// admin-form-submitted text so they're escaped here (defense in depth;
+// only `post.body` is intentionally raw HTML — see the security note
+// in components/rich-editor.js for why that's still safe).
 export async function renderBlogIndex(base, env) {
   const settings = env ? await getSettings(env) : SETTINGS_DEFAULTS;
   const categories = await loadCategoryData(env);
+  const posts = env ? await getPosts(env) : [];
   const siteName = escapeHtml(settings.site_name);
   const content = `
 <div class="page">
@@ -30,13 +34,14 @@ export async function renderBlogIndex(base, env) {
   <p style="color:var(--ink2);font-size:14px;margin-bottom:24px">Insights and career advice for remote job seekers.</p>
   ${adSlot('blog-index-top')}
   <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px;margin-top:20px">
-    ${BLOG_POSTS.map(p => `
-      <a href="/blog/${p.id}" style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:20px;display:block;transition:all .25s;text-decoration:none;box-shadow:var(--shadow)" onmouseover="this.style.borderColor='var(--brand)';this.style.transform='translateY(-2px)'" onmouseout="this.style.borderColor='var(--border)';this.style.transform='none'">
-        <div style="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--brand);margin-bottom:10px">${p.cat}</div>
-        <div style="font-size:15px;font-weight:700;margin-bottom:8px;line-height:1.4;color:var(--ink)">${p.title}</div>
-        <div style="font-size:13px;color:var(--ink3);line-height:1.65;margin-bottom:14px">${p.excerpt}</div>
-        <div style="font-size:11px;color:var(--ink3);display:flex;gap:12px"><span>📅 ${p.date}</span><span>⏱ ${p.readTime}</span></div>
-      </a>`).join('')}
+    ${posts.map(p => `
+      <a href="/blog/${escapeHtml(p.slug || p.id)}" style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:20px;display:block;transition:all .25s;text-decoration:none;box-shadow:var(--shadow)" onmouseover="this.style.borderColor='var(--brand)';this.style.transform='translateY(-2px)'" onmouseout="this.style.borderColor='var(--border)';this.style.transform='none'">
+        ${p.cover_image_url ? `<img src="${escapeHtml(p.cover_image_url)}" alt="" style="width:100%;height:130px;object-fit:cover;border-radius:9px;margin-bottom:12px" loading="lazy">` : ''}
+        <div style="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--brand);margin-bottom:10px">${escapeHtml(p.category || 'General')}</div>
+        <div style="font-size:15px;font-weight:700;margin-bottom:8px;line-height:1.4;color:var(--ink)">${escapeHtml(p.title)}</div>
+        <div style="font-size:13px;color:var(--ink3);line-height:1.65;margin-bottom:14px">${escapeHtml(p.excerpt || '')}</div>
+        <div style="font-size:11px;color:var(--ink3);display:flex;gap:12px"><span>📅 ${p.published_at ? new Date(p.published_at).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : ''}</span><span>⏱ ${escapeHtml(p.read_time || '')}</span></div>
+      </a>`).join('') || '<div class="empty"><div class="e-icon">📭</div><h3>No articles yet</h3></div>'}
   </div>
 </div>`;
   return baseLayout(`Career Blog — ${settings.site_name}`, 'Career insights for remote job seekers.', `${base}/blog`, '', content,
@@ -47,15 +52,18 @@ export async function renderBlogIndex(base, env) {
 export async function renderArticlePage(post, base, env) {
   const settings = env ? await getSettings(env) : SETTINGS_DEFAULTS;
   const categories = await loadCategoryData(env);
-  const canonical = `${base}/blog/${post.id}`;
-  const schema = JSON.stringify({ "@context": "https://schema.org", "@type": "Article", "headline": post.title, "description": post.excerpt, "datePublished": post.date, "author": { "@type": "Organization", "name": settings.site_name }, "url": canonical });
+  const canonical = `${base}/blog/${post.slug || post.id}`;
+  const publishedDate = post.published_at ? new Date(post.published_at).toISOString().split('T')[0] : '';
+  const schema = JSON.stringify({ "@context": "https://schema.org", "@type": "Article", "headline": post.title, "description": post.excerpt, "datePublished": publishedDate, "author": { "@type": "Organization", "name": settings.site_name }, "url": canonical });
   const content = `
 <div class="page-sm">
   <a href="/blog" class="back-link">← Back to Blog</a>
-  <div class="article-cat">${post.cat}</div>
-  <h1 class="article-title">${post.title}</h1>
-  <div class="article-meta"><span>📅 ${post.date}</span><span>⏱ ${post.readTime}</span><span>✍️ ${escapeHtml(settings.site_name)} Team</span></div>
+  <div class="article-cat">${escapeHtml(post.category || 'General')}</div>
+  <h1 class="article-title">${escapeHtml(post.title)}</h1>
+  <div class="article-meta"><span>📅 ${post.published_at ? new Date(post.published_at).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : ''}</span><span>⏱ ${escapeHtml(post.read_time || '')}</span><span>✍️ ${escapeHtml(settings.site_name)} Team</span></div>
+  ${post.cover_image_url ? `<img src="${escapeHtml(post.cover_image_url)}" alt="" style="width:100%;max-height:360px;object-fit:cover;border-radius:14px;margin-bottom:22px">` : ''}
   <div class="article-body">${post.body}</div>
+  ${(post.tags || []).length ? `<div style="margin-top:20px;display:flex;flex-wrap:wrap;gap:6px">${post.tags.map(t => `<span class="skill-tag">${escapeHtml(t)}</span>`).join('')}</div>` : ''}
   ${adSlot('blog-article-footer', 'margin-top:28px')}
   <div style="margin-top:28px;display:flex;gap:10px;flex-wrap:wrap">
     <a href="/blog" class="back-link" style="margin-bottom:0">← Back to Blog</a>
