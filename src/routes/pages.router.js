@@ -6,7 +6,8 @@ import { renderJobPage } from '../pages/job-page.js';
 import { renderBlogIndex, renderArticlePage } from '../pages/blog.js';
 import { renderStaticPage } from '../pages/static-pages.js';
 import { renderMainHTML } from '../pages/home.js';
-import { BLOG_POSTS } from '../data/blog-posts.js';
+import { getPostById, getPostBySlug } from '../lib/blog-cms.js';
+import { getPageBySlug, RESERVED_SLUGS } from '../lib/pages-cms.js';
 import { getActiveApiKeys } from '../db/sync.js';
 import { baseLayout } from '../layout/base-layout.js';
 import { BASE_URL } from '../config/constants.js';
@@ -79,20 +80,35 @@ export async function handlePagesRoute(url, request, env, base) {
 
   if (url.pathname === '/blog') return new Response(await renderBlogIndex(base, env), { headers: { "Content-Type": "text/html; charset=utf-8" } });
 
-  const blogMatch = url.pathname.match(/^\/blog\/(\d+)$/);
+  const blogMatch = url.pathname.match(/^\/blog\/([a-z0-9-]+)$/);
   if (blogMatch) {
-    const post = BLOG_POSTS.find(p => p.id === parseInt(blogMatch[1]));
+    // Old shared/indexed URLs are purely numeric ids (/blog/1 .. /blog/6);
+    // new posts get slug URLs. Try numeric id first, then fall back to
+    // slug, so neither old nor new links ever break.
+    const idOrSlug = blogMatch[1];
+    const post = /^\d+$/.test(idOrSlug)
+      ? await getPostById(env, parseInt(idOrSlug, 10))
+      : await getPostBySlug(env, idOrSlug);
     if (!post) return new Response('Not found', { status: 404 });
     return new Response(await renderArticlePage(post, base, env), { headers: { "Content-Type": "text/html; charset=utf-8" } });
   }
 
-  if (url.pathname === '/privacy') return new Response(await renderStaticPage('privacy', base, env), { headers: { "Content-Type": "text/html; charset=utf-8" } });
-  if (url.pathname === '/terms') return new Response(await renderStaticPage('terms', base, env), { headers: { "Content-Type": "text/html; charset=utf-8" } });
-  if (url.pathname === '/disclaimer') return new Response(await renderStaticPage('disclaimer', base, env), { headers: { "Content-Type": "text/html; charset=utf-8" } });
-
   if (url.pathname === '/') {
     const html = await renderMainHTML(env, base);
     return new Response(html, { headers: { "Content-Type": "text/html; charset=utf-8" } });
+  }
+
+  // ── CMS pages catch-all (Privacy/Terms/Disclaimer + any admin-created
+  // page) — deliberately LAST in this router: RESERVED_SLUGS (see
+  // lib/pages-cms.js) can never be used as a page slug, so this only
+  // ever matches real CMS pages and safely falls through to null (→ the
+  // next router, e.g. seo-pages.router.js's /categories) for anything
+  // else. A single path segment only, so /job/123, /blog/x, /admin/x
+  // etc. never even reach here.
+  const pageMatch = url.pathname.match(/^\/([a-z][a-z0-9-]{1,49})$/);
+  if (pageMatch && !RESERVED_SLUGS.has(pageMatch[1])) {
+    const html = await renderStaticPage(pageMatch[1], base, env);
+    if (html) return new Response(html, { headers: { "Content-Type": "text/html; charset=utf-8" } });
   }
 
   return null;
