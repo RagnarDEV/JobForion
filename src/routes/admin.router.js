@@ -19,11 +19,17 @@ import { renderCompaniesListContent } from '../pages/admin/companies.js';
 import { renderSettingsContent } from '../pages/admin/settings.js';
 import { renderCategoriesContent } from '../pages/admin/categories.js';
 import { renderDirectoryContent } from '../pages/admin/directory.js';
+import { renderPagesListContent, renderPageEditContent, renderPageNewContent } from '../pages/admin/pages-cms.js';
+import { renderBlogListContent, renderBlogEditContent, renderBlogNewContent } from '../pages/admin/blog-cms.js';
+import { renderCardStylesContent } from '../pages/admin/card-styles.js';
 import { adminShell } from '../pages/admin/shell.js';
 import { JOB_TYPE_META } from '../config/constants.js';
 import { setSettings, SETTINGS_KEYS } from '../lib/settings.js';
 import { createCategory, updateCategory, deleteCategory, moveCategory } from '../lib/categories.js';
 import { setOverride, clearOverride, DIRECTORY_KINDS } from '../lib/directory-overrides.js';
+import { getPageBySlug, createPage, updatePage, deletePage, movePage } from '../lib/pages-cms.js';
+import { getPostById, createPost, updatePost, deletePost } from '../lib/blog-cms.js';
+import { updateCardStyle, resetCardStyle, CARD_STYLE_JOB_TYPES } from '../lib/job-card-styles.js';
 
 function errorPage(err) {
   const msg = (err && err.message ? err.message : String(err)).replace(/</g, '&lt;');
@@ -313,6 +319,218 @@ export async function handleAdminRoute(url, request, env, base) {
       const name = (form.get('name') || '').toString();
       await clearOverride(env, kind, name);
       return new Response(null, { status: 302, headers: { 'Location': `/admin/directory?flash=${encodeURIComponent('Reset to auto-detected')}` } });
+    } catch (e) { return errorPage(e); }
+  }
+
+  // ── Pages CMS ──────────────────────────────────────────────────
+  if (url.pathname === '/admin/pages' && request.method === 'GET') {
+    try {
+      const ok = await verifyAdminCookie(env, request.headers.get('Cookie'));
+      if (!ok) return new Response(renderAdminLogin(false), { headers: { "Content-Type": "text/html; charset=utf-8" } });
+      const content = await renderPagesListContent(env);
+      return new Response(adminShell('pages', content), { headers: { "Content-Type": "text/html; charset=utf-8" } });
+    } catch (e) { return errorPage(e); }
+  }
+
+  if (url.pathname === '/admin/pages/new' && request.method === 'GET') {
+    try {
+      const ok = await verifyAdminCookie(env, request.headers.get('Cookie'));
+      if (!ok) return new Response(renderAdminLogin(false), { headers: { "Content-Type": "text/html; charset=utf-8" } });
+      return new Response(adminShell('pages', renderPageNewContent()), { headers: { "Content-Type": "text/html; charset=utf-8" } });
+    } catch (e) { return errorPage(e); }
+  }
+
+  if (url.pathname === '/admin/pages/edit' && request.method === 'GET') {
+    try {
+      const ok = await verifyAdminCookie(env, request.headers.get('Cookie'));
+      if (!ok) return new Response(renderAdminLogin(false), { headers: { "Content-Type": "text/html; charset=utf-8" } });
+      const slug = url.searchParams.get('slug') || '';
+      const page = await getPageBySlug(env, slug, { includeUnpublished: true });
+      if (!page) return new Response(adminShell('pages', `<div class="adm-wrap"><div class="adm-card">Page not found. <a href="/admin/pages">← Back</a></div></div>`), { headers: { "Content-Type": "text/html; charset=utf-8" } });
+      return new Response(adminShell('pages', renderPageEditContent(page)), { headers: { "Content-Type": "text/html; charset=utf-8" } });
+    } catch (e) { return errorPage(e); }
+  }
+
+  if (url.pathname === '/admin/pages/create' && request.method === 'POST') {
+    try {
+      const ok = await verifyAdminCookie(env, request.headers.get('Cookie'));
+      if (!ok) return new Response('Unauthorized', { status: 401 });
+      const form = await request.formData();
+      await createPage(env, {
+        slug: (form.get('slug') || '').toString().trim().toLowerCase(),
+        title: (form.get('title') || '').toString(),
+        meta_description: (form.get('meta_description') || '').toString(),
+        body: (form.get('body') || '').toString(),
+        status: (form.get('status') || '').toString(),
+        scheduled_at: (form.get('scheduled_at') || '').toString(),
+        show_in_footer: !!form.get('show_in_footer'),
+      });
+      return new Response(null, { status: 302, headers: { 'Location': `/admin/pages?flash=${encodeURIComponent('Page created')}` } });
+    } catch (e) { return errorPage(e); }
+  }
+
+  if (url.pathname === '/admin/pages/update' && request.method === 'POST') {
+    try {
+      const ok = await verifyAdminCookie(env, request.headers.get('Cookie'));
+      if (!ok) return new Response('Unauthorized', { status: 401 });
+      const form = await request.formData();
+      const slug = (form.get('slug') || '').toString();
+      await updatePage(env, slug, {
+        title: (form.get('title') || '').toString(),
+        meta_description: (form.get('meta_description') || '').toString(),
+        body: (form.get('body') || '').toString(),
+        status: (form.get('status') || '').toString(),
+        scheduled_at: (form.get('scheduled_at') || '').toString(),
+        show_in_footer: !!form.get('show_in_footer'),
+      });
+      return new Response(null, { status: 302, headers: { 'Location': `/admin/pages/edit?slug=${encodeURIComponent(slug)}&flash=${encodeURIComponent('Saved')}` } });
+    } catch (e) { return errorPage(e); }
+  }
+
+  if (url.pathname === '/admin/pages/move' && request.method === 'POST') {
+    try {
+      const ok = await verifyAdminCookie(env, request.headers.get('Cookie'));
+      if (!ok) return new Response('Unauthorized', { status: 401 });
+      const form = await request.formData();
+      await movePage(env, (form.get('slug') || '').toString(), (form.get('direction') || '').toString());
+      return new Response(null, { status: 302, headers: { 'Location': '/admin/pages' } });
+    } catch (e) { return errorPage(e); }
+  }
+
+  if (url.pathname === '/admin/pages/delete' && request.method === 'POST') {
+    try {
+      const ok = await verifyAdminCookie(env, request.headers.get('Cookie'));
+      if (!ok) return new Response('Unauthorized', { status: 401 });
+      const form = await request.formData();
+      await deletePage(env, (form.get('slug') || '').toString());
+      return new Response(null, { status: 302, headers: { 'Location': `/admin/pages?flash=${encodeURIComponent('Page deleted')}` } });
+    } catch (e) { return errorPage(e); }
+  }
+
+  // ── Blog CMS ───────────────────────────────────────────────────
+  if (url.pathname === '/admin/blog' && request.method === 'GET') {
+    try {
+      const ok = await verifyAdminCookie(env, request.headers.get('Cookie'));
+      if (!ok) return new Response(renderAdminLogin(false), { headers: { "Content-Type": "text/html; charset=utf-8" } });
+      const content = await renderBlogListContent(env);
+      return new Response(adminShell('blog', content), { headers: { "Content-Type": "text/html; charset=utf-8" } });
+    } catch (e) { return errorPage(e); }
+  }
+
+  if (url.pathname === '/admin/blog/new' && request.method === 'GET') {
+    try {
+      const ok = await verifyAdminCookie(env, request.headers.get('Cookie'));
+      if (!ok) return new Response(renderAdminLogin(false), { headers: { "Content-Type": "text/html; charset=utf-8" } });
+      return new Response(adminShell('blog', renderBlogNewContent()), { headers: { "Content-Type": "text/html; charset=utf-8" } });
+    } catch (e) { return errorPage(e); }
+  }
+
+  if (url.pathname === '/admin/blog/edit' && request.method === 'GET') {
+    try {
+      const ok = await verifyAdminCookie(env, request.headers.get('Cookie'));
+      if (!ok) return new Response(renderAdminLogin(false), { headers: { "Content-Type": "text/html; charset=utf-8" } });
+      const id = parseInt(url.searchParams.get('id') || '0', 10);
+      const post = await getPostById(env, id, { includeUnpublished: true });
+      if (!post) return new Response(adminShell('blog', `<div class="adm-wrap"><div class="adm-card">Article not found. <a href="/admin/blog">← Back</a></div></div>`), { headers: { "Content-Type": "text/html; charset=utf-8" } });
+      return new Response(adminShell('blog', renderBlogEditContent(post)), { headers: { "Content-Type": "text/html; charset=utf-8" } });
+    } catch (e) { return errorPage(e); }
+  }
+
+  if (url.pathname === '/admin/blog/create' && request.method === 'POST') {
+    try {
+      const ok = await verifyAdminCookie(env, request.headers.get('Cookie'));
+      if (!ok) return new Response('Unauthorized', { status: 401 });
+      const form = await request.formData();
+      await createPost(env, {
+        title: (form.get('title') || '').toString(),
+        excerpt: (form.get('excerpt') || '').toString(),
+        body: (form.get('body') || '').toString(),
+        category: (form.get('category') || '').toString(),
+        tags: (form.get('tags') || '').toString().split(',').map(t => t.trim()).filter(Boolean),
+        cover_image_url: (form.get('cover_image_url') || '').toString(),
+        status: (form.get('status') || '').toString(),
+        scheduled_at: (form.get('scheduled_at') || '').toString(),
+        read_time: (form.get('read_time') || '').toString(),
+      });
+      return new Response(null, { status: 302, headers: { 'Location': `/admin/blog?flash=${encodeURIComponent('Article created')}` } });
+    } catch (e) { return errorPage(e); }
+  }
+
+  if (url.pathname === '/admin/blog/update' && request.method === 'POST') {
+    try {
+      const ok = await verifyAdminCookie(env, request.headers.get('Cookie'));
+      if (!ok) return new Response('Unauthorized', { status: 401 });
+      const form = await request.formData();
+      const id = parseInt((form.get('id') || '0').toString(), 10);
+      await updatePost(env, id, {
+        title: (form.get('title') || '').toString(),
+        excerpt: (form.get('excerpt') || '').toString(),
+        body: (form.get('body') || '').toString(),
+        category: (form.get('category') || '').toString(),
+        tags: (form.get('tags') || '').toString().split(',').map(t => t.trim()).filter(Boolean),
+        cover_image_url: (form.get('cover_image_url') || '').toString(),
+        status: (form.get('status') || '').toString(),
+        scheduled_at: (form.get('scheduled_at') || '').toString(),
+        read_time: (form.get('read_time') || '').toString(),
+      });
+      return new Response(null, { status: 302, headers: { 'Location': `/admin/blog/edit?id=${id}&flash=${encodeURIComponent('Saved')}` } });
+    } catch (e) { return errorPage(e); }
+  }
+
+  if (url.pathname === '/admin/blog/delete' && request.method === 'POST') {
+    try {
+      const ok = await verifyAdminCookie(env, request.headers.get('Cookie'));
+      if (!ok) return new Response('Unauthorized', { status: 401 });
+      const form = await request.formData();
+      await deletePost(env, parseInt((form.get('id') || '0').toString(), 10));
+      return new Response(null, { status: 302, headers: { 'Location': `/admin/blog?flash=${encodeURIComponent('Article deleted')}` } });
+    } catch (e) { return errorPage(e); }
+  }
+
+  // ── Job Card Style Manager ────────────────────────────────────
+  if (url.pathname === '/admin/card-styles' && request.method === 'GET') {
+    try {
+      const ok = await verifyAdminCookie(env, request.headers.get('Cookie'));
+      if (!ok) return new Response(renderAdminLogin(false), { headers: { "Content-Type": "text/html; charset=utf-8" } });
+      const content = await renderCardStylesContent(env);
+      return new Response(adminShell('card-styles', content), { headers: { "Content-Type": "text/html; charset=utf-8" } });
+    } catch (e) { return errorPage(e); }
+  }
+
+  if (url.pathname === '/admin/card-styles/update' && request.method === 'POST') {
+    try {
+      const ok = await verifyAdminCookie(env, request.headers.get('Cookie'));
+      if (!ok) return new Response('Unauthorized', { status: 401 });
+      const form = await request.formData();
+      const jobType = (form.get('job_type') || '').toString();
+      if (!CARD_STYLE_JOB_TYPES.includes(jobType)) return new Response('Invalid job type', { status: 400 });
+      await updateCardStyle(env, jobType, {
+        bg_type: (form.get('bg_type') || '').toString(),
+        bg_color1: (form.get('bg_color1') || '').toString(),
+        bg_color2: (form.get('bg_color2') || '').toString(),
+        gradient_angle: form.get('gradient_angle'),
+        border_style: (form.get('border_style') || '').toString(),
+        border_color: (form.get('border_color') || '').toString(),
+        border_width: form.get('border_width'),
+        logo_size: form.get('logo_size'),
+        card_padding: form.get('card_padding'),
+        shadow: (form.get('shadow') || '').toString(),
+        badge_bg_color: (form.get('badge_bg_color') || '').toString(),
+        badge_text_color: (form.get('badge_text_color') || '').toString(),
+      });
+      return new Response(null, { status: 302, headers: { 'Location': `/admin/card-styles?flash=${encodeURIComponent(jobType + ' style saved')}` } });
+    } catch (e) { return errorPage(e); }
+  }
+
+  if (url.pathname === '/admin/card-styles/reset' && request.method === 'POST') {
+    try {
+      const ok = await verifyAdminCookie(env, request.headers.get('Cookie'));
+      if (!ok) return new Response('Unauthorized', { status: 401 });
+      const form = await request.formData();
+      const jobType = (form.get('job_type') || '').toString();
+      if (!CARD_STYLE_JOB_TYPES.includes(jobType)) return new Response('Invalid job type', { status: 400 });
+      await resetCardStyle(env, jobType);
+      return new Response(null, { status: 302, headers: { 'Location': `/admin/card-styles?flash=${encodeURIComponent(jobType + ' reset to default')}` } });
     } catch (e) { return errorPage(e); }
   }
 
