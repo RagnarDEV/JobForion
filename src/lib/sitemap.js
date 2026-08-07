@@ -20,6 +20,8 @@
 // ════════════════════════════════════════════════════════════════
 
 import { listCompanies, listSkills, listCountries } from './entities.js';
+import { getPages } from './pages-cms.js';
+import { getPosts } from './blog-cms.js';
 
 // Google's sitemap protocol caps a single file at 50,000 URLs. 20,000 per
 // job-chunk keeps meaningful headroom under that limit (a single chunk
@@ -73,19 +75,30 @@ ${entries.join('')}
 // ── /sitemap-static.xml — core pages, blog, categories ─────────────
 // `blogPosts` / `categoryOrder` are passed in since they're still defined
 // as in-code constants in index.js (static content stays static).
-export function buildStaticSitemapXml(base, { blogPosts = [], categoryOrder = [] } = {}) {
+export async function buildStaticSitemapXml(env, base, { categoryOrder = [] } = {}) {
   const urls = [];
   urls.push(urlTag(`${base}/`, { changefreq: 'hourly', priority: '1.0' }));
   urls.push(urlTag(`${base}/blog`, { changefreq: 'weekly', priority: '0.8' }));
-  urls.push(urlTag(`${base}/privacy`, { changefreq: 'yearly', priority: '0.3' }));
-  urls.push(urlTag(`${base}/terms`, { changefreq: 'yearly', priority: '0.3' }));
-  urls.push(urlTag(`${base}/disclaimer`, { changefreq: 'yearly', priority: '0.3' }));
   urls.push(urlTag(`${base}/companies`, { changefreq: 'daily', priority: '0.7' }));
   urls.push(urlTag(`${base}/categories`, { changefreq: 'daily', priority: '0.7' }));
   urls.push(urlTag(`${base}/skills`, { changefreq: 'daily', priority: '0.6' }));
   urls.push(urlTag(`${base}/countries`, { changefreq: 'daily', priority: '0.6' }));
-  for (const p of blogPosts) urls.push(urlTag(`${base}/blog/${p.id}`, { changefreq: 'monthly', priority: '0.7' }));
   for (const key of categoryOrder) urls.push(urlTag(`${base}/categories/${key}`, { changefreq: 'daily', priority: '0.65' }));
+
+  // CMS pages (Privacy/Terms/Disclaimer + anything created at
+  // /admin/pages) and blog posts (lib/blog-cms.js) are now D1-backed —
+  // pulled live here instead of the old hardcoded STATIC_PAGES/
+  // BLOG_POSTS arrays, so a brand-new page or article is picked up on
+  // the very next sitemap rebuild with zero code changes.
+  try {
+    const pages = await getPages(env);
+    for (const p of pages) urls.push(urlTag(`${base}/${p.slug}`, { changefreq: 'yearly', priority: '0.3', lastmod: (p.updated_at || p.created_at || '').slice(0, 10) || undefined }));
+  } catch (e) {}
+  try {
+    const posts = await getPosts(env, { limit: 500 });
+    for (const p of posts) urls.push(urlTag(`${base}/blog/${p.slug || p.id}`, { changefreq: 'monthly', priority: '0.7', lastmod: (p.updated_at || p.published_at || '').slice(0, 10) || undefined }));
+  } catch (e) {}
+
   return urlsetXml(urls);
 }
 
