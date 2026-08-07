@@ -10,6 +10,7 @@ import { getSettings } from '../lib/settings.js';
 import { getCategories } from '../lib/categories.js';
 import { getCardStyles } from '../lib/job-card-styles.js';
 import { getAdSlotsConfig } from '../lib/ad-slots.js';
+import { getFooterPages } from '../lib/pages-cms.js';
 
 // SECURITY: JSON.stringify() does NOT escape "<", so a malicious job title
 // like `</script><script>...` embedded in scraped/submitted data could
@@ -81,6 +82,7 @@ export async function renderJobPage(job, related, base, env) {
 
   const [categories, settings, cardStyles] = await Promise.all([getCategories(env), getSettings(env), getCardStyles(env)]);
   const adConfig = await getAdSlotsConfig(env);
+  const footerPages = await getFooterPages(env);
   const adsEnabled = settings.ads_enabled !== '0';
   const categoryOrder = categories.map(c => c.key);
   const categoryMap = Object.fromEntries(categories.map(c => [c.key, { label: c.label, emoji: c.emoji, color: c.color }]));
@@ -199,5 +201,5 @@ export async function renderJobPage(job, related, base, env) {
   refreshBtn();
 })();
 </script>`;
-  return baseLayout(`${job.title} at ${job.company} — ${settings.site_name}`, desc, canonical, '', content, `<script type="application/ld+json">${schema}</script><script type="application/ld+json">${breadcrumbSchema}</script>`, 'index, follow', settings, { order: categoryOrder, map: categoryMap });
+  return baseLayout(`${job.title} at ${job.company} — ${settings.site_name}`, desc, canonical, '', content, `<script type="application/ld+json">${schema}</script><script type="application/ld+json">${breadcrumbSchema}</script>`, 'index, follow', settings, { order: categoryOrder, map: categoryMap }, footerPages);
 }

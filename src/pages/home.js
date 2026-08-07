@@ -11,14 +11,15 @@ import { ICON_HEAD } from '../assets/favicon.js';
 import { JOB_TYPE_META, JOB_TYPE_SORT_SQL } from '../config/constants.js';
 import { jobCardSSR } from '../components/job-card.js';
 import { adSlot } from '../components/ad-slot.js';
-import { escapeHtml, slugify, listCountries, listSkills, listCompanies } from '../lib/entities.js';
-import { countryFlag, COUNTRY_TO_ISO } from '../lib/country-flags.js';
+import { escapeHtml, slugify, listCompanies } from '../lib/entities.js';
+import { COUNTRY_TO_ISO } from '../lib/country-flags.js';
 import { googleAnalyticsTag } from '../lib/analytics-tag.js';
 import { getSettings } from '../lib/settings.js';
 import { getCategories } from '../lib/categories.js';
 import { getCardStyles } from '../lib/job-card-styles.js';
 import { getAdSlotsConfig } from '../lib/ad-slots.js';
-import { iconSparkle, iconFlame, iconPin, iconMapPin, iconBookmark, iconLink, iconArrowRight, iconBadgeCheck, iconClock, iconGlobe, iconBuilding, iconSearch, iconX, iconFilter, iconCheck, iconInfo, iconAlertTriangle, iconFolder, iconTag } from '../assets/icons.js';
+import { getFooterPages } from '../lib/pages-cms.js';
+import { iconSparkle, iconFlame, iconPin, iconMapPin, iconBookmark, iconLink, iconArrowRight, iconBadgeCheck, iconClock, iconGlobe, iconBuilding, iconSearch, iconCheck, iconInfo, iconAlertTriangle } from '../assets/icons.js';
 
 // Same icon markup used by the server-rendered cards (job-card.js) is
 // reused for client-rendered cards (search/filter/pagination results) by
@@ -30,108 +31,9 @@ const CLIENT_ICONS = {
   mapPin: iconMapPin({ size: 11 }), bookmark: iconBookmark(), link: iconLink(), arrowRight: iconArrowRight(),
   arrowRightSm: iconArrowRight({ size: 11 }), badgeCheck: iconBadgeCheck({ size: 12 }), clock: iconClock({ size: 11 }),
   globe: iconGlobe({ size: 11 }), building: iconBuilding({ size: 11 }), search: iconSearch({ size: 16 }),
-  x: iconX({ size: 13 }), filter: iconFilter({ size: 14 }),
   check: iconCheck({ size: 16 }), info: iconInfo({ size: 16 }), alertTriangle: iconAlertTriangle({ size: 32 }),
-  searchLg: iconSearch({ size: 32 }), folder: iconFolder({ size: 11 }), tag: iconTag({ size: 11 }),
+  searchLg: iconSearch({ size: 32 }),
 };
-
-// Kept for backward compatibility with anything still calling it directly;
-// the homepage itself now renders categories via the panel below instead
-// of an always-expanded chip row.
-export function categoryChipsServer(categoryOrder, categoryMap) {
-  return categoryOrder.map(k => `<button class="chip" data-cat="${k}" onclick="filterCat('${k}','${escapeHtml(categoryMap[k].label)}')">${escapeHtml(categoryMap[k].label)}</button>`).join('');
-}
-
-// ── Generic facet-picker panel builder ──────────────────────────────
-// All four homepage facets (category, country, skill, company) share one
-// visual pattern: a chip that toggles a panel of pill buttons, each
-// showing an icon/emoji + name + job count, with a dark "All X" reset
-// pill first. Building all four through one function keeps them visually
-// and behaviorally identical — a fifth facet later is a one-line addition
-// here, not a new bespoke UI.
-function facetPanelServer(facet, defaultIconSvg, allLabel, items, iconInDataLabel) {
-  // The "All X" reset pill's data-label is intentionally left blank: it's
-  // never actually read by selectFacet() (an empty value always falls
-  // back to the client-side FACET_DEFAULT_LABEL constant instead), so
-  // there's no reason to risk putting anything — let alone an SVG icon's
-  // own double-quoted width="…"/height="…" attributes — inside this
-  // attribute value.
-  const allBtn = `<button class="filter-pill active" data-facet="${facet}" data-value="" data-label="" onclick="selectFacet(this,'${facet}')">${defaultIconSvg} ${allLabel}</button>`;
-  const rest = items.map(({ icon, name, value, count }) => {
-    const safeName = escapeHtml(name);
-    const safeValue = escapeHtml(value);
-    // SECURITY/CORRECTNESS: `icon` is only safe to also embed inside the
-    // data-label ATTRIBUTE when it's a plain emoji/Unicode character with
-    // no embedded quotes (category emoji, country flags). An SVG icon
-    // string (skill/company) always contains double quotes from its own
-    // attributes and would prematurely close data-label, corrupting this
-    // button's HTML — so SVG icons are only ever placed in element
-    // CONTENT (below, outside any attribute), never inside one.
-    const labelAttr = iconInDataLabel ? `${icon} ${safeName}` : safeName;
-    return `<button class="filter-pill" data-facet="${facet}" data-value="${safeValue}" data-label="${labelAttr}" onclick="selectFacet(this,'${facet}')">${icon} ${safeName} <span class="cnt">${count}</span></button>`;
-  }).join('');
-  return allBtn + rest;
-}
-
-function categoryPanelItemsServer(counts, categoryOrder, categoryMap) {
-  const items = categoryOrder.map(k => ({ icon: categoryMap[k].emoji, name: categoryMap[k].label, value: k, count: counts[k] || 0 }));
-  return facetPanelServer('category', iconFolder({ size: 11 }), 'All Categories', items, true);
-}
-
-// Country picker, each entry prefixed with a flag emoji (lib/country-flags.js) —
-// flags are plain Unicode characters, safe to embed in the data-label
-// attribute directly. Selecting one filters jobs via /api/jobs?country=...
-// (routes/api.router.js), matching the same heuristic already used by
-// jobsByRegion() in lib/entities.js.
-function countryPanelItemsServer(countries) {
-  const items = countries.map(c => ({ icon: countryFlag(c.name), name: c.name, value: c.name, count: c.count }));
-  return facetPanelServer('country', iconGlobe({ size: 11 }), 'All Countries', items, true);
-}
-
-// Skill picker — sourced from listSkills() (lib/entities.js), which parses
-// the jobs.skills JSON column via SQLite's json_each. Filters via
-// /api/jobs?skill=... which matches the same json_each pattern. Every
-// entry shares one uniform "tag" SVG icon (skills have no natural
-// per-item glyph the way countries have flags).
-function skillPanelItemsServer(skills) {
-  const tagIcon = iconTag({ size: 11 });
-  const items = skills.map(s => ({ icon: tagIcon, name: s.name, value: s.name, count: s.count }));
-  return facetPanelServer('skill', tagIcon, 'All Skills', items, false);
-}
-
-// Company picker — sourced from listCompanies() (lib/entities.js). Filters
-// via /api/jobs?company=... (exact match on the jobs.company column).
-// Uses the same building icon as the "hybrid/on-site" remote-type tag
-// elsewhere on the site for visual consistency.
-function companyPanelItemsServer(companies) {
-  const buildingIcon = iconBuilding({ size: 11 });
-  const items = companies.map(c => ({ icon: buildingIcon, name: c.name, value: c.name, count: c.count }));
-  return facetPanelServer('company', buildingIcon, 'All Companies', items, false);
-}
-
-// Single-query category counts: one SUM(CASE WHEN...) column per category
-// instead of 13 separate COUNT queries, to keep the homepage's D1
-// subrequest budget in check (see the free-tier notes in README.md).
-//
-// SECURITY: category keys are admin-editable (lib/categories.js) as of
-// this update, so they can no longer be trusted as raw SQL identifiers
-// (a key was previously interpolated directly as a column alias here,
-// which was only safe while CATEGORY_ORDER was a fixed, hardcoded
-// whitelist). Aliases are now purely positional (c0, c1, ...) — the key
-// text itself only ever flows in as a bound parameter (`%${k}%`), never
-// concatenated into the SQL string.
-async function getCategoryCounts(env, categoryOrder) {
-  if (!categoryOrder.length) return {};
-  try {
-    const caseExprs = categoryOrder.map((_, i) => `SUM(CASE WHEN LOWER(title) LIKE ? THEN 1 ELSE 0 END) AS c${i}`).join(', ');
-    const binds = categoryOrder.map(k => `%${k}%`);
-    const { results } = await env.DB.prepare(`SELECT ${caseExprs} FROM jobs`).bind(...binds).all();
-    const row = results[0] || {};
-    const out = {};
-    categoryOrder.forEach((k, i) => { out[k] = row[`c${i}`] || 0; });
-    return out;
-  } catch (e) { return {}; }
-}
 
 export async function renderMainHTML(env, base) {
   await ensureTable(env);
@@ -142,6 +44,7 @@ export async function renderMainHTML(env, base) {
   const cardStyles = await getCardStyles(env);
   const adConfig = await getAdSlotsConfig(env);
   const adsEnabled = settings.ads_enabled !== '0';
+  const footerPages = await getFooterPages(env);
   let initialJobs = [], initialTotal = 0, totalJobsCount = 0, companiesCount = 0;
   try {
     const { results } = await env.DB.prepare(`SELECT * FROM jobs ORDER BY ${JOB_TYPE_SORT_SQL} ASC, featured DESC, id DESC LIMIT 20`).all();
@@ -157,16 +60,8 @@ export async function renderMainHTML(env, base) {
   // skill, company) — each bounded to a reasonable top-N since these
   // render as flat button lists, not paginated tables (the full
   // directories live at /categories, /countries, /skills, /companies).
-  let topCountries = [], topSkills = [], topCompanies = [], categoryCounts = {};
-  try { topCountries = await listCountries(env, { limit: 40 }); } catch (e) {}
-  try { topSkills = await listSkills(env, { limit: 40 }); } catch (e) {}
+  let topCompanies = [];
   try { topCompanies = await listCompanies(env, { limit: 40 }); } catch (e) {}
-  categoryCounts = await getCategoryCounts(env, categoryOrder);
-
-  const categoryPanelHtml = categoryPanelItemsServer(categoryCounts, categoryOrder, categoryMap);
-  const countryPanelHtml = countryPanelItemsServer(topCountries);
-  const skillPanelHtml = skillPanelItemsServer(topSkills);
-  const companyPanelHtml = companyPanelItemsServer(topCompanies);
 
   const itemListSchema = JSON.stringify({
     "@context": "https://schema.org", "@type": "ItemList",
@@ -245,32 +140,11 @@ ${SHARED_CSS}
 .fc-logos a{font-family:'Space Grotesk',sans-serif;font-size:25px;font-weight:700;color:var(--ink3);opacity:.65;transition:all .25s;text-decoration:none}
 .fc-logos a:hover{opacity:1;color:var(--brand)}
 
-/* ── FILTER BAR ── */
-.filters-bar{position:sticky;top:66px;z-index:150;padding:12px 24px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;overflow-x:auto;background:rgba(255,255,255,.92);backdrop-filter:blur(10px);transition:transform .28s ease,box-shadow .28s ease}
-.filters-bar.bar-hidden{transform:translateY(-130%);box-shadow:none}
-.filters-bar::-webkit-scrollbar{height:0}
-.chip{display:inline-flex;align-items:center;gap:5px;padding:8px 15px;border-radius:20px;border:1.5px solid var(--border2);background:var(--surface);color:var(--ink2);font-size:13px;font-weight:700;font-family:inherit;cursor:pointer;white-space:nowrap;transition:all .2s}
-.chip:hover{border-color:var(--brand);color:var(--brand)}
-.chip.active{background:var(--ink);border-color:var(--ink);color:#fff}
-
-/* ── ADV FILTERS ── */
-.adv-filters{max-width:1180px;margin:0 auto;padding:12px 24px;border-bottom:1px solid var(--border);display:none;gap:10px;flex-wrap:wrap;background:var(--bg);align-items:flex-end}
-.adv-filters.open{display:flex}
-.filter-select{background:var(--surface);border:1px solid var(--border2);border-radius:8px;padding:8px 12px;color:var(--ink2);font-size:12px;font-family:inherit;cursor:pointer;outline:none}
-.filter-select:focus{border-color:var(--brand);color:var(--ink)}
-.filter-label{font-size:10px;font-weight:700;color:var(--ink3);display:flex;flex-direction:column;gap:4px;letter-spacing:.5px;text-transform:uppercase}
-.salary-input{width:90px;background:var(--surface);border:1px solid var(--border2);border-radius:8px;padding:8px 10px;color:var(--ink);font-size:12px;font-family:inherit;outline:none}
-.salary-input:focus{border-color:var(--brand)}
-.clear-btn{padding:8px 14px;border-radius:8px;border:1px solid var(--border2);background:transparent;color:var(--ink3);font-size:12px;cursor:pointer;font-family:inherit;transition:all .2s;font-weight:600}
-.clear-btn:hover{color:var(--coral);border-color:var(--coral)}
-
 /* ── CONTENT ── */
 .content-wrap{max-width:1180px;margin:0 auto;padding:24px}
 .results-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;gap:10px;flex-wrap:wrap}
 .results-count{font-size:14px;color:var(--ink3)}
 .results-count strong{color:var(--ink);font-weight:700}
-.adv-toggle-btn{display:inline-flex;align-items:center;gap:6px;padding:8px 15px;border-radius:9px;border:1px solid var(--border2);background:var(--surface);color:var(--ink2);font-size:13px;cursor:pointer;font-family:inherit;transition:all .2s;font-weight:600}
-.adv-toggle-btn:hover,.adv-toggle-btn.active{background:var(--brand-soft);border-color:var(--brand);color:var(--brand)}
 
 /* ── JOB LIST (pastel-tinted cards, remote.io rhythm) ── */
 .jobs-list{display:flex;flex-direction:column;gap:9px}
@@ -335,9 +209,6 @@ ${SHARED_CSS}
 .ad-slot-hint{font-size:11px;color:var(--ink3)}
 .ad-slot-live{border:none;padding:0;background:transparent;display:flex;justify-content:center;overflow:hidden}
 
-@media(max-width:860px){
-  .filters-bar{top:60px}
-}
 @media(max-width:768px){
   .hero{min-height:calc(100vh - 130px);min-height:calc(100svh - 130px);display:flex;flex-direction:column;justify-content:center;padding:40px 20px}
   .hero-title{font-size:42px;letter-spacing:-.9px;line-height:1.14;text-align:center}
@@ -357,7 +228,6 @@ ${SHARED_CSS}
 }
 @media(max-width:380px){
   .hero-title{font-size:29px}
-  .chip{padding:6px 12px;font-size:12px}
 }
 </style>
 </head>
@@ -389,39 +259,9 @@ ${mobileHeaderHtml(settings)}
       </div>
     </div>
 
-    <div class="filters-bar" id="filtersBar">
-      <button class="chip" id="categoryChipBtn" onclick="toggleFacetPanel('category')">${iconFolder({ size: 12 })} Category</button>
-      <button class="chip" id="countryChipBtn" onclick="toggleFacetPanel('country')">${iconGlobe({ size: 12 })} Country</button>
-      <button class="chip" id="skillChipBtn" onclick="toggleFacetPanel('skill')">${iconTag({ size: 12 })} Skills</button>
-      <button class="chip" id="companyChipBtn" onclick="toggleFacetPanel('company')">${iconBuilding({ size: 12 })} Companies</button>
-    </div>
-
-    <div class="filter-panel" id="categoryPanel">
-      <div class="filter-panel-inner">${categoryPanelHtml}</div>
-    </div>
-    <div class="filter-panel" id="countryPanel">
-      <div class="filter-panel-inner">${countryPanelHtml}</div>
-    </div>
-    <div class="filter-panel" id="skillPanel">
-      <div class="filter-panel-inner">${skillPanelHtml}</div>
-    </div>
-    <div class="filter-panel" id="companyPanel">
-      <div class="filter-panel-inner">${companyPanelHtml}</div>
-    </div>
-
-    <div class="adv-filters" id="advFilters">
-      <label class="filter-label">Remote<select class="filter-select" id="fRemote" onchange="applyAdvFilters()"><option value="">All</option><option value="fully_remote">Fully Remote</option><option value="hybrid">Hybrid</option><option value="on_site">On-site</option></select></label>
-      <label class="filter-label">Employment<select class="filter-select" id="fEmploy" onchange="applyAdvFilters()"><option value="">All</option><option value="full_time">Full Time</option><option value="part_time">Part Time</option><option value="contract">Contract</option></select></label>
-      <label class="filter-label">Seniority<select class="filter-select" id="fSeniority" onchange="applyAdvFilters()"><option value="">All</option><option value="Junior">Junior</option><option value="Mid">Mid-Level</option><option value="Senior">Senior</option><option value="Staff">Staff</option></select></label>
-      <label class="filter-label">Min Salary<input type="number" class="salary-input" id="fSalaryMin" placeholder="$k" oninput="debounceAdv()"></label>
-      <label class="filter-label">Posted<select class="filter-select" id="fDate" onchange="applyAdvFilters()"><option value="">Any time</option><option value="1">Today</option><option value="7">This week</option><option value="30">This month</option></select></label>
-      <button class="clear-btn" onclick="clearAdvFilters()">${iconX({ size: 12 })} Clear</button>
-    </div>
-
     <div class="content-wrap">
       <div class="results-hdr">
         <div class="results-count" id="resultsCount" style="display:none"><strong>${initialTotal.toLocaleString()}</strong> jobs found</div>
-        <button class="adv-toggle-btn" id="advToggleBtn" onclick="toggleAdv()">${iconFilter({ size: 13 })} Filters</button>
       </div>
       ${adSlot('homepage-results-top', '', adConfig, adsEnabled)}
       <div class="jobs-list" id="jobsList">${ssrJobsHtml}</div>
@@ -441,7 +281,7 @@ ${mobileHeaderHtml(settings)}
   </div>
 </main>
 
-${footerHtml(base, settings)}
+${footerHtml(base, settings, footerPages)}
 ${postJobModalHtml(categoryOrder, categoryMap)}
 
 <div class="toast" id="toast">
@@ -500,7 +340,7 @@ function jobTypeCardClass(t){
 let pg=1,cat='',srch='',advT,srchT;
 let jobs=${JSON.stringify(initialJobs)},total=${initialTotal};
 let savedIds=JSON.parse(localStorage.getItem('jn_saved')||'[]');
-let adv={remote:'',employ:'',seniority:'',salaryMin:'',days:'',country:'',skill:'',company:''};
+let adv={};
 let hasLoadedOnce=true;
 
 function initials(n){return(n||'?').split(' ').slice(0,2).map(w=>w[0]||'').join('').toUpperCase();}
@@ -567,93 +407,6 @@ function goView(v){
   if(v==='saved'){showView('vSaved');renderSaved();return;}
 }
 window.goView=goView;
-
-function toggleAdv(){document.getElementById('advFilters').classList.toggle('open');document.getElementById('advToggleBtn').classList.toggle('active');}
-function applyAdvFilters(){
-  adv.remote=document.getElementById('fRemote').value;
-  adv.employ=document.getElementById('fEmploy').value;
-  adv.seniority=document.getElementById('fSeniority').value;
-  adv.salaryMin=document.getElementById('fSalaryMin').value;
-  adv.days=document.getElementById('fDate').value;
-  pg=1;loadJobs();
-}
-function debounceAdv(){clearTimeout(advT);advT=setTimeout(applyAdvFilters,500);}
-function clearAdvFilters(){
-  ['fRemote','fEmploy','fSeniority','fDate'].forEach(id=>document.getElementById(id).value='');
-  document.getElementById('fSalaryMin').value='';
-  adv={remote:'',employ:'',seniority:'',salaryMin:'',days:'',country:adv.country,skill:adv.skill,company:adv.company};
-  pg=1;loadJobs();
-}
-
-// ── Facet picker panels (Category / Country / Skills / Companies chips) ──
-// All four chips share this one generic implementation: only one panel is
-// open at a time, each chip stays visually "active" whenever its facet
-// currently has a value selected (independent of the other three, so
-// facets combine rather than reset each other).
-const FACETS=['category','country','skill','company'];
-const FACET_DEFAULT_LABEL={category:ICONS.folder+' Category',country:ICONS.globe+' Country',skill:ICONS.tag+' Skills',company:ICONS.building+' Companies'};
-// Only skill/company need their icon prepended client-side: their
-// data-label attribute intentionally holds ONLY the plain name (see
-// facetPanelServer() server-side) since their icon is an SVG string,
-// which can't safely live inside an HTML attribute. Category/country
-// labels already include their icon (a plain emoji, safe in attributes)
-// as part of the label text itself.
-const FACET_ICON_PREFIX={skill:ICONS.tag+' ',company:ICONS.building+' '};
-
-function facetHasValue(f){ return f==='category' ? !!cat : !!adv[f]; }
-
-function toggleFacetPanel(facet){
-  const targetPanel=document.getElementById(facet+'Panel');
-  const willOpen=!targetPanel.classList.contains('open');
-  FACETS.forEach(f=>{
-    document.getElementById(f+'Panel').classList.remove('open');
-    const btn=document.getElementById(f+'ChipBtn');
-    btn.classList.toggle('active',facetHasValue(f));
-  });
-  if(willOpen){
-    targetPanel.classList.add('open');
-    document.getElementById(facet+'ChipBtn').classList.add('active');
-  }
-}
-window.toggleFacetPanel=toggleFacetPanel;
-
-function closeFacetPanel(facet){
-  document.getElementById(facet+'Panel').classList.remove('open');
-  document.getElementById(facet+'ChipBtn').classList.toggle('active',facetHasValue(facet));
-}
-
-function selectFacet(btn,facet){
-  const value=btn.dataset.value||'';
-  if(facet==='category'){
-    const rawLabel=value?(btn.dataset.label||''):'';
-    filterCat(value,rawLabel.replace(/^\S+\s*/,''));
-    closeFacetPanel('category');
-    return;
-  }
-  const label=btn.dataset.label||'';
-  adv[facet]=value;
-  const chipBtn=document.getElementById(facet+'ChipBtn');
-  if(value){
-    const prefix=FACET_ICON_PREFIX[facet]||''; // empty for country — its flag is already part of label
-    chipBtn.innerHTML=prefix+esc(label);
-  }else{
-    chipBtn.innerHTML=FACET_DEFAULT_LABEL[facet];
-  }
-  document.querySelectorAll('.filter-pill[data-facet="'+facet+'"]').forEach(el=>el.classList.toggle('active',el.dataset.value===value));
-  closeFacetPanel(facet);
-  pg=1;loadJobs();
-}
-window.selectFacet=selectFacet;
-
-document.addEventListener('click',function(e){
-  FACETS.forEach(f=>{
-    const panel=document.getElementById(f+'Panel');
-    const chipBtn=document.getElementById(f+'ChipBtn');
-    if(!panel||!panel.classList.contains('open'))return;
-    if(panel.contains(e.target)||chipBtn.contains(e.target))return;
-    closeFacetPanel(f);
-  });
-});
 
 function renderSkeletons(){
   return Array(4).fill(0).map(()=>\`
@@ -791,18 +544,6 @@ function renderSaved(){
 
 function clearAllSaved(){savedIds=[];localStorage.removeItem('jn_saved');renderSaved();showToast('All cleared','info');}
 
-function filterCat(c,label){
-  cat=c;pg=1;
-  // Category is one of four independent, combinable facets (category,
-  // country, skill, company) — this only ever touches the Category chip
-  // and its own panel pills, never the other three facets' state.
-  const chipBtn=document.getElementById('categoryChipBtn');
-  const meta=c?CAT_META[c]:null;
-  chipBtn.innerHTML=c?esc((meta?meta.emoji+' ':'')+label):(ICONS.folder+' Category');
-  chipBtn.classList.toggle('active',!!c);
-  document.querySelectorAll('.filter-pill[data-facet="category"]').forEach(el=>el.classList.toggle('active',el.dataset.value===c));
-  showView('vJobs');loadJobs();
-}
 function debounceSearch(v){clearTimeout(srchT);srchT=setTimeout(()=>{srch=v;pg=1;loadJobs();},400);}
 function goPage(p){pg=p;loadJobs();window.scrollTo({top:0,behavior:'smooth'});}
 
@@ -823,30 +564,6 @@ document.addEventListener('DOMContentLoaded',()=>{
   savedIds.forEach(id=>{const b=document.getElementById('sb-'+id);if(b)b.classList.add('saved');});
   renderPagination();
 });
-
-// Filters bar slides away once the visitor scrolls down past the hero/
-// company strip into the job cards, and slides back in on scroll-up —
-// keeps the four facet chips reachable without permanently occupying
-// space while browsing.
-(function(){
-  let lastY=0,hidden=false;
-  window.addEventListener('scroll',function(){
-    const bar=document.getElementById('filtersBar');
-    if(!bar)return;
-    const curY=window.scrollY;
-    const scrollingDown=curY>lastY;
-    const pastThreshold=curY>140;
-    if(scrollingDown&&pastThreshold&&!hidden){
-      bar.classList.add('bar-hidden');
-      hidden=true;
-      FACETS.forEach(f=>{const p=document.getElementById(f+'Panel');if(p)p.classList.remove('open');});
-    }else if((!scrollingDown||!pastThreshold)&&hidden){
-      bar.classList.remove('bar-hidden');
-      hidden=false;
-    }
-    lastY=curY<=0?0:curY;
-  },{passive:true});
-})();
 </script>
 </body>
 </html>`;

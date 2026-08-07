@@ -7,6 +7,12 @@ import { escapeHtml } from '../lib/entities.js';
 import { getSettings, SETTINGS_DEFAULTS } from '../lib/settings.js';
 import { getCategories } from '../lib/categories.js';
 import { getAdSlotsConfig, DEFAULT_AD_CONFIG } from '../lib/ad-slots.js';
+import { getFooterPages } from '../lib/pages-cms.js';
+
+// `env` optional — see loadCategoryData's own comment for the pattern.
+async function loadFooterPages(env) {
+  return env ? await getFooterPages(env) : null;
+}
 
 // Builds the `{order, map}` shape baseLayout() expects for the dynamic
 // "Post a Job" category dropdown. `env` optional — see renderBlogIndex.
@@ -29,6 +35,7 @@ export async function renderBlogIndex(base, env) {
   const posts = env ? await getPosts(env) : [];
   const adConfig = env ? await getAdSlotsConfig(env) : DEFAULT_AD_CONFIG;
   const adsEnabled = settings.ads_enabled !== '0';
+  const footerPages = await loadFooterPages(env);
   const siteName = escapeHtml(settings.site_name);
   const content = `
 <div class="page">
@@ -49,7 +56,7 @@ export async function renderBlogIndex(base, env) {
 </div>`;
   return baseLayout(`Career Blog — ${settings.site_name}`, 'Career insights for remote job seekers.', `${base}/blog`, '', content,
     `<script type="application/ld+json">${JSON.stringify({ "@context": "https://schema.org", "@type": "Blog", "name": `${settings.site_name} Career Blog`, "url": `${base}/blog` })}</script>`,
-    'index, follow', settings, categories);
+    'index, follow', settings, categories, footerPages);
 }
 
 export async function renderArticlePage(post, base, env) {

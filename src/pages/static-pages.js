@@ -6,7 +6,7 @@
 // editor (see the security note in components/rich-editor.js).
 
 import { baseLayout } from '../layout/base-layout.js';
-import { getPageBySlug } from '../lib/pages-cms.js';
+import { getPageBySlug, getFooterPages } from '../lib/pages-cms.js';
 import { escapeHtml } from '../lib/entities.js';
 import { getSettings } from '../lib/settings.js';
 import { getCategories } from '../lib/categories.js';
@@ -17,6 +17,7 @@ export async function renderStaticPage(slug, base, env) {
   const settings = await getSettings(env);
   const cats = await getCategories(env);
   const categories = { order: cats.map(c => c.key), map: Object.fromEntries(cats.map(c => [c.key, { label: c.label, emoji: c.emoji, color: c.color }])) };
+  const footerPages = await getFooterPages(env);
   const content = `
 <div class="page-sm">
   <a href="/" class="back-link">← Back to Jobs</a>
@@ -25,7 +26,7 @@ export async function renderStaticPage(slug, base, env) {
   <div class="static-body">${page.body}</div>
   <div style="margin-top:32px"><a href="/" class="back-link" style="margin-bottom:0">← Back to Jobs</a></div>
 </div>`;
-  return baseLayout(`${page.title} — ${settings.site_name}`, page.meta_description || page.title, `${base}/${slug}`, '', content, '', 'index, follow', settings, categories);
+  return baseLayout(`${page.title} — ${settings.site_name}`, page.meta_description || page.title, `${base}/${slug}`, '', content, '', 'index, follow', settings, categories, footerPages);
 }
 
 // ══════════════════════════════════════════════════════════════════
