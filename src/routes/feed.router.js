@@ -6,7 +6,7 @@ import {
   buildSitemapIndexXml, buildStaticSitemapXml, buildJobsSitemapXml,
   buildCompaniesSitemapXml, buildSkillsSitemapXml, buildCountriesSitemapXml,
 } from '../lib/sitemap.js';
-import { BLOG_POSTS } from '../data/blog-posts.js';
+import { getPosts } from '../lib/blog-cms.js';
 import { getCategoryOrder } from '../lib/categories.js';
 import { getSettings } from '../lib/settings.js';
 
@@ -63,7 +63,7 @@ export async function handleFeedRoute(url, env, base, ctx) {
   if (url.pathname === '/sitemap-static.xml') {
     const categoryOrder = await getCategoryOrder(env);
     return cachedXmlResponse(url, ctx, 'urlset', () =>
-      buildStaticSitemapXml(base, { blogPosts: BLOG_POSTS, categoryOrder })
+      buildStaticSitemapXml(env, base, { categoryOrder })
     );
   }
 
@@ -96,12 +96,13 @@ export async function handleFeedRoute(url, env, base, ctx) {
         <pubDate>${new Date(j.created_at || Date.now()).toUTCString()}</pubDate>
         <category>Job</category>
       </item>`).join('');
-    const articleItems = BLOG_POSTS.map(p => `<item>
+    const posts = await getPosts(env, { limit: 50 });
+    const articleItems = posts.map(p => `<item>
         <title><![CDATA[${p.title}]]></title>
-        <link>${base}/blog/${p.id}</link>
-        <guid>${base}/blog/${p.id}</guid>
-        <description><![CDATA[${p.excerpt}]]></description>
-        <pubDate>${new Date(p.date).toUTCString()}</pubDate>
+        <link>${base}/blog/${p.slug || p.id}</link>
+        <guid>${base}/blog/${p.slug || p.id}</guid>
+        <description><![CDATA[${p.excerpt || ''}]]></description>
+        <pubDate>${new Date(p.published_at || Date.now()).toUTCString()}</pubDate>
         <category>Article</category>
       </item>`).join('');
     return new Response(`<?xml version="1.0" encoding="UTF-8"?><rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
