@@ -30,7 +30,12 @@ import { SETTINGS_DEFAULTS } from '../lib/settings.js';
 // list into the "Post a Job" modal's category dropdown. Neither param
 // changes behavior for callers that omit it: every fallback below
 // matches the old hardcoded output exactly.
-export function baseLayout(title, description, canonical, ogImage, content, extraHead = '', robots = 'index, follow', settings = null, categories = null) {
+// `footerPages` (optional, new) is the array from lib/pages-cms.js's
+// getFooterPages() — pass it to get admin-created pages (About/FAQ/...)
+// showing up in the footer's "Company" column alongside Privacy/Terms/
+// Disclaimer, all from the same dynamic source. Omit it and the footer
+// falls back to the original hardcoded 3 links.
+export function baseLayout(title, description, canonical, ogImage, content, extraHead = '', robots = 'index, follow', settings = null, categories = null, footerPages = null) {
   const safeTitle = escapeHtml(title);
   const safeDescription = escapeHtml(description);
   const siteName = escapeHtml(settings?.site_name || SETTINGS_DEFAULTS.site_name);
@@ -130,7 +135,7 @@ ${SHARED_CSS}
 ${navHtml(settings)}
 ${mobileHeaderHtml(settings)}
 ${content}
-${footerHtml(BASE_URL, settings)}
+${footerHtml(BASE_URL, settings, footerPages)}
 ${postJobModalHtml(categories?.order, categories?.map)}
 </body>
 </html>`;
