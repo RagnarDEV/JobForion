@@ -9,6 +9,7 @@ import { iconBadgeCheck, iconMapPin, iconSparkle, iconFlame, iconDollarSign, ico
 import { getSettings } from '../lib/settings.js';
 import { getCategories } from '../lib/categories.js';
 import { getCardStyles } from '../lib/job-card-styles.js';
+import { getAdSlotsConfig } from '../lib/ad-slots.js';
 
 // SECURITY: JSON.stringify() does NOT escape "<", so a malicious job title
 // like `</script><script>...` embedded in scraped/submitted data could
@@ -79,6 +80,8 @@ export async function renderJobPage(job, related, base, env) {
   const cleanDesc = cleanDescription(job.description);
 
   const [categories, settings, cardStyles] = await Promise.all([getCategories(env), getSettings(env), getCardStyles(env)]);
+  const adConfig = await getAdSlotsConfig(env);
+  const adsEnabled = settings.ads_enabled !== '0';
   const categoryOrder = categories.map(c => c.key);
   const categoryMap = Object.fromEntries(categories.map(c => [c.key, { label: c.label, emoji: c.emoji, color: c.color }]));
   const categoryKey = catForTitleServer(job.title, categoryOrder);
@@ -130,7 +133,7 @@ export async function renderJobPage(job, related, base, env) {
       ${skills.length ? `<div class="sec-label">Required Skills</div><div class="skills-wrap">${skills.map(s => `<a href="/skills/${slugify(s)}" class="skill-tag" style="text-decoration:none">${escapeHtml(s)}</a>`).join('')}</div>` : ''}
       <div class="sec-label">About the Role</div>
       <div class="desc-wrap">${cleanDesc.length > 20 ? escapeHtml(cleanDesc) : 'Full description available on the company website.'}</div>
-      ${adSlot('job-detail-inline')}
+      ${adSlot('job-detail-inline', '', adConfig, adsEnabled)}
       <a href="${escapeHtml(job.url)}" target="_blank" rel="noopener noreferrer" class="apply-big">Apply Now ${iconArrowRight({ size: 16 })}</a>
     </div>
   </div>
@@ -146,7 +149,7 @@ export async function renderJobPage(job, related, base, env) {
           <span style="color:var(--ink3)">›</span>
         </a>`).join('')}
     </div>` : ''}
-  ${adSlot('job-detail-footer', 'margin-top:24px')}
+  ${adSlot('job-detail-footer', 'margin-top:24px', adConfig, adsEnabled)}
 </div>
 <style>
 .job-actions{display:flex;gap:8px;flex-shrink:0}
