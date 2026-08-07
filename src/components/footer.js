@@ -9,12 +9,25 @@ import { SETTINGS_DEFAULTS } from '../lib/settings.js';
 // only rendered as real hrefs once an admin fills them in at
 // /admin/settings; until then they render as '#' exactly as before,
 // rather than showing a broken/empty link.
-export function footerHtml(base, settings) {
+// `footerPages` (optional, new) is the array from lib/pages-cms.js's
+// getFooterPages() — {slug, title} rows for every published page with
+// show_in_footer=1 (Privacy/Terms/Disclaimer come from there now too,
+// since they're just seeded rows in the same `pages` table — see
+// db/schema.js). Falls back to the original hardcoded 3 links so any
+// caller not yet passing it renders exactly as before.
+const DEFAULT_FOOTER_PAGES = [
+  { slug: 'privacy', title: 'Privacy policy' },
+  { slug: 'terms', title: 'Terms of service' },
+  { slug: 'disclaimer', title: 'Disclaimer' },
+];
+
+export function footerHtml(base, settings, footerPages) {
   const siteName = escapeHtml(settings?.site_name || SETTINGS_DEFAULTS.site_name);
   const twitter = settings?.social_twitter || '';
   const linkedin = settings?.social_linkedin || '';
   const facebook = settings?.social_facebook || '';
   const year = new Date().getFullYear();
+  const pages = footerPages || DEFAULT_FOOTER_PAGES;
   return `
 <footer class="site-footer">
   <div class="sf-inner">
@@ -45,9 +58,7 @@ export function footerHtml(base, settings) {
       </div>
       <div class="sf-col">
         <div class="sf-col-title">Company</div>
-        <a href="/privacy">Privacy policy</a>
-        <a href="/terms">Terms of service</a>
-        <a href="/disclaimer">Disclaimer</a>
+        ${pages.map(p => `<a href="/${escapeHtml(p.slug)}">${escapeHtml(p.title)}</a>`).join('') || '<span style="color:var(--navy-ink2);font-size:13px">No pages yet</span>'}
       </div>
     </div>
     <div class="sf-bottom">
