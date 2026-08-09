@@ -17,25 +17,31 @@
 //   fetchJobs() only fetches + maps — it NEVER writes to the database.
 //   Throw on failure; the orchestrator in src/db/sync.js handles
 //   retries/timeouts/logging.
+//
+// All 9 current providers are per-company/tenant ATS boards
+// (ignoresQuery=true — called once per sync, never per search keyword).
+// Each "api_key" field in /admin holds a company identifier, subdomain,
+// URL, or token — never a generic aggregator key — see each module's
+// keyFormatHint for the exact value to paste.
 
-import * as jobdatalake from './jobdatalake.js';
-import * as linkedin from './linkedin.js';
-import * as arbeitnow from './arbeitnow.js';
-import * as remotive from './remotive.js';
-import * as jsearch from './jsearch.js';
-import * as adzuna from './adzuna.js';
 import * as greenhouse from './greenhouse.js';
 import * as lever from './lever.js';
 import * as ashby from './ashby.js';
+import * as smartrecruiters from './smartrecruiters.js';
+import * as workable from './workable.js';
+import * as teamtailor from './teamtailor.js';
+import * as recruitee from './recruitee.js';
+import * as workday from './workday.js';
+import * as icims from './icims.js';
 
 export const PROVIDERS = {
-  jobdatalake,
-  linkedin_rapidapi: linkedin,
-  arbeitnow,
-  remotive,
-  jsearch,
-  adzuna,
   greenhouse,
   lever,
   ashby,
+  smartrecruiters,
+  workable,
+  teamtailor,
+  recruitee,
+  workday,
+  icims,
 };
