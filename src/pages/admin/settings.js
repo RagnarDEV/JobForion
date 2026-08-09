@@ -56,6 +56,16 @@ export async function renderSettingsContent(env) {
         ${field('Google Analytics Measurement ID', 'ga_measurement_id', s.ga_measurement_id, { placeholder: 'G-XXXXXXXXXX', hint: 'Applied to every public page. The admin panel itself is never tracked.' })}
       </div>
 
+      <div class="adm-card">
+        <div class="adm-card-title">Job Sync — Warm-up Governor <span style="font-weight:400;color:var(--ink3);font-size:12px">— prevents a mass job dump on first sync</span></div>
+        <div style="font-size:12px;color:var(--ink2);line-height:1.7;margin-bottom:14px">While the site's total job count is below the threshold, every source is capped at a small number of new jobs per run instead of its full board — the cap lifts automatically once the threshold is crossed.</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px">
+          ${field('Warm-up Threshold (total jobs)', 'sync_warmup_threshold', s.sync_warmup_threshold, { type: 'number', placeholder: SETTINGS_DEFAULTS.sync_warmup_threshold, hint: 'Below this many jobs site-wide, warm-up mode stays active.' })}
+          ${field('Warm-up Cap (per source/run)', 'sync_warmup_cap_per_provider', s.sync_warmup_cap_per_provider, { type: 'number', placeholder: SETTINGS_DEFAULTS.sync_warmup_cap_per_provider, hint: 'Max NEW jobs saved per source while in warm-up.' })}
+          ${field('Hard Cap (per source/run, always on)', 'sync_hard_cap_per_provider', s.sync_hard_cap_per_provider, { type: 'number', placeholder: SETTINGS_DEFAULTS.sync_hard_cap_per_provider, hint: 'Permanent ceiling, even after warm-up ends.' })}
+        </div>
+      </div>
+
       <div class="adm-card" style="border-color:${s.maintenance_mode === '1' ? 'rgba(255,92,122,.4)' : 'var(--border)'}">
         <div class="adm-card-title">Maintenance Mode</div>
         <label style="display:flex;align-items:center;gap:10px;margin-bottom:14px;cursor:pointer">
