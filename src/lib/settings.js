@@ -47,7 +47,7 @@ export const SETTINGS_DEFAULTS = {
   // stays in effect permanently as a general per-run ceiling.
   sync_warmup_threshold: '150',
   sync_warmup_cap_per_provider: '15',
-  sync_hard_cap_per_provider: '300',
+  sync_hard_cap_per_provider: '100',
 };
 
 // Keys the general Settings form is allowed to write. Kept as an
