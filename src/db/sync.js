@@ -48,7 +48,7 @@ async function getSyncGovernorConfig(env) {
   return {
     warmupThreshold: Math.max(0, parseInt(s.sync_warmup_threshold, 10) || 150),
     warmupCapPerProvider: Math.max(1, parseInt(s.sync_warmup_cap_per_provider, 10) || 15),
-    hardCapPerProvider: Math.max(1, parseInt(s.sync_hard_cap_per_provider, 10) || 300),
+    hardCapPerProvider: Math.max(1, parseInt(s.sync_hard_cap_per_provider, 10) || 100),
   };
 }
 
@@ -59,6 +59,33 @@ async function getTotalJobsCount(env) {
   } catch (e) {
     return 0; // fail safe toward warm-up (throttled), never toward an unbounded first run
   }
+}
+
+// ────────────────────────────────────────────────────────────────
+// SUBREQUEST BUDGET — Cloudflare Workers caps the TOTAL number of
+// subrequests (fetch calls + D1 calls, combined) a single Worker
+// invocation may make — as low as 50 on the free plan. syncJobs() runs as
+// ONE invocation (the cron `scheduled()` handler) that loops every active
+// source in sequence, so with enough sources configured the run can hit
+// that ceiling mid-loop and get killed by Cloudflare itself, mid-provider
+// — which is exactly what "Too many subrequests by a single Worker
+// invocation" in the sync log means (this is a platform-level abort, not
+// a provider bug). This budget stops picking up NEW sources once the
+// estimated remaining headroom gets tight, so a run always finishes
+// cleanly with a clear log line instead of being cut off mid-write.
+// Remaining sources simply get their turn on the next cron run (every few
+// hours — see wrangler.toml) rather than being skipped forever.
+const SUBREQUEST_SAFETY_CEILING = 40; // stay well under the free plan's 50
+let subrequestsUsed = 0;
+
+// Conservative estimate of subrequests one provider run could use: 1
+// fetch + up to 2 D1 batch() calls (insert + update) per DB_BATCH_SIZE
+// chunk of its capped job count. Estimating BEFORE the fetch (not after)
+// is what lets the budget check actually prevent an overrun rather than
+// just notice it too late.
+function estimateSubrequests(capForThisProvider) {
+  const chunks = Math.ceil(capForThisProvider / DB_BATCH_SIZE);
+  return 1 + chunks * 2;
 }
 
 // ────────────────────────────────────────────────────────────────
@@ -180,11 +207,23 @@ function createErrorLog() {
 // phase, regardless of chunk size) — Cloudflare Workers caps the total
 // number of subrequests per invocation, and one D1 call per individual
 // job would blow through that budget long before a provider finished.
-const DB_BATCH_SIZE = 25;
+// D1's real per-QUERY limit is ~100 bound parameters in a single
+// statement — this batch size is about the NUMBER OF STATEMENTS sent
+// together in one env.DB.batch() call (each with its own small, fixed
+// param count, ~15), which is a completely different constraint. Cloudflare
+// counts one env.DB.batch() round-trip as ONE subrequest regardless of how
+// many statements are inside it — so a LARGER batch size directly means
+// FEWER subrequests per sync run. This was raised from 25 → 100 after a
+// production incident where several active sources in one sync run
+// collectively exceeded Cloudflare's "too many subrequests by a single
+// Worker invocation" ceiling (see SUBREQUEST_BUDGET below for the other
+// half of that fix).
+const DB_BATCH_SIZE = 100;
 
 async function saveJobs(env, jobs, counters, errorLog, providerId) {
   const validJobs = (jobs || []).filter((j) => j && j.url);
   counters.skipped += (jobs || []).length - validJobs.length;
+  let batchesUsed = 0; // returned so the caller's subrequest budget stays accurate
 
   for (let i = 0; i < validJobs.length; i += DB_BATCH_SIZE) {
     const chunk = validJobs.slice(i, i + DB_BATCH_SIZE);
@@ -204,6 +243,7 @@ async function saveJobs(env, jobs, counters, errorLog, providerId) {
     const insertedUrls = new Set();
     try {
       const results = await env.DB.batch(insertStmts);
+      batchesUsed++;
       results.forEach((r, idx) => {
         if (r.meta?.changes > 0) { counters.inserted++; insertedUrls.add(chunk[idx].url); }
       });
@@ -226,12 +266,14 @@ async function saveJobs(env, jobs, counters, errorLog, providerId) {
       );
       try {
         const results = await env.DB.batch(updateStmts);
+        batchesUsed++;
         results.forEach((r) => { if (r.meta?.changes > 0) counters.updated++; });
       } catch (e) {
         errorLog.add(providerId, `DB update: ${e.message.slice(0, 60)}`);
       }
     }
   }
+  return batchesUsed;
 }
 
 // ────────────────────────────────────────────────────────────────
@@ -266,10 +308,22 @@ export async function syncJobs(env) {
   const totalJobsBefore = await getTotalJobsCount(env);
   const warmupActive = totalJobsBefore < governor.warmupThreshold;
   const perRunCap = warmupActive ? governor.warmupCapPerProvider : governor.hardCapPerProvider;
+  subrequestsUsed = 0; // reset per invocation — this module can be reused across a warm isolate
 
   for (const source of sources) {
     const provider = PROVIDERS[source.provider];
     if (!provider) { errorLog.add(source.provider, 'Unknown provider'); continue; }
+
+    // SUBREQUEST BUDGET CHECK — stop picking up new sources once this
+    // provider's estimated cost would risk exceeding Cloudflare's
+    // per-invocation subrequest ceiling. The remaining sources are simply
+    // deferred to the next cron run rather than causing a hard platform
+    // abort mid-write.
+    const estimatedCost = estimateSubrequests(perRunCap);
+    if (subrequestsUsed + estimatedCost > SUBREQUEST_SAFETY_CEILING) {
+      errorLog.add(source.provider, `Deferred to next run — this sync already used its safe subrequest budget (${subrequestsUsed}/${SUBREQUEST_SAFETY_CEILING})`, undefined);
+      continue;
+    }
 
     const startedAt = Date.now();
     const startInserted = counters.inserted;
@@ -287,11 +341,13 @@ export async function syncJobs(env) {
           () => provider.fetchJobs({ apiKey: source.api_key, query: q, timeoutMs: TIMEOUT_MS }),
           RETRIES
         );
+        subrequestsUsed += 1; // the fetch itself
         if (jobs.length > remainingCap) {
           jobs = jobs.slice(0, remainingCap);
           errorLog.add(source.provider, `Capped at ${perRunCap} jobs this run${warmupActive ? ' (warm-up mode)' : ''} — the rest will sync on a later run`, undefined);
         }
-        await saveJobs(env, jobs, counters, errorLog, source.provider);
+        const batchesUsed = await saveJobs(env, jobs, counters, errorLog, source.provider);
+        subrequestsUsed += batchesUsed;
         remainingCap -= jobs.length;
       } catch (e) {
         errorLog.add(source.provider, e.message, q || undefined);
