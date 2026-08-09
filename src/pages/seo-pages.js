@@ -14,6 +14,7 @@ import {
   escapeHtml,
 } from '../lib/entities.js';
 import { countryFlag } from '../lib/country-flags.js';
+import { MIN_JOBS_FOR_INDEXING } from '../lib/entities.js';
 import { collectionPageSchema, itemListSchema, ldJsonTag } from '../lib/schema.js';
 import { buildBreadcrumb } from '../lib/breadcrumbs.js';
 import { truncateDescription } from '../lib/seo.js';
@@ -98,7 +99,13 @@ export async function renderCompanyDetail(env, base, slug) {
   </div>`;
   const desc = truncateDescription(`${company.name} has ${jobs.length} open remote job${jobs.length === 1 ? '' : 's'} on ${settings.site_name}. Browse roles and apply directly with the employer.`);
   const schema = ldJsonTag({ "@context": "https://schema.org", "@type": "Organization", "name": company.name, "url": `${base}/companies/${slug}` });
-  return baseLayout(`Remote Jobs at ${company.name} — ${settings.site_name}`, desc, `${base}/companies/${slug}`, '', content, schema + bcSchema, 'index, follow', settings, categoryBundle);
+  // THIN CONTENT: a company page with only 1 job is low-value, near-
+  // duplicate content at scale — exactly the pattern that gets a young
+  // domain's pages mass-flagged "Discovered — currently not indexed" in
+  // Search Console. noindex it (still crawlable/linked, just excluded from
+  // the index) until it has enough real content to be worth ranking.
+  const robots = jobs.length >= MIN_JOBS_FOR_INDEXING ? 'index, follow' : 'noindex, follow';
+  return baseLayout(`Remote Jobs at ${company.name} — ${settings.site_name}`, desc, `${base}/companies/${slug}`, '', content, schema + bcSchema, robots, settings, categoryBundle);
 }
 
 // ── /countries ──
@@ -137,7 +144,9 @@ export async function renderCountryDetail(env, base, slug) {
   </div>`;
   const desc = truncateDescription(`Browse ${jobs.length} remote jobs in ${country.name}. Updated hourly on ${settings.site_name}.`);
   const schema = ldJsonTag(itemListSchema(jobs.slice(0, 20).map(j => ({ url: `${base}/job/${j.id}` }))));
-  return baseLayout(`Remote Jobs in ${country.name} — ${settings.site_name}`, desc, `${base}/countries/${slug}`, '', content, schema + bcSchema, 'index, follow', settings, categoryBundle);
+  // THIN CONTENT: see the identical note on renderCompanyDetail above.
+  const robots = jobs.length >= MIN_JOBS_FOR_INDEXING ? 'index, follow' : 'noindex, follow';
+  return baseLayout(`Remote Jobs in ${country.name} — ${settings.site_name}`, desc, `${base}/countries/${slug}`, '', content, schema + bcSchema, robots, settings, categoryBundle);
 }
 
 // ── /skills ──
@@ -170,7 +179,9 @@ export async function renderSkillDetail(env, base, slug) {
   </div>`;
   const desc = truncateDescription(`Browse ${jobs.length} remote jobs requiring ${skill.name}. Updated hourly on ${settings.site_name}.`);
   const schema = ldJsonTag(itemListSchema(jobs.slice(0, 20).map(j => ({ url: `${base}/job/${j.id}` }))));
-  return baseLayout(`Remote ${skill.name} Jobs — ${settings.site_name}`, desc, `${base}/skills/${slug}`, '', content, schema + bcSchema, 'index, follow', settings, categoryBundle);
+  // THIN CONTENT: see the identical note on renderCompanyDetail above.
+  const robots = jobs.length >= MIN_JOBS_FOR_INDEXING ? 'index, follow' : 'noindex, follow';
+  return baseLayout(`Remote ${skill.name} Jobs — ${settings.site_name}`, desc, `${base}/skills/${slug}`, '', content, schema + bcSchema, robots, settings, categoryBundle);
 }
 
 // ── /search/:query — indexable only when it returns real content ──
