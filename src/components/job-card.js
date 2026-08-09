@@ -5,7 +5,7 @@
 
 import { CATEGORY_META, CATEGORY_ORDER, JOB_TYPE_META } from '../config/constants.js';
 import { slugify, escapeHtml } from '../lib/entities.js';
-import { iconSparkle, iconFlame, iconPin, iconMapPin, iconBadgeCheck, iconClock, iconGlobe, iconBuilding } from '../assets/icons.js';
+import { iconSparkle, iconFlame, iconPin, iconMapPin, iconBadgeCheck, iconClock, iconGlobe, iconBuilding, iconArrowRight } from '../assets/icons.js';
 import { countryFlag } from '../lib/country-flags.js';
 import { DEFAULT_CARD_STYLES, buildCardStyleAttr, buildBadgeStyleAttr } from '../lib/job-card-styles.js';
 
@@ -30,17 +30,36 @@ export function remoteTagHtml(t) {
   return `<span class="tag ${cls}">${lbl}</span>`;
 }
 
+// Compact single-line job row used on directory detail pages (company /
+// category / skill / country / search). REDESIGNED to be self-contained:
+// the essential layout (flex row, gaps, truncation) is set via inline
+// `style=` on every element, not solely via the `.related-*` CSS classes
+// in layout/base-layout.js. Inline styles are near-impossible to
+// accidentally override via specificity conflicts or a stale cached
+// stylesheet, so this card always renders as one clean horizontal row —
+// logo → title/company/meta → salary + arrow — even in the worst case.
+// The `.related-card` CLASS is still applied on top for the hover-lift
+// transition (see base-layout.js), but nothing structural depends on it.
 export function jobRowMini(job) {
   const jobType = normalizeJobType(job.job_type);
-  const tierIcon = jobType !== 'Free' ? `<span class="related-jt-tier" title="${JOB_TYPE_META[jobType].label}">${JOB_TYPE_META[jobType].icon}</span> ` : '';
-  return `<a href="/job/${job.id}" class="related-card${jobTypeCardClass(job.job_type)}">
-    ${logoImgHtml(job.company, '38px', 'related-logo')}
-    <div class="related-info">
-      <div class="related-jt">${tierIcon}${escapeHtml(job.title)}</div>
-      <div class="related-co">${escapeHtml(job.company)} · <a href="/companies/${slugify(job.company)}" style="color:var(--ink3)" onclick="event.stopPropagation()">view company →</a></div>
+  const tierIcon = jobType !== 'Free'
+    ? `<span title="${escapeHtml(JOB_TYPE_META[jobType].label)}" style="margin-right:4px;flex-shrink:0">${JOB_TYPE_META[jobType].icon}</span>`
+    : '';
+  const remoteBadge = job.remote_type ? remoteTagHtml(job.remote_type) : '';
+  return `<a href="/job/${job.id}" class="related-card${jobTypeCardClass(job.job_type)}" style="display:flex;align-items:center;gap:14px;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:13px 16px;text-decoration:none">
+    <div style="flex-shrink:0;display:flex">${logoImgHtml(job.company, '40px', 'related-logo')}</div>
+    <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:4px">
+      <div style="display:flex;align-items:center;font-size:13.5px;font-weight:700;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${tierIcon}${escapeHtml(job.title)}</div>
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0">
+        <a href="/companies/${slugify(job.company)}" style="font-size:12px;font-weight:600;color:var(--brand);text-decoration:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:160px" onclick="event.stopPropagation()">${escapeHtml(job.company)}</a>
+        ${job.location ? `<span style="font-size:11px;color:var(--ink3);display:inline-flex;align-items:center;gap:3px;white-space:nowrap">${iconMapPin({ size: 10 })}${escapeHtml(job.location)}</span>` : ''}
+        ${remoteBadge}
+      </div>
     </div>
-    ${job.salary ? `<div class="related-sal">${escapeHtml(job.salary)}</div>` : ''}
-    <span style="color:var(--ink3)">›</span>
+    <div style="flex-shrink:0;display:flex;align-items:center;gap:12px">
+      ${job.salary ? `<span style="font-family:var(--font-mono,inherit);font-size:12px;font-weight:700;color:var(--salary);white-space:nowrap">${escapeHtml(job.salary)}</span>` : ''}
+      <span style="color:var(--ink3);display:inline-flex;flex-shrink:0">${iconArrowRight({ size: 15 })}</span>
+    </div>
   </a>`;
 }
 
