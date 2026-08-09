@@ -8,28 +8,69 @@
 import { ensureTable } from './schema.js';
 import { logSync } from './analytics.js';
 import { PROVIDERS } from '../providers/index.js';
+import { getSettings } from '../lib/settings.js';
 
+// QUERIES only applies to a future keyword-search provider (ignoresQuery ===
+// false) — every provider currently registered is a per-company/tenant ATS
+// board (ignoresQuery === true, called once per sync), so this list is
+// dormant today but kept so the orchestrator doesn't need to change again
+// the moment a keyword-search provider is added back.
 const QUERIES = ["developer", "designer", "marketing", "data", "devops", "writer", "sales", "customer support", "product manager", "finance", "recruiter", "qa engineer", "manager"];
 const RETRIES = 2;
 const TIMEOUT_MS = 15000;
-const DELAY_BETWEEN_QUERIES_MS = 350; // spaces out consecutive calls to the same provider to avoid per-second rate limits (e.g. RapidAPI HTTP 429)
+const DELAY_BETWEEN_QUERIES_MS = 350; // spaces out consecutive calls to the same provider to avoid per-second rate limits
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // ────────────────────────────────────────────────────────────────
-// Sources (api_sources table + the primary env.API_KEY secret)
+// WARM-UP GOVERNOR — protects the site from a mass job dump the first
+// time a company board is added (or the first time sync ever runs on a
+// fresh database). Without this, adding several ATS sources at once (each
+// returning dozens-to-hundreds of postings) inserts everything in a single
+// run — a burst of D1 writes and a sudden jump in listing/sitemap size
+// that a small Cloudflare Workers/D1 plan isn't sized for on day one.
+//
+// While the site's total job count is still below `sync_warmup_threshold`,
+// each provider is capped at `sync_warmup_cap_per_provider` NEW jobs per
+// run instead of its full board. Because sync re-runs on a cron (every few
+// hours — see wrangler.toml), the count climbs gradually run over run
+// until it crosses the threshold, at which point the cap lifts
+// automatically and every provider syncs its full board from then on — no
+// manual step, no flag to remember to flip back off.
+//
+// `sync_hard_cap_per_provider` is a second, much looser ceiling that stays
+// in effect permanently (even after warm-up ends) as basic defense against
+// any single tenant board being unexpectedly huge.
 // ────────────────────────────────────────────────────────────────
 
-// Always includes env.API_KEY (provider 'jobdatalake') even when extra rows
-// exist in api_sources — adding a source must never silently drop the
-// original working key.
+async function getSyncGovernorConfig(env) {
+  const s = await getSettings(env);
+  return {
+    warmupThreshold: Math.max(0, parseInt(s.sync_warmup_threshold, 10) || 150),
+    warmupCapPerProvider: Math.max(1, parseInt(s.sync_warmup_cap_per_provider, 10) || 15),
+    hardCapPerProvider: Math.max(1, parseInt(s.sync_hard_cap_per_provider, 10) || 300),
+  };
+}
+
+async function getTotalJobsCount(env) {
+  try {
+    const { results } = await env.DB.prepare('SELECT COUNT(*) c FROM jobs').all();
+    return results?.[0]?.c || 0;
+  } catch (e) {
+    return 0; // fail safe toward warm-up (throttled), never toward an unbounded first run
+  }
+}
+
+// ────────────────────────────────────────────────────────────────
+// Sources (api_sources table)
+// ────────────────────────────────────────────────────────────────
+
 export async function getActiveSources(env) {
   const sources = [];
-  if (env.API_KEY) sources.push({ label: 'Primary', api_key: env.API_KEY, provider: 'jobdatalake' });
   try {
     const { results } = await env.DB.prepare(`SELECT label, api_key, provider FROM api_sources WHERE active = 1`).all();
     (results || []).forEach(r => {
-      if (r.api_key) sources.push({ label: r.label, api_key: r.api_key, provider: r.provider || 'jobdatalake' });
+      if (r.api_key && r.provider) sources.push({ label: r.label, api_key: r.api_key, provider: r.provider });
     });
   } catch (e) {}
   const seen = new Set();
@@ -41,17 +82,12 @@ export async function getActiveSources(env) {
   });
 }
 
-// Legacy helper kept for backward compatibility with any older caller.
-export async function getActiveApiKeys(env) {
-  return (await getActiveSources(env)).map(s => s.api_key);
-}
-
 // Inserts a new API source without assuming a fixed column set — the live
 // api_sources table predates the current schema and has accumulated NOT
 // NULL columns (name, base_url, ...) that a fresh install won't have. This
 // reads the table's real structure via PRAGMA table_info and fills in a
 // sensible value for whatever it finds, instead of hardcoding columns.
-export async function insertApiSource(env, label, apiKey, provider = 'jobdatalake') {
+export async function insertApiSource(env, label, apiKey, provider = 'greenhouse') {
   const { results: cols } = await env.DB.prepare(`PRAGMA table_info(api_sources)`).all();
   const knownValues = { label, name: label, api_key: apiKey, provider, active: 1 };
   const insertCols = [];
@@ -205,10 +241,10 @@ async function saveJobs(env, jobs, counters, errorLog, providerId) {
 export async function syncJobs(env) {
   await ensureTable(env);
   const sources = await getActiveSources(env);
-  // Run cheap, single-request providers (Arbeitnow, Greenhouse, Lever,
-  // Ashby — ignoresQuery=true) before the 13-keyword providers. Otherwise a
-  // provider that needs one subrequest could get starved of budget by
-  // providers ahead of it that need 13+ each.
+  // Run cheap, single-request providers (every provider currently
+  // registered is ignoresQuery=true) before any future keyword-search
+  // provider. Otherwise a provider that needs one subrequest could get
+  // starved of budget by providers ahead of it that need 13+ each.
   sources.sort((a, b) => {
     const aCheap = PROVIDERS[a.provider]?.ignoresQuery ? 0 : 1;
     const bCheap = PROVIDERS[b.provider]?.ignoresQuery ? 0 : 1;
@@ -219,10 +255,17 @@ export async function syncJobs(env) {
   const providerStats = [];
 
   if (!sources.length) {
-    const result = { inserted: 0, updated: 0, skipped: 0, errors: ['No API key configured'] };
+    const result = { inserted: 0, updated: 0, skipped: 0, errors: ['No job sources configured — add one under Admin → API Sources'] };
     await logSync(env, result);
     return result;
   }
+
+  // See "WARM-UP GOVERNOR" note above — this is the one place the cap is
+  // actually applied, right before jobs from a provider get saved.
+  const governor = await getSyncGovernorConfig(env);
+  const totalJobsBefore = await getTotalJobsCount(env);
+  const warmupActive = totalJobsBefore < governor.warmupThreshold;
+  const perRunCap = warmupActive ? governor.warmupCapPerProvider : governor.hardCapPerProvider;
 
   for (const source of sources) {
     const provider = PROVIDERS[source.provider];
@@ -230,20 +273,26 @@ export async function syncJobs(env) {
 
     const startedAt = Date.now();
     const startInserted = counters.inserted;
-    // Keyless/per-company providers (Arbeitnow, Greenhouse, Lever, Ashby)
-    // don't support keyword search — call once per sync instead of once
-    // per keyword.
+    // Keyless/per-company providers don't support keyword search — call
+    // once per sync instead of once per keyword.
     const runQueries = provider.ignoresQuery ? [null] : QUERIES;
     let providerBroken = false;
+    let remainingCap = perRunCap;
 
     for (const q of runQueries) {
       if (providerBroken) break; // first failure already indicates an account/quota-level issue — trying the other 12 keywords would just waste subrequest budget other providers need
+      if (remainingCap <= 0) break; // this provider has already hit its per-run cap
       try {
-        const jobs = await withRetry(
+        let jobs = await withRetry(
           () => provider.fetchJobs({ apiKey: source.api_key, query: q, timeoutMs: TIMEOUT_MS }),
           RETRIES
         );
+        if (jobs.length > remainingCap) {
+          jobs = jobs.slice(0, remainingCap);
+          errorLog.add(source.provider, `Capped at ${perRunCap} jobs this run${warmupActive ? ' (warm-up mode)' : ''} — the rest will sync on a later run`, undefined);
+        }
         await saveJobs(env, jobs, counters, errorLog, source.provider);
+        remainingCap -= jobs.length;
       } catch (e) {
         errorLog.add(source.provider, e.message, q || undefined);
         providerBroken = true;
@@ -259,7 +308,10 @@ export async function syncJobs(env) {
     });
   }
 
-  const result = { inserted: counters.inserted, updated: counters.updated, skipped: counters.skipped, errors: errorLog.toArray(), providerStats };
+  const result = {
+    inserted: counters.inserted, updated: counters.updated, skipped: counters.skipped,
+    errors: errorLog.toArray(), providerStats, warmupActive, perRunCap,
+  };
   await logSync(env, result);
   return result;
 }
