@@ -8,7 +8,6 @@ import { renderStaticPage } from '../pages/static-pages.js';
 import { renderMainHTML } from '../pages/home.js';
 import { getPostById, getPostBySlug } from '../lib/blog-cms.js';
 import { getPageBySlug, RESERVED_SLUGS } from '../lib/pages-cms.js';
-import { getActiveApiKeys } from '../db/sync.js';
 import { baseLayout } from '../layout/base-layout.js';
 import { BASE_URL } from '../config/constants.js';
 import { getSettings } from '../lib/settings.js';
@@ -59,21 +58,14 @@ export async function handlePagesRoute(url, request, env, base) {
   if (jobMatch) {
     const { results } = await env.DB.prepare("SELECT * FROM jobs WHERE id = ?").bind(jobMatch[1]).all();
     if (!results.length) return renderJobGonePage(env, base, jobMatch[1]);
-    let job = results[0];
-    if ((!job.description || job.description.length < 20) && job.job_handle) {
-      try {
-        const keys = await getActiveApiKeys(env);
-        const r = await fetch(`https://api.jobdatalake.com/v1/jobs/${job.job_handle}`, { headers: { "X-API-Key": keys[0] || '' } });
-        if (r.ok) {
-          const d = await r.json();
-          const desc = d.description || d.summary || "";
-          if (desc && desc.length > 20) {
-            await env.DB.prepare("UPDATE jobs SET description = ? WHERE id = ?").bind(desc, job.id).run();
-            job = { ...job, description: desc };
-          }
-        }
-      } catch (e) {}
-    }
+    const job = results[0];
+    // NOTE: the old jobdatalake-specific description backfill (a second
+    // fetch to api.jobdatalake.com by job_handle) was removed along with
+    // that provider. Every current provider (Greenhouse, Lever, Ashby,
+    // SmartRecruiters, Recruitee, Teamtailor) already returns the real
+    // description in its single list request; Workable/Workday/iCIMS
+    // degrade to a short/empty description by design rather than costing
+    // a second request per job (see each provider's own comments).
     const { results: related } = await env.DB.prepare("SELECT id,title,company,salary,remote_type FROM jobs WHERE id != ? ORDER BY RANDOM() LIMIT 4").bind(jobMatch[1]).all();
     return new Response(await renderJobPage(job, related, base, env), { headers: { "Content-Type": "text/html; charset=utf-8" } });
   }
