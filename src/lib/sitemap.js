@@ -19,7 +19,7 @@
 // level /sitemap.xml — Google follows the <sitemap> entries automatically.
 // ════════════════════════════════════════════════════════════════
 
-import { listCompanies, listSkills, listCountries } from './entities.js';
+import { listCompanies, listSkills, listCountries, MIN_JOBS_FOR_INDEXING } from './entities.js';
 import { getPages } from './pages-cms.js';
 import { getPosts } from './blog-cms.js';
 
@@ -122,11 +122,20 @@ export async function buildJobsSitemapXml(env, base, page) {
 }
 
 // ── /sitemap-companies.xml ──────────────────────────────────────────
+// THIN CONTENT: companies with < MIN_JOBS_FOR_INDEXING jobs are excluded
+// here entirely — their pages are also noindexed (see
+// pages/seo-pages.js), so submitting them to Google would just spend
+// crawl budget on URLs Google is going to leave unindexed anyway. This is
+// what actually stops the "thousands of thin pages discovered at once"
+// problem at the source, rather than only fixing it after the fact.
 export async function buildCompaniesSitemapXml(env, base) {
   const urls = [];
   try {
     const companies = await listCompanies(env, { limit: 5000 });
-    for (const c of companies) urls.push(urlTag(`${base}/companies/${c.slug}`, { changefreq: 'weekly', priority: '0.55' }));
+    for (const c of companies) {
+      if (c.count < MIN_JOBS_FOR_INDEXING) continue;
+      urls.push(urlTag(`${base}/companies/${c.slug}`, { changefreq: 'weekly', priority: '0.55' }));
+    }
   } catch (e) {}
   return urlsetXml(urls);
 }
@@ -136,7 +145,10 @@ export async function buildSkillsSitemapXml(env, base) {
   const urls = [];
   try {
     const skills = await listSkills(env, { limit: 3000 });
-    for (const s of skills) urls.push(urlTag(`${base}/skills/${s.slug}`, { changefreq: 'weekly', priority: '0.5' }));
+    for (const s of skills) {
+      if (s.count < MIN_JOBS_FOR_INDEXING) continue;
+      urls.push(urlTag(`${base}/skills/${s.slug}`, { changefreq: 'weekly', priority: '0.5' }));
+    }
   } catch (e) {}
   return urlsetXml(urls);
 }
@@ -146,7 +158,10 @@ export async function buildCountriesSitemapXml(env, base) {
   const urls = [];
   try {
     const countries = await listCountries(env, { limit: 1000 });
-    for (const c of countries) urls.push(urlTag(`${base}/countries/${c.slug}`, { changefreq: 'weekly', priority: '0.5' }));
+    for (const c of countries) {
+      if (c.count < MIN_JOBS_FOR_INDEXING) continue;
+      urls.push(urlTag(`${base}/countries/${c.slug}`, { changefreq: 'weekly', priority: '0.5' }));
+    }
   } catch (e) {}
   return urlsetXml(urls);
 }
