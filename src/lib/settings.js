@@ -40,6 +40,14 @@ export const SETTINGS_DEFAULTS = {
   maintenance_mode: '0',
   maintenance_message: 'JobForion is currently undergoing scheduled maintenance. We will be back online shortly — thank you for your patience.',
   ads_enabled: '1',
+  // Sync warm-up governor (see db/sync.js) — protects the site from a mass
+  // job dump the first time sources are added. While total jobs in D1 stay
+  // below `sync_warmup_threshold`, each provider is capped at
+  // `sync_warmup_cap_per_provider` new jobs per run; `sync_hard_cap_per_provider`
+  // stays in effect permanently as a general per-run ceiling.
+  sync_warmup_threshold: '150',
+  sync_warmup_cap_per_provider: '15',
+  sync_hard_cap_per_provider: '300',
 };
 
 // Keys the general Settings form is allowed to write. Kept as an
