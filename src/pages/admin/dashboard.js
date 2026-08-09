@@ -303,9 +303,23 @@ export async function renderDashboardContent(env) {
           <option value="workday" data-hint="full careers URL, e.g. https://acme.wd5.myworkdayjobs.com/External">Workday</option>
           <option value="icims" data-hint="iCIMS subdomain, e.g. acme">iCIMS</option>
         </select>
-        <input class="adm-input" id="apiKeyInput" name="api_key" placeholder="API Key" required style="flex:1;min-width:200px">
+        <input class="adm-input" id="apiKeyInput" name="api_key" placeholder="board token, e.g. airbnb" required style="flex:1;min-width:200px">
         <button class="adm-btn adm-btn-primary" type="submit">+ Add Source</button>
       </form>
+      <script>
+        // The placeholder only updates via the select's onchange — which
+        // never fires just because a provider happens to be the default
+        // selected option on page load. This sets it correctly the moment
+        // the page renders, regardless of which provider is first in the
+        // list.
+        (function () {
+          var sel = document.getElementById('providerSelect');
+          var input = document.getElementById('apiKeyInput');
+          if (sel && input && sel.selectedIndex >= 0) {
+            input.placeholder = sel.options[sel.selectedIndex].dataset.hint || 'API Key';
+          }
+        })();
+      </script>
       ${(apiSources || []).length ? apiSources.map(s => `<div class="adm-row">
         <span class="adm-row-label">${escapeHtml(s.label)} <span style="color:var(--brand);font-size:10px;font-weight:700;text-transform:uppercase">${escapeHtml(s.provider || 'greenhouse')}</span> <span style="color:var(--ink3);font-weight:400">····${escapeHtml((s.api_key || '').slice(-4))}</span> ${s.active ? '<span style="color:var(--green);font-size:10px;font-weight:700">● ACTIVE</span>' : '<span style="color:var(--ink3);font-size:10px">○ off</span>'}</span>
         <form method="POST" action="/admin/api-sources/delete" style="display:inline">
