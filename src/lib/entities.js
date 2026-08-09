@@ -17,6 +17,18 @@ import { JOB_TYPE_SORT_SQL } from '../config/constants.js';
 import { getOverrides, applyDirectoryOverrides } from './directory-overrides.js';
 
 // ════════════════════════════════════════════════════════════════
+// THIN-CONTENT THRESHOLD — a directory detail page (company/skill/
+// country) with fewer than this many jobs is "thin content": too little
+// unique text for a search engine to treat as a distinct, useful page.
+// Submitting thousands of 1-job company pages via the sitemap is exactly
+// what causes Google to mass-flag a young domain's URLs as "Discovered —
+// currently not indexed" (crawl-budget/quality throttling) — see
+// pages/seo-pages.js (per-page noindex) and lib/sitemap.js (sitemap
+// exclusion), both of which import this same constant so the "is this
+// page worth indexing" rule only ever lives in one place.
+export const MIN_JOBS_FOR_INDEXING = 2;
+
+// ════════════════════════════════════════════════════════════════
 // SECURITY: escapeHtml — every field that ultimately comes from an
 // external, unmoderated source (scraped LinkedIn/JobDataLake listings,
 // visitor-submitted "Post a Job" entries) MUST pass through this before
