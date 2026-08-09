@@ -80,7 +80,7 @@ export async function handleAdminRoute(url, request, env, base) {
       const form = await request.formData();
       const label = (form.get('label') || 'Source').toString().trim().slice(0, 60);
       const apiKey = (form.get('api_key') || '').toString().trim().slice(0, 200);
-      const provider = (form.get('provider') || 'jobdatalake').toString().trim().slice(0, 40);
+      const provider = (form.get('provider') || 'greenhouse').toString().trim().slice(0, 40);
       if (apiKey) {
         await insertApiSource(env, label, apiKey, provider);
       }
