@@ -9,13 +9,22 @@ export const needsKey = true;
 export const keyFormatHint = 'company identifier, e.g. Visa';
 export const ignoresQuery = true;
 
-export async function fetchJobs({ apiKey: company, timeoutMs = 15000, limit = 100 } = {}) {
-  const url = `https://api.smartrecruiters.com/v1/companies/${encodeURIComponent(company)}/postings?limit=${limit}`;
+export async function fetchJobs({ apiKey: company, timeoutMs = 15000 } = {}) {
+  // Deliberately no query params beyond the bare endpoint — an earlier
+  // version added `fields=jobAd` and then `limit=100`, and this source
+  // kept returning HTTP 400 regardless of which params were present,
+  // which points at the company identifier itself rather than the query
+  // string. Stripped down to the simplest possible request so there's
+  // only one thing left that can be wrong: the identifier value.
+  const url = `https://api.smartrecruiters.com/v1/companies/${encodeURIComponent(company)}/postings`;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const res = await fetch(url, { signal: controller.signal });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    if (!res.ok) {
+      const bodySnippet = await res.text().catch(() => '');
+      throw new Error(`HTTP ${res.status}${bodySnippet ? `: ${bodySnippet.slice(0, 150)}` : ''} — check the exact company identifier against https://jobs.smartrecruiters.com/${company}`);
+    }
     const data = await res.json();
     return (data.content || []).map(j => map(j, company)).filter(j => j.url);
   } finally {
