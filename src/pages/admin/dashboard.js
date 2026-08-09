@@ -141,7 +141,6 @@ export async function renderDashboardContent(env) {
     try { latestErrors = JSON.parse(latestSync.errors || '[]'); } catch (e) {}
   }
   const configuredProviderIds = new Set((apiSources || []).filter(s => s.active).map(s => s.provider));
-  if (env.API_KEY) configuredProviderIds.add('jobdatalake');
 
   const providerHealthRows = Object.keys(PROVIDERS).map(id => {
     if (!configuredProviderIds.has(id)) return healthRow(id, 'off');
@@ -290,30 +289,30 @@ export async function renderDashboardContent(env) {
     </div>
 
     <div class="adm-card" style="margin-top:16px">
-      <div class="adm-card-title">API Sources <span style="font-weight:400;color:var(--ink3);font-size:12px">— add keys without redeploying</span></div>
+      <div class="adm-card-title">API Sources <span style="font-weight:400;color:var(--ink3);font-size:12px">— add company boards without redeploying · new sources sync gradually, see Settings → Warm-up Governor</span></div>
       <form method="POST" action="/admin/api-sources" style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">
         <input class="adm-input" name="label" placeholder="Label (e.g. Primary)" required>
         <select class="adm-input" name="provider" id="providerSelect" onchange="document.getElementById('apiKeyInput').placeholder=this.options[this.selectedIndex].dataset.hint">
-          <option value="jobdatalake" data-hint="API Key">JobDataLake</option>
-          <option value="linkedin_rapidapi" data-hint="X-RapidAPI-Key">LinkedIn (RapidAPI)</option>
-          <option value="arbeitnow" data-hint="no key needed — leave any value">Arbeitnow (free)</option>
-          <option value="remotive" data-hint="no key needed — leave any value">Remotive (free)</option>
-          <option value="jsearch" data-hint="X-RapidAPI-Key">JSearch (RapidAPI)</option>
-          <option value="adzuna" data-hint="app_id:app_key">Adzuna</option>
           <option value="greenhouse" data-hint="board token, e.g. airbnb">Greenhouse</option>
           <option value="lever" data-hint="company slug, e.g. netflix">Lever</option>
           <option value="ashby" data-hint="job board name">Ashby</option>
+          <option value="smartrecruiters" data-hint="company identifier, e.g. Visa">SmartRecruiters</option>
+          <option value="workable" data-hint="account subdomain, e.g. acme">Workable</option>
+          <option value="teamtailor" data-hint="Teamtailor API token">Teamtailor</option>
+          <option value="recruitee" data-hint="company subdomain, e.g. acme">Recruitee</option>
+          <option value="workday" data-hint="full careers URL, e.g. https://acme.wd5.myworkdayjobs.com/External">Workday</option>
+          <option value="icims" data-hint="iCIMS subdomain, e.g. acme">iCIMS</option>
         </select>
         <input class="adm-input" id="apiKeyInput" name="api_key" placeholder="API Key" required style="flex:1;min-width:200px">
         <button class="adm-btn adm-btn-primary" type="submit">+ Add Source</button>
       </form>
       ${(apiSources || []).length ? apiSources.map(s => `<div class="adm-row">
-        <span class="adm-row-label">${escapeHtml(s.label)} <span style="color:var(--brand);font-size:10px;font-weight:700;text-transform:uppercase">${escapeHtml(s.provider || 'jobdatalake')}</span> <span style="color:var(--ink3);font-weight:400">····${escapeHtml((s.api_key || '').slice(-4))}</span> ${s.active ? '<span style="color:var(--green);font-size:10px;font-weight:700">● ACTIVE</span>' : '<span style="color:var(--ink3);font-size:10px">○ off</span>'}</span>
+        <span class="adm-row-label">${escapeHtml(s.label)} <span style="color:var(--brand);font-size:10px;font-weight:700;text-transform:uppercase">${escapeHtml(s.provider || 'greenhouse')}</span> <span style="color:var(--ink3);font-weight:400">····${escapeHtml((s.api_key || '').slice(-4))}</span> ${s.active ? '<span style="color:var(--green);font-size:10px;font-weight:700">● ACTIVE</span>' : '<span style="color:var(--ink3);font-size:10px">○ off</span>'}</span>
         <form method="POST" action="/admin/api-sources/delete" style="display:inline">
           <input type="hidden" name="id" value="${s.id}">
           <button class="adm-btn-sm" type="submit" onclick="return confirm('Remove this key?')">Remove</button>
         </form>
-      </div>`).join('') : '<div class="adm-empty">No extra keys added — using default API_KEY secret.</div>'}
+      </div>`).join('') : '<div class="adm-empty">No sources added yet — add a company board above (e.g. a Greenhouse token) to start syncing.</div>'}
     </div>
   </div>`;
 
