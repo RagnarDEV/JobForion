@@ -6,12 +6,40 @@
 // from several companies at once instead of needing one entry per board.
 export const id = 'greenhouse';
 export const needsKey = true;
-export const keyFormatHint = 'board token(s), comma-separated — e.g. airbnb, figma';
+export const keyFormatHint = 'board token(s), comma-separated — e.g. airbnb, figma. Large lists (10+) are processed a few at a time per run automatically — see MAX_BOARDS_PER_RUN below.';
 export const ignoresQuery = true;
 
+// SAFETY CAP: this is what actually failed when 20 board tokens were put
+// in one source — the API fetches `content=true` (full HTML job bodies)
+// for every posting on every board, sequentially, in a single sync.js
+// invocation. 20 external fetches plus their combined payload size is
+// exactly what blows past both Cloudflare's per-invocation subrequest
+// ceiling and reasonable execution time. Only this many boards are fetched
+// per run; the rest rotate in on later runs (see pickTokensForThisRun
+// below) instead of a single run ever trying to hit all of them at once.
+export const MAX_BOARDS_PER_RUN = 5;
+
+// Rotates which slice of tokens gets processed this run, based on the
+// current hour — so with 20 tokens and a cap of 5, every board still gets
+// synced roughly every ~4 runs (a few hours apart, since the cron itself
+// runs every few hours — see wrangler.toml) instead of tokens 6-20 simply
+// never running. No extra D1 state needed: purely a function of the
+// current time and the token list itself.
+function pickTokensForThisRun(tokens) {
+  if (tokens.length <= MAX_BOARDS_PER_RUN) return tokens;
+  const hourSlot = Math.floor(Date.now() / (1000 * 60 * 60));
+  const start = (hourSlot * MAX_BOARDS_PER_RUN) % tokens.length;
+  const picked = [];
+  for (let i = 0; i < MAX_BOARDS_PER_RUN; i++) {
+    picked.push(tokens[(start + i) % tokens.length]);
+  }
+  return picked;
+}
+
 export async function fetchJobs({ apiKey, timeoutMs = 15000 } = {}) {
-  const tokens = String(apiKey || '').split(',').map(t => t.trim()).filter(Boolean);
-  if (!tokens.length) throw new Error('No board token provided');
+  const allTokens = String(apiKey || '').split(',').map(t => t.trim()).filter(Boolean);
+  if (!allTokens.length) throw new Error('No board token provided');
+  const tokens = pickTokensForThisRun(allTokens);
 
   const allJobs = [];
   let lastError = null;
@@ -32,11 +60,9 @@ export async function fetchJobs({ apiKey, timeoutMs = 15000 } = {}) {
     }
   }
 
-  // Only fail the whole entry if EVERY token failed. A single bad/expired
-  // board token among several must not sink the good ones — that's exactly
-  // what was happening before (one 404 board token, correctly reported,
-  // but each token lived in its own separate source row with no shared
-  // fallback).
+  // Only fail the whole entry if EVERY token in THIS run's slice failed. A
+  // single bad/expired board token among several must not sink the good
+  // ones.
   if (!allJobs.length && lastError) throw lastError;
   return allJobs.filter(j => j.url);
 }
