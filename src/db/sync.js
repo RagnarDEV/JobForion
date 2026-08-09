@@ -284,6 +284,23 @@ async function saveJobs(env, jobs, counters, errorLog, providerId) {
   return batchesUsed;
 }
 
+// ROTATING WINDOW CAP — the fix for a real bug: capping via a fixed
+// `jobs.slice(0, cap)` always keeps the SAME first N jobs every run,
+// because providers return jobs in a stable order. Once those first N are
+// already saved, every later run re-fetches and re-slices the exact same
+// N — genuinely new postings sitting anywhere past position N in the
+// list are never reached, ever. This makes the cap window rotate over
+// time (same hour-based technique as providers/greenhouse.js's board
+// rotation) so every job in a large result eventually gets its turn to be
+// saved across a handful of runs, instead of a permanent stall at "+0".
+function rotatingCapSlice(jobs, cap) {
+  if (jobs.length <= cap) return jobs;
+  const hourSlot = Math.floor(Date.now() / (1000 * 60 * 60));
+  const start = (hourSlot * cap) % jobs.length;
+  const end = start + cap;
+  return end <= jobs.length ? jobs.slice(start, end) : jobs.slice(start).concat(jobs.slice(0, end - jobs.length));
+}
+
 // ────────────────────────────────────────────────────────────────
 // Main entry point
 // ────────────────────────────────────────────────────────────────
@@ -352,8 +369,9 @@ export async function syncJobs(env) {
         );
         subrequestsUsed += identifierCount; // the actual fetch(es) for this provider's identifier(s)
         if (jobs.length > remainingCap) {
-          jobs = jobs.slice(0, remainingCap);
-          errorLog.add(source.provider, `Capped at ${perRunCap} jobs this run${warmupActive ? ' (warm-up mode)' : ''} — the rest will sync on a later run`, undefined);
+          const total = jobs.length;
+          jobs = rotatingCapSlice(jobs, remainingCap);
+          errorLog.add(source.provider, `Capped at ${perRunCap} of ${total} jobs this run (rotating window)${warmupActive ? ' (warm-up mode)' : ''} — the rest will sync on a later run`, undefined);
         }
         const batchesUsed = await saveJobs(env, jobs, counters, errorLog, source.provider);
         subrequestsUsed += batchesUsed;
