@@ -79,13 +79,21 @@ const SUBREQUEST_SAFETY_CEILING = 40; // stay well under the free plan's 50
 let subrequestsUsed = 0;
 
 // Conservative estimate of subrequests one provider run could use: 1
-// fetch + up to 2 D1 batch() calls (insert + update) per DB_BATCH_SIZE
-// chunk of its capped job count. Estimating BEFORE the fetch (not after)
-// is what lets the budget check actually prevent an overrun rather than
-// just notice it too late.
-function estimateSubrequests(capForThisProvider) {
+// fetch PER underlying identifier + up to 2 D1 batch() calls (insert +
+// update) per DB_BATCH_SIZE chunk of its capped job count.
+//
+// "1 fetch" is only accurate for providers where api_key holds a single
+// company/tenant. Greenhouse (and any future provider following the same
+// pattern) supports comma-separated MULTIPLE board tokens in one source
+// row, fanning out to one real HTTP request per token internally (see
+// providers/greenhouse.js) — undercounting that here is exactly what let
+// a single 20-company Greenhouse source blow the budget silently. Counting
+// identifiers generically (split on comma) costs nothing for every other
+// provider, which always has exactly one identifier per source anyway.
+function estimateSubrequests(capForThisProvider, apiKey) {
+  const identifierCount = Math.max(1, String(apiKey || '').split(',').map(s => s.trim()).filter(Boolean).length);
   const chunks = Math.ceil(capForThisProvider / DB_BATCH_SIZE);
-  return 1 + chunks * 2;
+  return identifierCount + chunks * 2;
 }
 
 // ────────────────────────────────────────────────────────────────
@@ -319,7 +327,8 @@ export async function syncJobs(env) {
     // per-invocation subrequest ceiling. The remaining sources are simply
     // deferred to the next cron run rather than causing a hard platform
     // abort mid-write.
-    const estimatedCost = estimateSubrequests(perRunCap);
+    const identifierCount = Math.max(1, String(source.api_key || '').split(',').map(s => s.trim()).filter(Boolean).length);
+    const estimatedCost = estimateSubrequests(perRunCap, source.api_key);
     if (subrequestsUsed + estimatedCost > SUBREQUEST_SAFETY_CEILING) {
       errorLog.add(source.provider, `Deferred to next run — this sync already used its safe subrequest budget (${subrequestsUsed}/${SUBREQUEST_SAFETY_CEILING})`, undefined);
       continue;
@@ -341,7 +350,7 @@ export async function syncJobs(env) {
           () => provider.fetchJobs({ apiKey: source.api_key, query: q, timeoutMs: TIMEOUT_MS }),
           RETRIES
         );
-        subrequestsUsed += 1; // the fetch itself
+        subrequestsUsed += identifierCount; // the actual fetch(es) for this provider's identifier(s)
         if (jobs.length > remainingCap) {
           jobs = jobs.slice(0, remainingCap);
           errorLog.add(source.provider, `Capped at ${perRunCap} jobs this run${warmupActive ? ' (warm-up mode)' : ''} — the rest will sync on a later run`, undefined);
