@@ -100,10 +100,10 @@ export async function ensureTable(env) {
   // see the INSERT in admin.router.js.
   await ensureColumn(env, 'api_sources', 'name', 'TEXT');
   // `provider` tells syncJobs() which fetch/mapping logic to use for this
-  // key. Existing rows (created before this column existed) default to
-  // 'jobdatalake' — the original single-provider behavior — so nothing
-  // breaks for keys already in use.
-  await ensureColumn(env, 'api_sources', 'provider', "TEXT DEFAULT 'jobdatalake'");
+  // source. Every current provider (see src/providers/index.js) is a
+  // per-company/tenant ATS board — Greenhouse, Lever, Ashby,
+  // SmartRecruiters, Workable, Teamtailor, Recruitee, Workday, iCIMS.
+  await ensureColumn(env, 'api_sources', 'provider', "TEXT DEFAULT 'greenhouse'");
 
   await env.DB.prepare(`
     CREATE TABLE IF NOT EXISTS job_postings (
@@ -141,8 +141,9 @@ export async function ensureTable(env) {
   // is computed by us at insert time (created_at + 45 days) as a
   // best-effort default rather than authoritative source data.
   await ensureColumn(env, 'jobs', 'expires_at', 'DATETIME');
-  // source: which provider this job came from (arbeitnow, greenhouse, ...)
-  // — lets the stats dashboard and cleanup logic reason per-provider.
+  // source: which provider this job came from (greenhouse, lever, ashby,
+  // smartrecruiters, workable, teamtailor, recruitee, workday, icims) —
+  // lets the stats dashboard and cleanup logic reason per-provider.
   await ensureColumn(env, 'jobs', 'source', 'TEXT');
   // status: 'active' | 'expired' | 'deleted'. Rows are only ever hard-deleted
   // by the daily cleanup cron; this column exists so a job disappearing
