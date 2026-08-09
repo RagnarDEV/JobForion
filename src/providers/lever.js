@@ -13,7 +13,14 @@ export async function fetchJobs({ apiKey: company, timeoutMs = 15000 } = {}) {
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const res = await fetch(url, { signal: controller.signal });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    if (!res.ok) {
+      // Surface a snippet of the real response body, not just the status
+      // code — a 404 here is almost always a wrong/misspelled company
+      // slug, and Lever's own error body usually says so directly, which
+      // saves a manual round-trip of guessing from the dashboard alone.
+      const bodySnippet = await res.text().catch(() => '');
+      throw new Error(`HTTP ${res.status}${bodySnippet ? `: ${bodySnippet.slice(0, 150)}` : ''} — check the exact company slug against https://jobs.lever.co/${company}`);
+    }
     const data = await res.json();
     return (Array.isArray(data) ? data : []).map(j => map(j, company)).filter(j => j.url);
   } finally {
