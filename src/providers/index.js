@@ -1,28 +1,28 @@
 // src/providers/index.js
-// Registry — the ONLY place that lists every provider module. To add a new
-// job source in the future: create src/providers/newsource.js implementing
-// the same contract (see below), then add one line here. Nothing in
-// src/db/sync.js ever needs to change.
+// Registry of ATS-native job providers. Every provider is *keyless* — the
+// only thing an admin ever types in is a company's public career-site
+// identifier (a slug), never an API key or URL. This keeps the whole sync
+// system compatible with Cloudflare's free-plan subrequest budget: each
+// provider makes exactly ONE outbound fetch per company per sync run, no
+// per-keyword search loops like the old key-based providers used to.
 //
 // Provider contract every module must follow:
-//   export const id = 'my_provider';           // matches api_sources.provider
-//   export const needsKey = true | false;      // false for keyless public APIs
-//   export const ignoresQuery = true | false;   // true = called once per sync,
-//                                                //  not once per search keyword
-//   export async function fetchJobs({ apiKey, query, timeoutMs }) {
+//   export const id = 'my_provider';                 // matches api_sources.provider
+//   export const displayName = 'My Provider';         // shown in the admin UI
+//   export const keyFormatHint = 'what to type in the company field';
+//   export const ignoresQuery = true;                 // always true now
+//   export async function fetchJobs({ company, timeoutMs }) {
 //     return [ { title, company, location, url, description, salary,
 //                remote_type, skills /* array */, seniority,
 //                employment_type, job_handle, source }, ... ];
 //   }
 //   fetchJobs() only fetches + maps — it NEVER writes to the database.
-//   Throw on failure; the orchestrator in src/db/sync.js handles
-//   retries/timeouts/logging.
+//   Throw on failure; src/db/sync.js handles retries/timeouts/logging, and
+//   one broken company never blocks the others in the same run.
 //
-// All 9 current providers are per-company/tenant ATS boards
-// (ignoresQuery=true — called once per sync, never per search keyword).
-// Each "api_key" field in /admin holds a company identifier, subdomain,
-// URL, or token — never a generic aggregator key — see each module's
-// keyFormatHint for the exact value to paste.
+// To add a new provider in the future: create src/providers/newsource.js
+// implementing this contract, then add one line below. Nothing in
+// src/db/sync.js or the admin dashboard ever needs to change.
 
 import * as greenhouse from './greenhouse.js';
 import * as lever from './lever.js';
