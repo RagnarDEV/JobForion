@@ -12,6 +12,7 @@ import { renderAdminLogin, renderAdminDashboard } from '../pages/admin.js';
 import { bulkInsertApiSources, updateApiSource, updateSyncConfig } from '../db/sync.js';
 import { cleanupStaleJobs } from '../db/cleanup.js';
 import { renderJobsListContent, renderJobEditContent, renderDuplicatesContent } from '../pages/admin/jobs.js';
+import { renderDashboardWidgets } from '../pages/admin/dashboard.js';
 import { adminShell } from '../pages/admin/shell.js';
 
 function errorPage(err) {
@@ -260,11 +261,35 @@ export async function handleAdminRoute(url, request, env, base) {
     } catch (e) { return errorPage(e); }
   }
 
+  // Lazy-loaded heavy widgets (traffic chart, category breakdown, top
+  // pages/countries, detailed sync/cleanup history) — fetched client-side
+  // by the main /admin page AFTER it has already fully rendered. Its own
+  // separate Worker invocation means its own separate CPU-time budget, so
+  // this can never truncate or block the main dashboard page around it.
+  // On failure it returns a small inline "couldn't load, retry" fragment
+  // with a 200 status instead of an error, so the client-side fetch()
+  // always has valid HTML to inject rather than needing special-case
+  // error handling for a non-2xx response body.
+  if (url.pathname === '/admin/dashboard-widgets' && request.method === 'GET') {
+    try {
+      const ok = await verifyAdminCookie(env, request.headers.get('Cookie'));
+      if (!ok) return new Response('Unauthorized', { status: 401 });
+      const html = await renderDashboardWidgets(env);
+      return new Response(html, { headers: { "Content-Type": "text/html; charset=utf-8" } });
+    } catch (e) {
+      const msg = String(e && e.message ? e.message : e).replace(/</g, '&lt;');
+      return new Response(
+        `<div class="adm-card" style="grid-column:span 2"><div class="adm-empty">تعذر تحميل الإحصائيات التفصيلية: ${msg}</div></div>`,
+        { headers: { "Content-Type": "text/html; charset=utf-8" } }
+      );
+    }
+  }
+
   if (url.pathname === '/admin') {
     try {
       const ok = await verifyAdminCookie(env, request.headers.get('Cookie'));
       if (!ok) return new Response(renderAdminLogin(false), { headers: { "Content-Type": "text/html; charset=utf-8" } });
-      const html = await renderAdminDashboard(env, base);
+      const html = await renderAdminDashboard(env, base, url.searchParams.get('pc_page'));
       return new Response(html, { headers: { "Content-Type": "text/html; charset=utf-8" } });
     } catch (e) { return errorPage(e); }
   }
