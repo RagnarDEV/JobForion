@@ -1,7 +1,29 @@
 // src/pages/admin/dashboard.js
-// Dashboard page content: KPI cards, System Health, traffic chart,
-// category breakdown, sync history, provider companies, pending postings.
-// Returns inner HTML only — adminShell() in shell.js wraps it.
+// The admin dashboard is deliberately split into TWO independent Worker
+// invocations, not one giant page:
+//
+//   renderDashboardContent()  → the main /admin page. KPIs, System Health,
+//                               provider companies (paginated), sync
+//                               settings, pending postings. Kept light on
+//                               purpose so it always renders completely.
+//
+//   renderDashboardWidgets()  → fetched client-side AFTER the main page has
+//                               already loaded, via GET /admin/dashboard-
+//                               widgets. Visitor traffic chart, category
+//                               breakdown, top pages/countries, detailed
+//                               sync/cleanup history — the genuinely heavy,
+//                               "nice to have immediately" cards.
+//
+// WHY: Cloudflare's free plan gives a Worker invocation a very small CPU-time
+// budget (I/O wait like D1 round-trips doesn't count against it, but JSON
+// parsing + JS loops + building tens of KB of HTML string does). A single
+// request that builds the *entire* dashboard — KPIs, health, charts, and a
+// provider-companies list that's meant to scale to hundreds of rows — can
+// exceed that budget and gets silently cut off mid-response: whatever HTML
+// was built so far is sent, and everything after that point just never
+// arrives, with no error shown anywhere. Splitting the work across two
+// separate invocations means each one gets its own fresh CPU budget, and a
+// slow/heavy widgets fetch can never break the main page around it.
 
 import { CATEGORY_META, CATEGORY_ORDER } from '../../config/constants.js';
 import { ensureTable } from '../../db/schema.js';
@@ -9,6 +31,8 @@ import { escapeHtml } from '../../lib/entities.js';
 import { PROVIDERS } from '../../providers/index.js';
 import { getSyncConfig } from '../../db/sync.js';
 import { BLOG_POSTS } from '../../data/blog-posts.js';
+
+const PC_PAGE_SIZE = 40;
 
 function barChart(rows) {
   const max = Math.max(1, ...rows.map(r => r.count));
@@ -59,9 +83,8 @@ async function estimateDistinctSkills(env) {
 }
 
 // One row in the "Job Providers & Companies" list — a view mode plus a
-// hidden inline edit form toggled by pcToggleEdit() (see script at the
-// bottom of this page). This is what gives the admin an in-place "Edit"
-// option for every company without a separate page/modal round trip.
+// hidden inline edit form toggled by pcToggleEdit(). This is the in-place
+// "Edit" option for every company, no separate page/modal round trip.
 function providerCompanyRow(s) {
   const providerMeta = PROVIDERS[s.provider];
   const providerLabel = providerMeta?.displayName || s.provider;
@@ -106,19 +129,16 @@ function providerCompanyRow(s) {
   </form>`;
 }
 
-export async function renderDashboardContent(env) {
+function skeletonWidgetCard() {
+  return `<div class="adm-card"><div class="skeleton" style="height:14px;width:45%;margin-bottom:16px;border-radius:6px"></div><div class="skeleton" style="height:70px;border-radius:8px"></div></div>`;
+}
+
+// ════════════════════════════════════════════════════════════════
+// MAIN PAGE — light, always renders fully
+// ════════════════════════════════════════════════════════════════
+export async function renderDashboardContent(env, { pcPage = 1 } = {}) {
   await ensureTable(env);
   const q = (sql, ...params) => env.DB.prepare(sql).bind(...params).all();
-
-  // PERFORMANCE: this page used to fire ~40 separate D1 queries in one
-  // request (13 of them just for the category breakdown — one LIKE query
-  // per category). On a large dataset that's enough combined I/O + JS
-  // processing time to hit the Worker's CPU-time limit mid-render, which
-  // silently truncates the HTML response — sections after the cutoff
-  // point just never arrive, with no error shown anywhere. Every group
-  // below collapses what used to be several queries into one aggregate
-  // query using SUM(CASE WHEN ...) instead, cutting the total from ~40
-  // down to about 17 without changing a single number shown on the page.
 
   const [{ results: jobStatsR }, { results: companiesR }] = await Promise.all([
     q(`SELECT
@@ -147,57 +167,38 @@ export async function renderDashboardContent(env) {
 
   const { results: pendingR } = await q("SELECT COUNT(*) c FROM job_postings WHERE status='pending'");
   const skillsCount = await estimateDistinctSkills(env);
-
-  const { results: sourceBreakdownR } = await q(
-    "SELECT COALESCE(source,'unknown') s, COUNT(*) c FROM jobs GROUP BY s ORDER BY c DESC LIMIT 12"
-  );
-  // cleanup_logs' most recent row doubles as "last cleanup" — no separate
-  // query needed for that any more.
-  const { results: cleanupLogs } = await q("SELECT * FROM cleanup_logs ORDER BY id DESC LIMIT 6");
-  const deletedTodayCount = (cleanupLogs || [])
-    .filter(c => c.created_at && new Date(c.created_at) >= new Date(Date.now() - 86400000))
-    .reduce((sum, c) => sum + (c.deleted || 0), 0);
-
-  const { results: dailyVisits } = await q(
-    "SELECT date(created_at) d, COUNT(*) c FROM visits WHERE created_at >= datetime('now','-14 day') GROUP BY d ORDER BY d ASC"
-  );
-  const dailyMap = Object.fromEntries((dailyVisits || []).map(r => [r.d, r.c]));
-  const days = [];
-  for (let i = 13; i >= 0; i--) {
-    const d = new Date(Date.now() - i * 86400000).toISOString().split('T')[0];
-    days.push({ label: d.slice(5), count: dailyMap[d] || 0 });
-  }
-  const maxDaily = Math.max(1, ...days.map(d => d.count));
-
-  const { results: topPages } = await q(
-    "SELECT path, COUNT(*) c FROM visits WHERE created_at >= datetime('now','-7 day') GROUP BY path ORDER BY c DESC LIMIT 8"
-  );
-  const { results: topCountries } = await q(
-    "SELECT country, COUNT(*) c FROM visits WHERE created_at >= datetime('now','-7 day') GROUP BY country ORDER BY c DESC LIMIT 8"
-  );
-
-  // 13 separate "COUNT(*) WHERE title LIKE '%x%'" queries collapsed into a
-  // single pass over the table. CATEGORY_ORDER keys are fixed app
-  // constants (see config/constants.js), never user input, so inlining
-  // them directly into the CASE expressions is safe — no bound parameters
-  // needed here.
-  const catCaseSql = CATEGORY_ORDER
-    .map(k => `SUM(CASE WHEN LOWER(title) LIKE '%${k}%' THEN 1 ELSE 0 END) AS cat_${k}`)
-    .join(', ');
-  const { results: catCountsR } = await q(`SELECT ${catCaseSql} FROM jobs`);
-  const catRow = catCountsR[0] || {};
-  const catCounts = CATEGORY_ORDER.map(k => ({ label: CATEGORY_META[k].label, count: catRow[`cat_${k}`] || 0 }));
-
-  const { results: syncLogs } = await q("SELECT * FROM sync_logs ORDER BY id DESC LIMIT 10");
-  const { results: apiSources } = await q("SELECT * FROM api_sources ORDER BY provider ASC, id DESC");
   const { results: pendingPostings } = await q("SELECT * FROM job_postings WHERE status='pending' ORDER BY id DESC LIMIT 20");
+
+  // Sync log: only the most recent row is needed here (for the health
+  // summary line + per-provider status dots). The full recent-history list
+  // with per-run breakdowns lives in the lazy-loaded widgets endpoint.
+  const { results: latestSyncRows } = await q("SELECT * FROM sync_logs ORDER BY id DESC LIMIT 1");
+  const latestSync = (latestSyncRows || [])[0] || null;
+  let latestDetails = [], latestErrors = [];
+  if (latestSync) {
+    try { latestDetails = JSON.parse(latestSync.details || '[]'); } catch (e) {}
+    try { latestErrors = JSON.parse(latestSync.errors || '[]'); } catch (e) {}
+  }
+
+  // ── Provider companies — paginated, never unbounded ──────────────
+  // A company list meant to scale into the hundreds cannot be rendered in
+  // full on every page load; PC_PAGE_SIZE keeps this card's cost constant
+  // no matter how many companies are registered.
+  const page = Math.max(1, parseInt(pcPage, 10) || 1);
+  const offset = (page - 1) * PC_PAGE_SIZE;
+  const [{ results: pcCountR }, { results: apiSourcesPage }] = await Promise.all([
+    q('SELECT COUNT(*) total, SUM(CASE WHEN active = 1 THEN 1 ELSE 0 END) active_count FROM api_sources'),
+    q('SELECT * FROM api_sources ORDER BY provider ASC, id DESC LIMIT ? OFFSET ?', PC_PAGE_SIZE, offset),
+  ]);
+  const pcTotal = pcCountR[0]?.total || 0;
+  const totalActiveSources = pcCountR[0]?.active_count || 0;
+  const pcTotalPages = Math.max(1, Math.ceil(pcTotal / PC_PAGE_SIZE));
+
   const syncConfig = await getSyncConfig(env);
-  const totalActiveSources = (apiSources || []).filter(s => s.active).length;
   const estimatedRunsForFullCycle = Math.max(1, Math.ceil(totalActiveSources / Math.max(1, syncConfig.sourcesPerRun)));
 
   // ── System Health ──────────────────────────────────────────────
   const workerHealth = healthRow('Cloudflare Worker', 'ok', 'Responding');
-
   let d1Status = 'ok', d1Detail = '';
   const d1Start = Date.now();
   try {
@@ -208,13 +209,8 @@ export async function renderDashboardContent(env) {
   }
   const d1Health = healthRow('D1 Database', d1Status, d1Detail);
 
-  const latestSync = (syncLogs || [])[0];
-  let latestDetails = [], latestErrors = [];
-  if (latestSync) {
-    try { latestDetails = JSON.parse(latestSync.details || '[]'); } catch (e) {}
-    try { latestErrors = JSON.parse(latestSync.errors || '[]'); } catch (e) {}
-  }
-  const configuredProviderIds = new Set((apiSources || []).filter(s => s.active).map(s => s.provider));
+  const { results: activeProviderRows } = await q('SELECT DISTINCT provider FROM api_sources WHERE active = 1');
+  const configuredProviderIds = new Set((activeProviderRows || []).map(r => r.provider));
 
   const providerHealthRows = Object.keys(PROVIDERS).map(id => {
     const label = PROVIDERS[id]?.displayName || id;
@@ -229,9 +225,6 @@ export async function renderDashboardContent(env) {
   const lastSyncSummary = latestSync
     ? `${new Date(latestSync.created_at).toLocaleString()} · +${latestSync.inserted} new · ${latestErrors.length} error${latestErrors.length === 1 ? '' : 's'}`
     : 'Never run yet';
-  const lastCleanupSummary = (cleanupLogs || [])[0]
-    ? new Date(cleanupLogs[0].created_at).toLocaleString()
-    : 'Never run yet';
 
   const providerOptionsHtml = Object.values(PROVIDERS)
     .map(p => `<option value="${escapeHtml(p.id)}">${escapeHtml(p.displayName || p.id)}</option>`)
@@ -239,6 +232,15 @@ export async function renderDashboardContent(env) {
   const providerHintsJson = JSON.stringify(
     Object.fromEntries(Object.values(PROVIDERS).map(p => [p.id, p.keyFormatHint || '']))
   );
+
+  const pcPagerHtml = pcTotalPages > 1 ? `
+    <div style="display:flex;justify-content:center;gap:8px;margin-top:14px">
+      ${page > 1 ? `<a class="adm-btn" href="/admin?pc_page=${page - 1}">← السابق</a>` : ''}
+      <span class="adm-btn" style="cursor:default">صفحة ${page} من ${pcTotalPages}</span>
+      ${page < pcTotalPages ? `<a class="adm-btn" href="/admin?pc_page=${page + 1}">التالي →</a>` : ''}
+    </div>` : '';
+
+  const skeletons = skeletonWidgetCard() + skeletonWidgetCard() + skeletonWidgetCard() + skeletonWidgetCard();
 
   const content = `
   <div class="adm-wrap">
@@ -262,7 +264,6 @@ export async function renderDashboardContent(env) {
       ${kpi('Total Jobs', (jobStats.total || 0).toLocaleString(), `+${jobStats.today || 0} today · +${jobStats.week || 0} this week`)}
       ${kpi('Active Jobs', (jobStats.active || 0).toLocaleString(), 'status = active', 'var(--green)')}
       ${kpi('Expiring Soon', (jobStats.expiring || 0).toLocaleString(), 'Within 3 days', 'var(--amber, #F5A623)')}
-      ${kpi('Deleted Today', deletedTodayCount.toLocaleString(), 'By daily cleanup job', 'var(--coral)')}
       ${kpi('This Month', (jobStats.month || 0).toLocaleString(), 'New jobs, last 30 days', 'var(--brand2)')}
       ${kpi('Featured / Hot', (jobStats.hot || 0).toLocaleString(), 'Salary ≥ $150k', 'var(--pink)')}
       ${kpi('Pending Postings', (pendingR[0]?.c || 0).toLocaleString(), 'Awaiting review', 'var(--coral)')}
@@ -272,6 +273,7 @@ export async function renderDashboardContent(env) {
       ${kpi('Subscribers', (subsR[0]?.c || 0).toLocaleString(), 'Job alert emails', 'var(--pink)')}
       ${kpi('Total Visits', (visitStats.total || 0).toLocaleString(), `${visitStats.today || 0} today`, 'var(--cyan)')}
       ${kpi('Visits (7d)', (visitStats.week || 0).toLocaleString(), `${uniqCountriesR[0]?.c || 0} countries reached`, 'var(--green)')}
+      ${kpi('Provider Companies', pcTotal.toLocaleString(), `${totalActiveSources} مفعّلة`, 'var(--brand)')}
     </div>
 
     ${(pendingPostings || []).length ? `
@@ -290,21 +292,155 @@ export async function renderDashboardContent(env) {
       </div>`).join('')}
     </div>` : ''}
 
-    <div class="adm-grid">
-      <div class="adm-card" style="grid-column:span 2">
-        <div class="adm-card-title">System Health</div>
-        ${workerHealth}
-        ${d1Health}
-        ${providerHealthRows}
-        <div class="health-row" style="border-bottom:none">
-          <span class="adm-row-label">Last sync</span>
-          <span class="adm-row-val" style="font-weight:600">${lastSyncSummary}</span>
-        </div>
-        <div class="health-row" style="border-bottom:none">
-          <span class="adm-row-label">Last cleanup</span>
-          <span class="adm-row-val" style="font-weight:600">${lastCleanupSummary}</span>
-        </div>
+    <div class="adm-card" style="margin-bottom:16px">
+      <div class="adm-card-title">System Health</div>
+      ${workerHealth}
+      ${d1Health}
+      ${providerHealthRows}
+      <div class="health-row" style="border-bottom:none">
+        <span class="adm-row-label">Last sync</span>
+        <span class="adm-row-val" style="font-weight:600">${lastSyncSummary}</span>
       </div>
+    </div>
+
+    <!-- ── Job Providers & Companies ─────────────────────────────── -->
+    <div class="adm-card" style="margin-bottom:16px">
+      <div class="adm-card-title">🏢 مزودو الوظائف والشركات <span style="font-weight:400;color:var(--ink3);font-size:12px">— أضف اسم/معرّف الشركة فقط، بدون مفاتيح API أو روابط</span></div>
+
+      <div class="pc-info">
+        كل مزود يقرأ وظائف الشركة مباشرة من صفحة التوظيف العامة الخاصة بها، دون الحاجة لأي مفتاح API.
+        يمكنك إضافة عدد كبير من الشركات دفعة واحدة — ضع كل شركة في سطر منفصل، أو افصل بينها بفاصلة.
+        يمكنك أيضاً كتابة <code>معرّف|اسم يظهر في اللوحة</code> لتحديد اسم عرض مخصص.
+      </div>
+
+      <form method="POST" action="/admin/providers/bulk-add" class="pc-bulk-form">
+        <div class="pc-bulk-row">
+          <select class="adm-input" name="provider" id="pcProviderSelect" required style="min-width:180px">
+            ${providerOptionsHtml}
+          </select>
+          <div style="flex:1;min-width:220px;font-size:11px;color:var(--ink3)" id="pcProviderHint"></div>
+        </div>
+        <textarea class="adm-input" name="companies" rows="4" placeholder="airbnb&#10;figma&#10;netflix|Netflix (اسم مخصص)" required style="width:100%;margin-top:8px;font-family:inherit;resize:vertical"></textarea>
+        <div class="pc-bulk-footer">
+          <span style="font-size:11px;color:var(--ink3)">سطر واحد لكل شركة — يمكن إضافة حتى 500 شركة في الدفعة الواحدة</span>
+          <button class="adm-btn adm-btn-primary" type="submit">+ إضافة الشركات</button>
+        </div>
+      </form>
+
+      <div class="pc-list">
+        ${(apiSourcesPage || []).length ? apiSourcesPage.map(providerCompanyRow).join('') : (pcTotal === 0 ? '<div class="adm-empty">لا توجد شركات مضافة بعد — أضف أول شركاتك أعلاه.</div>' : '<div class="adm-empty">لا توجد شركات في هذه الصفحة.</div>')}
+      </div>
+      ${pcPagerHtml}
+    </div>
+
+    <!-- ── Sync Settings (Cloudflare free-plan safe) ─────────────── -->
+    <div class="adm-card" style="margin-bottom:16px">
+      <div class="adm-card-title">⚙️ إعدادات المزامنة <span style="font-weight:400;color:var(--ink3);font-size:12px">— متوافقة مع الخطة المجانية في Cloudflare (حد 50 طلب فرعي لكل تنفيذ)</span></div>
+      <form method="POST" action="/admin/sync-config" class="pc-sync-form">
+        <label class="pc-sync-field">
+          <span>عدد الشركات المعالَجة في كل تشغيل</span>
+          <input class="adm-input" type="number" name="sources_per_run" min="1" max="30" value="${syncConfig.sourcesPerRun}">
+          <small>القيمة الموصى بها: 8–15. قيم أعلى قد تتجاوز حد Cloudflare المجاني.</small>
+        </label>
+        <label class="pc-sync-field">
+          <span>أقصى عدد وظائف جديدة لكل شركة</span>
+          <input class="adm-input" type="number" name="jobs_per_company_cap" min="1" max="100" value="${syncConfig.jobsPerCompanyCap}">
+          <small>عدد قليل لكل شركة أفضل من توقف المزامنة بالكامل — 10–20 يكفي غالباً.</small>
+        </label>
+        <button class="adm-btn adm-btn-primary" type="submit">حفظ الإعدادات</button>
+      </form>
+      <div class="adm-row" style="border-top:1px solid var(--border);margin-top:12px;padding-top:10px">
+        <span class="adm-row-label">إجمالي الشركات المفعّلة</span>
+        <span class="adm-row-val">${totalActiveSources}</span>
+      </div>
+      <div class="adm-row">
+        <span class="adm-row-label">عدد التشغيلات اللازمة لتغطية كل الشركات مرة واحدة</span>
+        <span class="adm-row-val">${estimatedRunsForFullCycle} تشغيل (كل 6 ساعات حسب الجدولة الحالية)</span>
+      </div>
+    </div>
+
+    <!-- ── Heavier widgets — loaded separately so they can never block
+         or break anything above this line ─────────────────────────── -->
+    <div class="adm-grid" id="dashboardWidgetsHost">
+      ${skeletons}
+    </div>
+  </div>
+  <script>
+    window.__PC_PROVIDER_HINTS__ = ${providerHintsJson};
+    (function(){
+      var sel = document.getElementById('pcProviderSelect');
+      var hint = document.getElementById('pcProviderHint');
+      function updateHint(){
+        if (!sel || !hint) return;
+        hint.textContent = window.__PC_PROVIDER_HINTS__[sel.value] || '';
+      }
+      if (sel) { sel.addEventListener('change', updateHint); updateHint(); }
+    })();
+    function pcToggleEdit(id){
+      var edit = document.getElementById('pc-edit-' + id);
+      if (!edit) return;
+      edit.classList.toggle('open');
+    }
+    function jnLoadDashboardWidgets(){
+      var host = document.getElementById('dashboardWidgetsHost');
+      if (!host) return;
+      fetch('/admin/dashboard-widgets', { credentials: 'same-origin' })
+        .then(function(r){ if (!r.ok) throw new Error('status ' + r.status); return r.text(); })
+        .then(function(html){ host.innerHTML = html; })
+        .catch(function(){
+          host.innerHTML = '<div class="adm-card" style="grid-column:span 2">' +
+            '<div class="adm-empty">تعذر تحميل الإحصائيات التفصيلية (الرسم البياني، السجلات...). ' +
+            '<button class="adm-btn-sm" style="color:var(--brand)" onclick="jnLoadDashboardWidgets()">إعادة المحاولة</button></div></div>';
+        });
+    }
+    jnLoadDashboardWidgets();
+  </script>`;
+
+  return content;
+}
+
+// ════════════════════════════════════════════════════════════════
+// WIDGETS — fetched separately, its own Worker invocation / CPU budget
+// ════════════════════════════════════════════════════════════════
+export async function renderDashboardWidgets(env) {
+  await ensureTable(env);
+  const q = (sql, ...params) => env.DB.prepare(sql).bind(...params).all();
+
+  const { results: sourceBreakdownR } = await q(
+    "SELECT COALESCE(source,'unknown') s, COUNT(*) c FROM jobs GROUP BY s ORDER BY c DESC LIMIT 12"
+  );
+  const { results: cleanupLogs } = await q("SELECT * FROM cleanup_logs ORDER BY id DESC LIMIT 6");
+
+  const { results: dailyVisits } = await q(
+    "SELECT date(created_at) d, COUNT(*) c FROM visits WHERE created_at >= datetime('now','-14 day') GROUP BY d ORDER BY d ASC"
+  );
+  const dailyMap = Object.fromEntries((dailyVisits || []).map(r => [r.d, r.c]));
+  const days = [];
+  for (let i = 13; i >= 0; i--) {
+    const d = new Date(Date.now() - i * 86400000).toISOString().split('T')[0];
+    days.push({ label: d.slice(5), count: dailyMap[d] || 0 });
+  }
+  const maxDaily = Math.max(1, ...days.map(d => d.count));
+
+  const { results: topPages } = await q(
+    "SELECT path, COUNT(*) c FROM visits WHERE created_at >= datetime('now','-7 day') GROUP BY path ORDER BY c DESC LIMIT 8"
+  );
+  const { results: topCountries } = await q(
+    "SELECT country, COUNT(*) c FROM visits WHERE created_at >= datetime('now','-7 day') GROUP BY country ORDER BY c DESC LIMIT 8"
+  );
+
+  // CATEGORY_ORDER keys are fixed app constants, never user input — safe
+  // to inline directly into the CASE expressions, no bound params needed.
+  const catCaseSql = CATEGORY_ORDER
+    .map(k => `SUM(CASE WHEN LOWER(title) LIKE '%${k}%' THEN 1 ELSE 0 END) AS cat_${k}`)
+    .join(', ');
+  const { results: catCountsR } = await q(`SELECT ${catCaseSql} FROM jobs`);
+  const catRow = catCountsR[0] || {};
+  const catCounts = CATEGORY_ORDER.map(k => ({ label: CATEGORY_META[k].label, count: catRow[`cat_${k}`] || 0 }));
+
+  const { results: syncLogs } = await q("SELECT * FROM sync_logs ORDER BY id DESC LIMIT 10");
+
+  return `
       <div class="adm-card" style="grid-column:span 2">
         <div class="adm-card-title">Visitor Traffic — Last 14 Days</div>
         <div style="display:flex;align-items:flex-end;gap:5px;height:140px;padding-top:10px">
@@ -367,81 +503,5 @@ export async function renderDashboardContent(env) {
             ${breakdown.error ? `<div style="font-size:10px;color:var(--coral)">⚠ ${escapeHtml(breakdown.error)}</div>` : ''}
           </div>`;
         }).join('') : '<div class="adm-empty">No cleanup runs yet</div>'}
-      </div>
-    </div>
-
-    <!-- ── Job Providers & Companies ─────────────────────────────── -->
-    <div class="adm-card" style="margin-top:16px">
-      <div class="adm-card-title">🏢 مزودو الوظائف والشركات <span style="font-weight:400;color:var(--ink3);font-size:12px">— أضف اسم/معرّف الشركة فقط، بدون مفاتيح API أو روابط</span></div>
-
-      <div class="pc-info">
-        كل مزود يقرأ وظائف الشركة مباشرة من صفحة التوظيف العامة الخاصة بها، دون الحاجة لأي مفتاح API.
-        يمكنك إضافة عدد كبير من الشركات دفعة واحدة — ضع كل شركة في سطر منفصل، أو افصل بينها بفاصلة.
-        يمكنك أيضاً كتابة <code>معرّف|اسم يظهر في اللوحة</code> لتحديد اسم عرض مخصص.
-      </div>
-
-      <form method="POST" action="/admin/providers/bulk-add" class="pc-bulk-form">
-        <div class="pc-bulk-row">
-          <select class="adm-input" name="provider" id="pcProviderSelect" required style="min-width:180px">
-            ${providerOptionsHtml}
-          </select>
-          <div style="flex:1;min-width:220px;font-size:11px;color:var(--ink3)" id="pcProviderHint"></div>
-        </div>
-        <textarea class="adm-input" name="companies" rows="4" placeholder="airbnb&#10;figma&#10;netflix|Netflix (اسم مخصص)" required style="width:100%;margin-top:8px;font-family:inherit;resize:vertical"></textarea>
-        <div class="pc-bulk-footer">
-          <span style="font-size:11px;color:var(--ink3)">سطر واحد لكل شركة — يمكن إضافة حتى 500 شركة في الدفعة الواحدة</span>
-          <button class="adm-btn adm-btn-primary" type="submit">+ إضافة الشركات</button>
-        </div>
-      </form>
-
-      <div class="pc-list">
-        ${(apiSources || []).length ? apiSources.map(providerCompanyRow).join('') : '<div class="adm-empty">لا توجد شركات مضافة بعد — أضف أول شركاتك أعلاه.</div>'}
-      </div>
-    </div>
-
-    <!-- ── Sync Settings (Cloudflare free-plan safe) ─────────────── -->
-    <div class="adm-card" style="margin-top:16px">
-      <div class="adm-card-title">⚙️ إعدادات المزامنة <span style="font-weight:400;color:var(--ink3);font-size:12px">— متوافقة مع الخطة المجانية في Cloudflare (حد 50 طلب فرعي لكل تنفيذ)</span></div>
-      <form method="POST" action="/admin/sync-config" class="pc-sync-form">
-        <label class="pc-sync-field">
-          <span>عدد الشركات المعالَجة في كل تشغيل</span>
-          <input class="adm-input" type="number" name="sources_per_run" min="1" max="30" value="${syncConfig.sourcesPerRun}">
-          <small>القيمة الموصى بها: 8–15. قيم أعلى قد تتجاوز حد Cloudflare المجاني.</small>
-        </label>
-        <label class="pc-sync-field">
-          <span>أقصى عدد وظائف جديدة لكل شركة</span>
-          <input class="adm-input" type="number" name="jobs_per_company_cap" min="1" max="100" value="${syncConfig.jobsPerCompanyCap}">
-          <small>عدد قليل لكل شركة أفضل من توقف المزامنة بالكامل — 10–20 يكفي غالباً.</small>
-        </label>
-        <button class="adm-btn adm-btn-primary" type="submit">حفظ الإعدادات</button>
-      </form>
-      <div class="adm-row" style="border-top:1px solid var(--border);margin-top:12px;padding-top:10px">
-        <span class="adm-row-label">إجمالي الشركات المفعّلة</span>
-        <span class="adm-row-val">${totalActiveSources}</span>
-      </div>
-      <div class="adm-row">
-        <span class="adm-row-label">عدد التشغيلات اللازمة لتغطية كل الشركات مرة واحدة</span>
-        <span class="adm-row-val">${estimatedRunsForFullCycle} تشغيل (كل 6 ساعات حسب الجدولة الحالية)</span>
-      </div>
-    </div>
-  </div>
-  <script>
-    window.__PC_PROVIDER_HINTS__ = ${providerHintsJson};
-    (function(){
-      var sel = document.getElementById('pcProviderSelect');
-      var hint = document.getElementById('pcProviderHint');
-      function updateHint(){
-        if (!sel || !hint) return;
-        hint.textContent = window.__PC_PROVIDER_HINTS__[sel.value] || '';
-      }
-      if (sel) { sel.addEventListener('change', updateHint); updateHint(); }
-    })();
-    function pcToggleEdit(id){
-      var edit = document.getElementById('pc-edit-' + id);
-      if (!edit) return;
-      edit.classList.toggle('open');
-    }
-  </script>`;
-
-  return content;
+      </div>`;
 }
