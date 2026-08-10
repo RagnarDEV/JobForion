@@ -13,16 +13,8 @@ import { SHARED_CSS } from '../../styles/shared-css.js';
 const NAV_ITEMS = [
   { id: 'dashboard', label: 'Dashboard', icon: '📊', href: '/admin' },
   { id: 'jobs', label: 'Jobs', icon: '💼', href: '/admin/jobs' },
-  { id: 'companies', label: 'Companies', icon: '🏢', href: '/admin/companies' },
-  { id: 'categories', label: 'Categories', icon: '🗂️', href: '/admin/categories' },
-  { id: 'directory', label: 'Directory', icon: '🌐', href: '/admin/directory' },
-  { id: 'pages', label: 'Pages', icon: '📄', href: '/admin/pages' },
-  { id: 'blog', label: 'Blog', icon: '📝', href: '/admin/blog' },
-  { id: 'card-styles', label: 'Card Styles', icon: '🎨', href: '/admin/card-styles' },
-  { id: 'ads', label: 'Ads', icon: '📢', href: '/admin/ads' },
-  { id: 'settings', label: 'Settings', icon: '⚙️', href: '/admin/settings' },
   // Future phases plug in here, e.g.:
-  // { id: 'theme', label: 'Theme', icon: '🖌️', href: '/admin/theme' },
+  // { id: 'companies', label: 'Companies', icon: '🏢', href: '/admin/companies' },
 ];
 
 const DARK_THEME_CSS = `
@@ -57,6 +49,43 @@ const SHELL_CSS = `
   .adm-mobile-nav{display:flex;gap:8px;overflow-x:auto;padding:10px 14px;border-bottom:1px solid var(--border);background:var(--surface)}
   .adm-mobile-nav a{flex-shrink:0;padding:7px 14px;border-radius:20px;background:var(--surface2);color:var(--ink2);font-size:12.5px;font-weight:700;text-decoration:none;white-space:nowrap}
   .adm-mobile-nav a.active{background:var(--brand);color:#fff}
+}
+`;
+
+// ── Provider Companies (bulk-add / list / inline-edit) — mobile-first ──
+const PROVIDER_COMPANIES_CSS = `
+.pc-info{font-size:12px;color:var(--ink2);background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:14px;line-height:1.8}
+.pc-info code{background:var(--surface);border:1px solid var(--border2);border-radius:5px;padding:1px 6px;font-size:11px}
+.pc-bulk-form{margin-bottom:18px;padding-bottom:16px;border-bottom:1px solid var(--border)}
+.pc-bulk-row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.pc-bulk-footer{display:flex;justify-content:space-between;align-items:center;margin-top:8px;flex-wrap:wrap;gap:8px}
+.pc-list{display:flex;flex-direction:column}
+.pc-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 0;border-bottom:1px solid var(--border);flex-wrap:wrap}
+.pc-row-main{display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0}
+.pc-provider-badge{font-size:10px;font-weight:800;text-transform:uppercase;color:var(--brand);background:var(--brand-soft);padding:3px 8px;border-radius:6px;white-space:nowrap;flex-shrink:0}
+.pc-company{font-size:12.5px;font-weight:700;color:var(--ink)}
+.pc-slug{font-size:11px;color:var(--ink3);font-family:monospace;word-break:break-all}
+.pc-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.pc-row-status{font-size:11px;color:var(--ink3);flex:1;min-width:160px}
+.pc-row-actions{display:flex;gap:6px;flex-shrink:0;flex-wrap:wrap}
+.pc-edit-row{display:none;gap:8px;align-items:center;flex-wrap:wrap;padding:12px;margin-bottom:10px;background:var(--surface2);border:1px solid var(--border2);border-radius:10px}
+.pc-edit-row.open{display:flex}
+.pc-edit-row input.adm-input{flex:1;min-width:140px}
+.pc-active-check{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink2);white-space:nowrap}
+.pc-edit-actions{display:flex;gap:6px}
+.pc-sync-form{display:flex;gap:16px;flex-wrap:wrap;align-items:flex-end}
+.pc-sync-field{display:flex;flex-direction:column;gap:5px;font-size:11px;font-weight:700;color:var(--ink3);text-transform:uppercase;min-width:220px}
+.pc-sync-field input{margin-top:2px;text-transform:none}
+.pc-sync-field small{font-size:10.5px;color:var(--ink3);font-weight:500;text-transform:none;line-height:1.5}
+@media(max-width:768px){
+  .pc-row{flex-direction:column;align-items:flex-start;padding:12px 0}
+  .pc-row-status{min-width:0;width:100%}
+  .pc-row-actions{width:100%;justify-content:flex-start}
+  .pc-bulk-row{flex-direction:column;align-items:stretch}
+  .pc-edit-row{flex-direction:column;align-items:stretch}
+  .pc-edit-row input.adm-input{min-width:0}
+  .pc-sync-form{flex-direction:column;align-items:stretch}
+  .pc-sync-field{min-width:0}
 }
 `;
 
@@ -104,7 +133,7 @@ export function adminShell(activeId, content) {
 <title>Admin — JobForion</title><meta name="robots" content="noindex, nofollow">${ICON_HEAD}
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<style>${SHARED_CSS}${DARK_THEME_CSS}${SHELL_CSS}
+<style>${SHARED_CSS}${DARK_THEME_CSS}${SHELL_CSS}${PROVIDER_COMPANIES_CSS}
 .adm-wrap{max-width:1180px;margin:0 auto;padding:24px 20px 60px}
 .adm-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:22px;flex-wrap:wrap;gap:12px}
 .adm-title{font-family:'Space Grotesk',sans-serif;font-size:24px;font-weight:700;color:var(--ink)}
