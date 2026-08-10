@@ -177,5 +177,22 @@ export async function ensureTable(env) {
     )
   `).run();
 
+  // ── Indexes ────────────────────────────────────────────────────
+  // PERFORMANCE: the visits table grows unbounded (bot/scanner traffic
+  // included — see db/analytics.js for filtering of that) and several
+  // dashboard queries filter/group on created_at and path. Without an
+  // index those become full-table scans that get slower every day and,
+  // combined with everything else the dashboard already queries in a
+  // single request, can burn enough CPU time to hit the Worker's
+  // execution limit mid-render — which looks like "half the dashboard
+  // just disappeared" rather than a clean error. jobs(status) and
+  // jobs(created_at) get the same treatment since cleanup/dashboard
+  // queries filter on both constantly.
+  await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_visits_created_at ON visits(created_at)`).run();
+  await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_visits_path ON visits(path)`).run();
+  await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_jobs_created_at ON jobs(created_at)`).run();
+  await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status)`).run();
+  await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_api_sources_provider_active ON api_sources(provider, active)`).run();
+
   schemaEnsured = true;
 }
