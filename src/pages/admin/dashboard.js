@@ -110,35 +110,53 @@ export async function renderDashboardContent(env) {
   await ensureTable(env);
   const q = (sql, ...params) => env.DB.prepare(sql).bind(...params).all();
 
-  const [{ results: totalJobsR }, { results: jobsTodayR }, { results: jobsWeekR }, { results: jobsMonthR }, { results: subsR }, { results: companiesR }, { results: hotR }] = await Promise.all([
-    q("SELECT COUNT(*) c FROM jobs"),
-    q("SELECT COUNT(*) c FROM jobs WHERE created_at >= datetime('now','-1 day')"),
-    q("SELECT COUNT(*) c FROM jobs WHERE created_at >= datetime('now','-7 day')"),
-    q("SELECT COUNT(*) c FROM jobs WHERE created_at >= datetime('now','-30 day')"),
-    q("SELECT COUNT(*) c FROM subscribers"),
-    q("SELECT COUNT(DISTINCT LOWER(company)) c FROM jobs WHERE company IS NOT NULL AND company != ''"),
-    q("SELECT COUNT(*) c FROM jobs WHERE salary IS NOT NULL AND CAST(REPLACE(REPLACE(salary,'$',''),'k','') AS INTEGER) >= 150"),
-  ]);
+  // PERFORMANCE: this page used to fire ~40 separate D1 queries in one
+  // request (13 of them just for the category breakdown — one LIKE query
+  // per category). On a large dataset that's enough combined I/O + JS
+  // processing time to hit the Worker's CPU-time limit mid-render, which
+  // silently truncates the HTML response — sections after the cutoff
+  // point just never arrive, with no error shown anywhere. Every group
+  // below collapses what used to be several queries into one aggregate
+  // query using SUM(CASE WHEN ...) instead, cutting the total from ~40
+  // down to about 17 without changing a single number shown on the page.
 
-  const [{ results: totalVisitsR }, { results: visitsTodayR }, { results: visits7dR }, { results: uniqCountriesR }] = await Promise.all([
-    q("SELECT COUNT(*) c FROM visits"),
-    q("SELECT COUNT(*) c FROM visits WHERE created_at >= datetime('now','-1 day')"),
-    q("SELECT COUNT(*) c FROM visits WHERE created_at >= datetime('now','-7 day')"),
-    q("SELECT COUNT(DISTINCT country) c FROM visits WHERE created_at >= datetime('now','-7 day')"),
+  const [{ results: jobStatsR }, { results: companiesR }] = await Promise.all([
+    q(`SELECT
+         COUNT(*) AS total,
+         SUM(CASE WHEN created_at >= datetime('now','-1 day') THEN 1 ELSE 0 END) AS today,
+         SUM(CASE WHEN created_at >= datetime('now','-7 day') THEN 1 ELSE 0 END) AS week,
+         SUM(CASE WHEN created_at >= datetime('now','-30 day') THEN 1 ELSE 0 END) AS month,
+         SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) AS active,
+         SUM(CASE WHEN expires_at IS NOT NULL AND expires_at < datetime('now','+3 day') THEN 1 ELSE 0 END) AS expiring,
+         SUM(CASE WHEN salary IS NOT NULL AND CAST(REPLACE(REPLACE(salary,'$',''),'k','') AS INTEGER) >= 150 THEN 1 ELSE 0 END) AS hot
+       FROM jobs`),
+    q("SELECT COUNT(DISTINCT LOWER(company)) c FROM jobs WHERE company IS NOT NULL AND company != ''"),
   ]);
+  const jobStats = jobStatsR[0] || {};
+
+  const [{ results: visitStatsR }, { results: uniqCountriesR }, { results: subsR }] = await Promise.all([
+    q(`SELECT
+         COUNT(*) AS total,
+         SUM(CASE WHEN created_at >= datetime('now','-1 day') THEN 1 ELSE 0 END) AS today,
+         SUM(CASE WHEN created_at >= datetime('now','-7 day') THEN 1 ELSE 0 END) AS week
+       FROM visits`),
+    q("SELECT COUNT(DISTINCT country) c FROM visits WHERE created_at >= datetime('now','-7 day')"),
+    q("SELECT COUNT(*) c FROM subscribers"),
+  ]);
+  const visitStats = visitStatsR[0] || {};
 
   const { results: pendingR } = await q("SELECT COUNT(*) c FROM job_postings WHERE status='pending'");
   const skillsCount = await estimateDistinctSkills(env);
 
-  // ── Job Lifecycle stats (schema.js: updated_at/expires_at/source/status) ──
-  const [{ results: activeR }, { results: expiringSoonR }, { results: deletedTodayR }, { results: sourceBreakdownR }] = await Promise.all([
-    q("SELECT COUNT(*) c FROM jobs WHERE status = 'active'"),
-    q("SELECT COUNT(*) c FROM jobs WHERE expires_at IS NOT NULL AND expires_at < datetime('now','+3 day')"),
-    q("SELECT COALESCE(SUM(deleted),0) c FROM cleanup_logs WHERE created_at >= datetime('now','-1 day')"),
-    q("SELECT COALESCE(source,'unknown') s, COUNT(*) c FROM jobs GROUP BY s ORDER BY c DESC LIMIT 12"),
-  ]);
+  const { results: sourceBreakdownR } = await q(
+    "SELECT COALESCE(source,'unknown') s, COUNT(*) c FROM jobs GROUP BY s ORDER BY c DESC LIMIT 12"
+  );
+  // cleanup_logs' most recent row doubles as "last cleanup" — no separate
+  // query needed for that any more.
   const { results: cleanupLogs } = await q("SELECT * FROM cleanup_logs ORDER BY id DESC LIMIT 6");
-  const { results: lastCleanupR } = await q("SELECT created_at FROM cleanup_logs ORDER BY id DESC LIMIT 1");
+  const deletedTodayCount = (cleanupLogs || [])
+    .filter(c => c.created_at && new Date(c.created_at) >= new Date(Date.now() - 86400000))
+    .reduce((sum, c) => sum + (c.deleted || 0), 0);
 
   const { results: dailyVisits } = await q(
     "SELECT date(created_at) d, COUNT(*) c FROM visits WHERE created_at >= datetime('now','-14 day') GROUP BY d ORDER BY d ASC"
@@ -158,10 +176,17 @@ export async function renderDashboardContent(env) {
     "SELECT country, COUNT(*) c FROM visits WHERE created_at >= datetime('now','-7 day') GROUP BY country ORDER BY c DESC LIMIT 8"
   );
 
-  const catCounts = await Promise.all(CATEGORY_ORDER.map(async k => {
-    const { results } = await q("SELECT COUNT(*) c FROM jobs WHERE LOWER(title) LIKE ?", `%${k}%`);
-    return { label: CATEGORY_META[k].label, count: results[0]?.c || 0 };
-  }));
+  // 13 separate "COUNT(*) WHERE title LIKE '%x%'" queries collapsed into a
+  // single pass over the table. CATEGORY_ORDER keys are fixed app
+  // constants (see config/constants.js), never user input, so inlining
+  // them directly into the CASE expressions is safe — no bound parameters
+  // needed here.
+  const catCaseSql = CATEGORY_ORDER
+    .map(k => `SUM(CASE WHEN LOWER(title) LIKE '%${k}%' THEN 1 ELSE 0 END) AS cat_${k}`)
+    .join(', ');
+  const { results: catCountsR } = await q(`SELECT ${catCaseSql} FROM jobs`);
+  const catRow = catCountsR[0] || {};
+  const catCounts = CATEGORY_ORDER.map(k => ({ label: CATEGORY_META[k].label, count: catRow[`cat_${k}`] || 0 }));
 
   const { results: syncLogs } = await q("SELECT * FROM sync_logs ORDER BY id DESC LIMIT 10");
   const { results: apiSources } = await q("SELECT * FROM api_sources ORDER BY provider ASC, id DESC");
@@ -204,8 +229,8 @@ export async function renderDashboardContent(env) {
   const lastSyncSummary = latestSync
     ? `${new Date(latestSync.created_at).toLocaleString()} · +${latestSync.inserted} new · ${latestErrors.length} error${latestErrors.length === 1 ? '' : 's'}`
     : 'Never run yet';
-  const lastCleanupSummary = lastCleanupR?.[0]
-    ? new Date(lastCleanupR[0].created_at).toLocaleString()
+  const lastCleanupSummary = (cleanupLogs || [])[0]
+    ? new Date(cleanupLogs[0].created_at).toLocaleString()
     : 'Never run yet';
 
   const providerOptionsHtml = Object.values(PROVIDERS)
@@ -234,19 +259,19 @@ export async function renderDashboardContent(env) {
     </div>
 
     <div class="kpi-grid">
-      ${kpi('Total Jobs', (totalJobsR[0]?.c || 0).toLocaleString(), `+${jobsTodayR[0]?.c || 0} today · +${jobsWeekR[0]?.c || 0} this week`)}
-      ${kpi('Active Jobs', (activeR[0]?.c || 0).toLocaleString(), 'status = active', 'var(--green)')}
-      ${kpi('Expiring Soon', (expiringSoonR[0]?.c || 0).toLocaleString(), 'Within 3 days', 'var(--amber, #F5A623)')}
-      ${kpi('Deleted Today', (deletedTodayR[0]?.c || 0).toLocaleString(), 'By daily cleanup job', 'var(--coral)')}
-      ${kpi('This Month', (jobsMonthR[0]?.c || 0).toLocaleString(), 'New jobs, last 30 days', 'var(--brand2)')}
-      ${kpi('Featured / Hot', (hotR[0]?.c || 0).toLocaleString(), 'Salary ≥ $150k', 'var(--pink)')}
+      ${kpi('Total Jobs', (jobStats.total || 0).toLocaleString(), `+${jobStats.today || 0} today · +${jobStats.week || 0} this week`)}
+      ${kpi('Active Jobs', (jobStats.active || 0).toLocaleString(), 'status = active', 'var(--green)')}
+      ${kpi('Expiring Soon', (jobStats.expiring || 0).toLocaleString(), 'Within 3 days', 'var(--amber, #F5A623)')}
+      ${kpi('Deleted Today', deletedTodayCount.toLocaleString(), 'By daily cleanup job', 'var(--coral)')}
+      ${kpi('This Month', (jobStats.month || 0).toLocaleString(), 'New jobs, last 30 days', 'var(--brand2)')}
+      ${kpi('Featured / Hot', (jobStats.hot || 0).toLocaleString(), 'Salary ≥ $150k', 'var(--pink)')}
       ${kpi('Pending Postings', (pendingR[0]?.c || 0).toLocaleString(), 'Awaiting review', 'var(--coral)')}
       ${kpi('Companies', (companiesR[0]?.c || 0).toLocaleString(), 'Distinct employers', 'var(--cyan)')}
       ${kpi('Skills', skillsCount.toLocaleString(), 'Distinct, sampled', 'var(--green)')}
       ${kpi('Blog Articles', BLOG_POSTS.length.toLocaleString(), 'Published')}
       ${kpi('Subscribers', (subsR[0]?.c || 0).toLocaleString(), 'Job alert emails', 'var(--pink)')}
-      ${kpi('Total Visits', (totalVisitsR[0]?.c || 0).toLocaleString(), `${visitsTodayR[0]?.c || 0} today`, 'var(--cyan)')}
-      ${kpi('Visits (7d)', (visits7dR[0]?.c || 0).toLocaleString(), `${uniqCountriesR[0]?.c || 0} countries reached`, 'var(--green)')}
+      ${kpi('Total Visits', (visitStats.total || 0).toLocaleString(), `${visitStats.today || 0} today`, 'var(--cyan)')}
+      ${kpi('Visits (7d)', (visitStats.week || 0).toLocaleString(), `${uniqCountriesR[0]?.c || 0} countries reached`, 'var(--green)')}
     </div>
 
     ${(pendingPostings || []).length ? `
