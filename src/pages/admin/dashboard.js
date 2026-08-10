@@ -1,12 +1,13 @@
 // src/pages/admin/dashboard.js
 // Dashboard page content: KPI cards, System Health, traffic chart,
-// category breakdown, sync history, API sources, pending postings.
+// category breakdown, sync history, provider companies, pending postings.
 // Returns inner HTML only — adminShell() in shell.js wraps it.
 
-import { getCategories } from '../../lib/categories.js';
+import { CATEGORY_META, CATEGORY_ORDER } from '../../config/constants.js';
 import { ensureTable } from '../../db/schema.js';
 import { escapeHtml } from '../../lib/entities.js';
 import { PROVIDERS } from '../../providers/index.js';
+import { getSyncConfig } from '../../db/sync.js';
 import { BLOG_POSTS } from '../../data/blog-posts.js';
 
 function barChart(rows) {
@@ -55,6 +56,54 @@ async function estimateDistinctSkills(env) {
     }
     return set.size;
   } catch (e) { return 0; }
+}
+
+// One row in the "Job Providers & Companies" list — a view mode plus a
+// hidden inline edit form toggled by pcToggleEdit() (see script at the
+// bottom of this page). This is what gives the admin an in-place "Edit"
+// option for every company without a separate page/modal round trip.
+function providerCompanyRow(s) {
+  const providerMeta = PROVIDERS[s.provider];
+  const providerLabel = providerMeta?.displayName || s.provider;
+  const hasError = !!s.last_error;
+  const statusColor = hasError ? 'var(--coral)' : (s.active ? 'var(--green)' : 'var(--ink3)');
+  const statusText = hasError
+    ? `⚠ ${escapeHtml(s.last_error)}`
+    : (s.last_synced_at
+        ? `آخر مزامنة: ${new Date(s.last_synced_at).toLocaleString()} · ${s.last_job_count || 0} وظيفة`
+        : 'بانتظار أول مزامنة');
+
+  return `
+  <div class="pc-row" id="pc-view-${s.id}">
+    <div class="pc-row-main">
+      <span class="pc-provider-badge">${escapeHtml(providerLabel)}</span>
+      <span class="pc-company">${escapeHtml(s.label || s.api_key)}</span>
+      <span class="pc-slug">${escapeHtml(s.api_key || '')}</span>
+      <span class="pc-dot" style="background:${s.active ? 'var(--green)' : 'var(--ink3)'}" title="${s.active ? 'مفعّل' : 'معطّل'}"></span>
+    </div>
+    <div class="pc-row-status" style="color:${statusColor}">${statusText}</div>
+    <div class="pc-row-actions">
+      <button class="adm-btn-sm" type="button" style="color:var(--brand)" onclick="pcToggleEdit(${s.id})">تعديل</button>
+      <form method="POST" action="/admin/providers/toggle" style="display:inline">
+        <input type="hidden" name="id" value="${s.id}">
+        <button class="adm-btn-sm" type="submit" style="color:var(--ink2)">${s.active ? 'إيقاف' : 'تفعيل'}</button>
+      </form>
+      <form method="POST" action="/admin/providers/delete" onsubmit="return confirm('حذف هذه الشركة نهائياً؟')" style="display:inline">
+        <input type="hidden" name="id" value="${s.id}">
+        <button class="adm-btn-sm" type="submit">حذف</button>
+      </form>
+    </div>
+  </div>
+  <form method="POST" action="/admin/providers/update" class="pc-edit-row" id="pc-edit-${s.id}">
+    <input type="hidden" name="id" value="${s.id}">
+    <input class="adm-input" name="label" value="${escapeHtml(s.label || '')}" placeholder="الاسم المعروض" required>
+    <input class="adm-input" name="company" value="${escapeHtml(s.api_key || '')}" placeholder="معرف/سلاج الشركة" required>
+    <label class="pc-active-check"><input type="checkbox" name="active" value="1" ${s.active ? 'checked' : ''}> مفعّل</label>
+    <div class="pc-edit-actions">
+      <button class="adm-btn adm-btn-primary" type="submit">حفظ</button>
+      <button class="adm-btn" type="button" onclick="pcToggleEdit(${s.id})">إلغاء</button>
+    </div>
+  </form>`;
 }
 
 export async function renderDashboardContent(env) {
@@ -109,19 +158,19 @@ export async function renderDashboardContent(env) {
     "SELECT country, COUNT(*) c FROM visits WHERE created_at >= datetime('now','-7 day') GROUP BY country ORDER BY c DESC LIMIT 8"
   );
 
-  const categories = await getCategories(env);
-  const catCounts = await Promise.all(categories.map(async cat => {
-    const { results } = await q("SELECT COUNT(*) c FROM jobs WHERE LOWER(title) LIKE ?", `%${cat.key}%`);
-    return { label: cat.label, count: results[0]?.c || 0 };
+  const catCounts = await Promise.all(CATEGORY_ORDER.map(async k => {
+    const { results } = await q("SELECT COUNT(*) c FROM jobs WHERE LOWER(title) LIKE ?", `%${k}%`);
+    return { label: CATEGORY_META[k].label, count: results[0]?.c || 0 };
   }));
 
   const { results: syncLogs } = await q("SELECT * FROM sync_logs ORDER BY id DESC LIMIT 10");
-  const { results: apiSources } = await q("SELECT * FROM api_sources ORDER BY id DESC");
+  const { results: apiSources } = await q("SELECT * FROM api_sources ORDER BY provider ASC, id DESC");
   const { results: pendingPostings } = await q("SELECT * FROM job_postings WHERE status='pending' ORDER BY id DESC LIMIT 20");
+  const syncConfig = await getSyncConfig(env);
+  const totalActiveSources = (apiSources || []).filter(s => s.active).length;
+  const estimatedRunsForFullCycle = Math.max(1, Math.ceil(totalActiveSources / Math.max(1, syncConfig.sourcesPerRun)));
 
   // ── System Health ──────────────────────────────────────────────
-  // Worker: if this code is executing, the Worker itself is up — that's
-  // the honest answer, no need to fake a health-check ping for it.
   const workerHealth = healthRow('Cloudflare Worker', 'ok', 'Responding');
 
   let d1Status = 'ok', d1Detail = '';
@@ -143,12 +192,13 @@ export async function renderDashboardContent(env) {
   const configuredProviderIds = new Set((apiSources || []).filter(s => s.active).map(s => s.provider));
 
   const providerHealthRows = Object.keys(PROVIDERS).map(id => {
-    if (!configuredProviderIds.has(id)) return healthRow(id, 'off');
+    const label = PROVIDERS[id]?.displayName || id;
+    if (!configuredProviderIds.has(id)) return healthRow(label, 'off');
     const stat = latestDetails.find(d => d.provider === id);
     const hadError = latestErrors.some(e => String(e).includes(`[${id}]`));
-    if (hadError) return healthRow(id, 'err', 'see Sync History');
-    if (stat) return healthRow(id, 'ok', `+${stat.inserted} last run`);
-    return healthRow(id, 'warn', 'no recent run');
+    if (hadError) return healthRow(label, 'err', 'راجع سجل المزامنة');
+    if (stat) return healthRow(label, 'ok', `+${stat.inserted} آخر تشغيل`);
+    return healthRow(label, 'warn', 'لم يُشغّل بعد');
   }).join('');
 
   const lastSyncSummary = latestSync
@@ -157,6 +207,13 @@ export async function renderDashboardContent(env) {
   const lastCleanupSummary = lastCleanupR?.[0]
     ? new Date(lastCleanupR[0].created_at).toLocaleString()
     : 'Never run yet';
+
+  const providerOptionsHtml = Object.values(PROVIDERS)
+    .map(p => `<option value="${escapeHtml(p.id)}">${escapeHtml(p.displayName || p.id)}</option>`)
+    .join('');
+  const providerHintsJson = JSON.stringify(
+    Object.fromEntries(Object.values(PROVIDERS).map(p => [p.id, p.keyFormatHint || '']))
+  );
 
   const content = `
   <div class="adm-wrap">
@@ -258,7 +315,7 @@ export async function renderDashboardContent(env) {
               <span class="adm-row-val" style="color:var(--green)">+${s.inserted}<span style="color:var(--ink3);font-weight:500"> / ${s.skipped} skip</span></span>
             </div>
             ${details.length ? `<div style="font-size:10px;color:var(--ink3);display:flex;flex-wrap:wrap;gap:8px">
-              ${details.map(d => `<span>${escapeHtml(d.provider)}: <b style="color:${d.inserted > 0 ? 'var(--green)' : 'var(--ink3)'}">+${d.inserted}</b> (${d.duration_ms}ms)</span>`).join('')}
+              ${details.map(d => `<span>${escapeHtml(PROVIDERS[d.provider]?.displayName || d.provider)}: <b style="color:${d.inserted > 0 ? 'var(--green)' : 'var(--ink3)'}">+${d.inserted}</b> (${d.duration_ms}ms)</span>`).join('')}
             </div>` : ''}
             ${errs.length ? `<div style="font-size:10px;color:#e05a5a;background:#fdf0f0;padding:6px 8px;border-radius:6px;width:100%;box-sizing:border-box">
               ${errs.map(e => `<div>⚠ ${escapeHtml(String(e))}</div>`).join('')}
@@ -268,7 +325,7 @@ export async function renderDashboardContent(env) {
       </div>
       <div class="adm-card">
         <div class="adm-card-title">Jobs by Source</div>
-        ${(sourceBreakdownR || []).length ? barChart(sourceBreakdownR.map(r => ({ label: r.s, count: r.c }))) : '<div class="adm-empty">No source data yet — runs after the next sync</div>'}
+        ${(sourceBreakdownR || []).length ? barChart(sourceBreakdownR.map(r => ({ label: PROVIDERS[r.s]?.displayName || r.s, count: r.c }))) : '<div class="adm-empty">No source data yet — runs after the next sync</div>'}
       </div>
       <div class="adm-card">
         <div class="adm-card-title">Recent Cleanup History <span style="font-weight:400;color:var(--ink3);font-size:12px">— daily, 03:00 UTC</span></div>
@@ -288,47 +345,78 @@ export async function renderDashboardContent(env) {
       </div>
     </div>
 
+    <!-- ── Job Providers & Companies ─────────────────────────────── -->
     <div class="adm-card" style="margin-top:16px">
-      <div class="adm-card-title">API Sources <span style="font-weight:400;color:var(--ink3);font-size:12px">— add company boards without redeploying · new sources sync gradually, see Settings → Warm-up Governor</span></div>
-      <form method="POST" action="/admin/api-sources" style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">
-        <input class="adm-input" name="label" placeholder="Label (e.g. Primary)" required>
-        <select class="adm-input" name="provider" id="providerSelect" onchange="document.getElementById('apiKeyInput').placeholder=this.options[this.selectedIndex].dataset.hint">
-          <option value="greenhouse" data-hint="board token, e.g. airbnb">Greenhouse</option>
-          <option value="lever" data-hint="company slug, e.g. netflix">Lever</option>
-          <option value="ashby" data-hint="job board name">Ashby</option>
-          <option value="smartrecruiters" data-hint="company identifier, e.g. Visa">SmartRecruiters</option>
-          <option value="workable" data-hint="account subdomain, e.g. acme">Workable</option>
-          <option value="teamtailor" data-hint="Teamtailor API token">Teamtailor</option>
-          <option value="recruitee" data-hint="company subdomain, e.g. acme">Recruitee</option>
-          <option value="workday" data-hint="full careers URL, e.g. https://acme.wd5.myworkdayjobs.com/External">Workday</option>
-          <option value="icims" data-hint="iCIMS subdomain, e.g. acme">iCIMS</option>
-        </select>
-        <input class="adm-input" id="apiKeyInput" name="api_key" placeholder="board token, e.g. airbnb" required style="flex:1;min-width:200px">
-        <button class="adm-btn adm-btn-primary" type="submit">+ Add Source</button>
+      <div class="adm-card-title">🏢 مزودو الوظائف والشركات <span style="font-weight:400;color:var(--ink3);font-size:12px">— أضف اسم/معرّف الشركة فقط، بدون مفاتيح API أو روابط</span></div>
+
+      <div class="pc-info">
+        كل مزود يقرأ وظائف الشركة مباشرة من صفحة التوظيف العامة الخاصة بها، دون الحاجة لأي مفتاح API.
+        يمكنك إضافة عدد كبير من الشركات دفعة واحدة — ضع كل شركة في سطر منفصل، أو افصل بينها بفاصلة.
+        يمكنك أيضاً كتابة <code>معرّف|اسم يظهر في اللوحة</code> لتحديد اسم عرض مخصص.
+      </div>
+
+      <form method="POST" action="/admin/providers/bulk-add" class="pc-bulk-form">
+        <div class="pc-bulk-row">
+          <select class="adm-input" name="provider" id="pcProviderSelect" required style="min-width:180px">
+            ${providerOptionsHtml}
+          </select>
+          <div style="flex:1;min-width:220px;font-size:11px;color:var(--ink3)" id="pcProviderHint"></div>
+        </div>
+        <textarea class="adm-input" name="companies" rows="4" placeholder="airbnb&#10;figma&#10;netflix|Netflix (اسم مخصص)" required style="width:100%;margin-top:8px;font-family:inherit;resize:vertical"></textarea>
+        <div class="pc-bulk-footer">
+          <span style="font-size:11px;color:var(--ink3)">سطر واحد لكل شركة — يمكن إضافة حتى 500 شركة في الدفعة الواحدة</span>
+          <button class="adm-btn adm-btn-primary" type="submit">+ إضافة الشركات</button>
+        </div>
       </form>
-      <script>
-        // The placeholder only updates via the select's onchange — which
-        // never fires just because a provider happens to be the default
-        // selected option on page load. This sets it correctly the moment
-        // the page renders, regardless of which provider is first in the
-        // list.
-        (function () {
-          var sel = document.getElementById('providerSelect');
-          var input = document.getElementById('apiKeyInput');
-          if (sel && input && sel.selectedIndex >= 0) {
-            input.placeholder = sel.options[sel.selectedIndex].dataset.hint || 'API Key';
-          }
-        })();
-      </script>
-      ${(apiSources || []).length ? apiSources.map(s => `<div class="adm-row">
-        <span class="adm-row-label">${escapeHtml(s.label)} <span style="color:var(--brand);font-size:10px;font-weight:700;text-transform:uppercase">${escapeHtml(s.provider || 'greenhouse')}</span> <span style="color:var(--ink3);font-weight:400">····${escapeHtml((s.api_key || '').slice(-4))}</span> ${s.active ? '<span style="color:var(--green);font-size:10px;font-weight:700">● ACTIVE</span>' : '<span style="color:var(--ink3);font-size:10px">○ off</span>'}</span>
-        <form method="POST" action="/admin/api-sources/delete" style="display:inline">
-          <input type="hidden" name="id" value="${s.id}">
-          <button class="adm-btn-sm" type="submit" onclick="return confirm('Remove this key?')">Remove</button>
-        </form>
-      </div>`).join('') : '<div class="adm-empty">No sources added yet — add a company board above (e.g. a Greenhouse token) to start syncing.</div>'}
+
+      <div class="pc-list">
+        ${(apiSources || []).length ? apiSources.map(providerCompanyRow).join('') : '<div class="adm-empty">لا توجد شركات مضافة بعد — أضف أول شركاتك أعلاه.</div>'}
+      </div>
     </div>
-  </div>`;
+
+    <!-- ── Sync Settings (Cloudflare free-plan safe) ─────────────── -->
+    <div class="adm-card" style="margin-top:16px">
+      <div class="adm-card-title">⚙️ إعدادات المزامنة <span style="font-weight:400;color:var(--ink3);font-size:12px">— متوافقة مع الخطة المجانية في Cloudflare (حد 50 طلب فرعي لكل تنفيذ)</span></div>
+      <form method="POST" action="/admin/sync-config" class="pc-sync-form">
+        <label class="pc-sync-field">
+          <span>عدد الشركات المعالَجة في كل تشغيل</span>
+          <input class="adm-input" type="number" name="sources_per_run" min="1" max="30" value="${syncConfig.sourcesPerRun}">
+          <small>القيمة الموصى بها: 8–15. قيم أعلى قد تتجاوز حد Cloudflare المجاني.</small>
+        </label>
+        <label class="pc-sync-field">
+          <span>أقصى عدد وظائف جديدة لكل شركة</span>
+          <input class="adm-input" type="number" name="jobs_per_company_cap" min="1" max="100" value="${syncConfig.jobsPerCompanyCap}">
+          <small>عدد قليل لكل شركة أفضل من توقف المزامنة بالكامل — 10–20 يكفي غالباً.</small>
+        </label>
+        <button class="adm-btn adm-btn-primary" type="submit">حفظ الإعدادات</button>
+      </form>
+      <div class="adm-row" style="border-top:1px solid var(--border);margin-top:12px;padding-top:10px">
+        <span class="adm-row-label">إجمالي الشركات المفعّلة</span>
+        <span class="adm-row-val">${totalActiveSources}</span>
+      </div>
+      <div class="adm-row">
+        <span class="adm-row-label">عدد التشغيلات اللازمة لتغطية كل الشركات مرة واحدة</span>
+        <span class="adm-row-val">${estimatedRunsForFullCycle} تشغيل (كل 6 ساعات حسب الجدولة الحالية)</span>
+      </div>
+    </div>
+  </div>
+  <script>
+    window.__PC_PROVIDER_HINTS__ = ${providerHintsJson};
+    (function(){
+      var sel = document.getElementById('pcProviderSelect');
+      var hint = document.getElementById('pcProviderHint');
+      function updateHint(){
+        if (!sel || !hint) return;
+        hint.textContent = window.__PC_PROVIDER_HINTS__[sel.value] || '';
+      }
+      if (sel) { sel.addEventListener('change', updateHint); updateHint(); }
+    })();
+    function pcToggleEdit(id){
+      var edit = document.getElementById('pc-edit-' + id);
+      if (!edit) return;
+      edit.classList.toggle('open');
+    }
+  </script>`;
 
   return content;
 }
