@@ -8,13 +8,18 @@ database_name = "jobforion_db"
 database_id = "58e366ac-f5d4-4da5-b23f-0aa2e4208866"
 
 # ── Secrets (set these via `wrangler secret put <name>`, do NOT put them here) ──
-# API_KEY          -> no longer used (the jobdatalake provider was removed;
-#                      every current provider is configured under Admin →
-#                      API Sources instead, stored in D1, not as a secret)
 # ADMIN_PASSWORD   -> password to access /admin dashboard
+#
+# NOTE: API_KEY is no longer used. Every job provider (Greenhouse, Lever,
+# Ashby, SmartRecruiters, Workable, Teamtailor, Recruitee, Workday, iCIMS)
+# is keyless — companies are added by public career-site slug only, from
+# /admin. If an API_KEY secret still exists from a previous deployment it
+# is simply ignored and safe to remove.
 
 # ── Scheduled tasks ──
-# "0 */2 * * *"  -> syncJobs()        every 2 hours
+# "0 */6 * * *"  -> syncJobs()        every 6 hours (processes a bounded,
+#                                      rotating batch of companies each run
+#                                      — see src/db/sync.js / sync_config)
 # "0 3 * * *"    -> cleanupStaleJobs() once daily at 03:00 UTC
 [triggers]
 crons = ["0 */6 * * *", "0 3 * * *"]
