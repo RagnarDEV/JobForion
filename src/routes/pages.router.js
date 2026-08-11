@@ -66,7 +66,7 @@ export async function handlePagesRoute(url, request, env, base) {
     // description in its single list request; Workable/Workday/iCIMS
     // degrade to a short/empty description by design rather than costing
     // a second request per job (see each provider's own comments).
-    const { results: related } = await env.DB.prepare("SELECT id,title,company,salary,remote_type FROM jobs WHERE id != ? ORDER BY RANDOM() LIMIT 4").bind(jobMatch[1]).all();
+    const { results: related } = await env.DB.prepare("SELECT * FROM jobs WHERE id != ? ORDER BY RANDOM() LIMIT 4").bind(jobMatch[1]).all();
     return new Response(await renderJobPage(job, related, base, env), { headers: { "Content-Type": "text/html; charset=utf-8" } });
   }
 
