@@ -7,6 +7,7 @@
 
 import { escapeHtml } from '../../lib/entities.js';
 import { ensureTable } from '../../db/schema.js';
+import { getLogoOverrides, setCompanyLogo, removeCompanyLogo } from '../../lib/company-logos.js';
 
 const PAGE_SIZE = 40;
 
@@ -14,6 +15,14 @@ function companyRow(c) {
   return `<tr>
     <td style="font-weight:700;font-size:12.5px;color:var(--ink)">${escapeHtml(c.company)}${c.hidden ? ' <span class="hidden-badge">Hidden</span>' : ''}</td>
     <td style="font-size:12px;color:var(--ink2)">${c.job_count.toLocaleString()}</td>
+    <td style="min-width:220px">
+      <form method="POST" action="/admin/companies/logo/set" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+        <input type="hidden" name="company" value="${escapeHtml(c.company)}">
+        <input class="adm-input" name="logo_url" placeholder="https://…/logo.png" value="${escapeHtml(c.logoUrl || '')}" style="flex:1;min-width:140px;font-size:11px;padding:6px 9px">
+        <button class="adm-btn-sm" type="submit" style="color:var(--brand)">${c.logoUrl ? 'Update' : 'Set'}</button>
+        ${c.logoUrl ? `<button class="adm-btn-sm" type="submit" formaction="/admin/companies/logo/remove" style="color:var(--coral)">Remove</button>` : ''}
+      </form>
+    </td>
     <td>
       <div style="display:flex;gap:6px">
         <a class="adm-btn-sm" href="/companies/${encodeURIComponent(c.company)}" target="_blank" style="color:var(--ink2)">Preview</a>
@@ -53,6 +62,11 @@ export async function renderCompaniesListContent(env, params) {
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const pageItems = annotated.slice(offset, offset + PAGE_SIZE);
 
+  // Logo overrides only need fetching for the companies actually shown on
+  // this page — one small batch query, not one per row.
+  const logoMap = await getLogoOverrides(env, pageItems.map(c => c.company));
+  const pageItemsWithLogos = pageItems.map(c => ({ ...c, logoUrl: logoMap[c.company.toLowerCase()] || '' }));
+
   const qs = (overrides) => {
     const p = new URLSearchParams(params);
     Object.entries(overrides).forEach(([k, v]) => v ? p.set(k, v) : p.delete(k));
@@ -81,9 +95,10 @@ export async function renderCompaniesListContent(env, params) {
         <thead><tr style="text-align:left;border-bottom:1.5px solid var(--border)">
           <th style="padding:8px 6px;color:var(--ink3);font-size:10.5px;text-transform:uppercase">Company</th>
           <th style="padding:8px 6px;color:var(--ink3);font-size:10.5px;text-transform:uppercase">Open Jobs</th>
+          <th style="padding:8px 6px;color:var(--ink3);font-size:10.5px;text-transform:uppercase">Custom Logo</th>
           <th style="padding:8px 6px;color:var(--ink3);font-size:10.5px;text-transform:uppercase">Actions</th>
         </tr></thead>
-        <tbody>${pageItems.map(companyRow).join('') || `<tr><td colspan="3" style="padding:20px;text-align:center;color:var(--ink3)">No companies match this search</td></tr>`}</tbody>
+        <tbody>${pageItemsWithLogos.map(companyRow).join('') || `<tr><td colspan="4" style="padding:20px;text-align:center;color:var(--ink3)">No companies match this search</td></tr>`}</tbody>
       </table>
     </div>
 
