@@ -9,6 +9,7 @@ import { ensureTable } from './schema.js';
 import { logSync } from './analytics.js';
 import { PROVIDERS } from '../providers/index.js';
 import { getSettings } from '../lib/settings.js';
+import { parseSalary } from '../lib/salary.js';
 
 // QUERIES only applies to a future keyword-search provider (ignoresQuery ===
 // false) — every provider currently registered is a per-company/tenant ATS
@@ -144,63 +145,6 @@ export async function insertApiSource(env, label, apiKey, provider = 'greenhouse
   ).bind(...values).run();
 }
 
-// Bulk add: one company per line (or comma-separated), with an optional
-// "slug|Display Name" format per line. Skips companies already registered
-// under the same provider so re-pasting a list is always safe. Purely
-// additive on top of insertApiSource() above — the warm-up governor and
-// subrequest budget in syncJobs() don't need to know or care whether a
-// source was added one at a time or in bulk.
-const MAX_BULK_LINES = 500;
-
-export async function bulkInsertApiSources(env, provider, rawText) {
-  const allLines = String(rawText || '')
-    .split(/[\n,]+/)
-    .map(l => l.trim())
-    .filter(Boolean);
-  const lines = allLines.slice(0, MAX_BULK_LINES);
-  if (!lines.length) return { added: 0, skipped: 0, truncated: false };
-
-  const { results: existing } = await env.DB.prepare(
-    'SELECT LOWER(api_key) k FROM api_sources WHERE provider = ?'
-  ).bind(provider).all();
-  const existingSlugs = new Set((existing || []).map(r => r.k));
-
-  let added = 0, skipped = 0;
-  for (const line of lines) {
-    let slug = line, label = line;
-    if (line.includes('|')) {
-      const [s, l] = line.split('|').map(part => part.trim());
-      slug = s;
-      label = l || s;
-    }
-    slug = slug.replace(/\s+/g, '');
-    if (!slug || existingSlugs.has(slug.toLowerCase())) { skipped++; continue; }
-    await insertApiSource(env, (label || slug).slice(0, 100), slug.slice(0, 200), provider);
-    existingSlugs.add(slug.toLowerCase());
-    added++;
-  }
-  return { added, skipped, truncated: allLines.length > MAX_BULK_LINES };
-}
-
-// Edits an existing source's label/company-identifier/active flag in
-// place. Used by the dashboard's inline "Edit" toggle so fixing a typo'd
-// board token doesn't require deleting and re-adding the row (which would
-// also lose its position/history).
-export async function updateApiSource(env, id, { label, company, active }) {
-  await env.DB.prepare(
-    `UPDATE api_sources SET label = ?, name = ?, api_key = ?, active = ? WHERE id = ?`
-  ).bind(label, label, company, active ? 1 : 0, id).run();
-}
-
-// Total + paginated count helper for the dashboard's API Sources list —
-// kept here (not inline in dashboard.js) so pagination math has one home.
-export async function countApiSources(env) {
-  const { results } = await env.DB.prepare(
-    'SELECT COUNT(*) total, SUM(CASE WHEN active = 1 THEN 1 ELSE 0 END) active_count FROM api_sources'
-  ).all();
-  return { total: results[0]?.total || 0, activeCount: results[0]?.active_count || 0 };
-}
-
 // ────────────────────────────────────────────────────────────────
 // Retry / dedupe / save
 // ────────────────────────────────────────────────────────────────
@@ -293,17 +237,18 @@ async function saveJobs(env, jobs, counters, errorLog, providerId) {
   for (let i = 0; i < validJobs.length; i += DB_BATCH_SIZE) {
     const chunk = validJobs.slice(i, i + DB_BATCH_SIZE);
 
-    const insertStmts = chunk.map((j) =>
-      env.DB.prepare(
-        `INSERT OR IGNORE INTO jobs (title,company,location,url,description,salary,remote_type,skills,seniority,employment_type,job_handle,source,status,updated_at,expires_at)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,'active',CURRENT_TIMESTAMP,datetime('now','+45 days'))`
+    const insertStmts = chunk.map((j) => {
+      const sal = parseSalary(j.salary);
+      return env.DB.prepare(
+        `INSERT OR IGNORE INTO jobs (title,company,location,url,description,salary,remote_type,skills,seniority,employment_type,job_handle,source,status,updated_at,expires_at,salary_min_usd,salary_max_usd)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,'active',CURRENT_TIMESTAMP,datetime('now','+45 days'),?,?)`
       ).bind(
         j.title || 'Unknown', j.company || 'Company', j.location || '', j.url,
         j.description || '', j.salary || '', j.remote_type || '',
         JSON.stringify(j.skills || []), j.seniority || '', j.employment_type || '', j.job_handle || '',
-        providerId
-      )
-    );
+        providerId, sal.annualMinUsd, sal.annualMaxUsd
+      );
+    });
 
     const insertedUrls = new Set();
     try {
@@ -319,16 +264,17 @@ async function saveJobs(env, jobs, counters, errorLog, providerId) {
 
     const toUpdate = chunk.filter((j) => !insertedUrls.has(j.url));
     if (toUpdate.length) {
-      const updateStmts = toUpdate.map((j) =>
-        env.DB.prepare(
-          `UPDATE jobs SET title=?,company=?,location=?,description=?,salary=?,remote_type=?,skills=?,seniority=?,employment_type=?,job_handle=?,source=?,status='active',updated_at=CURRENT_TIMESTAMP,expires_at=datetime('now','+45 days') WHERE url=?`
+      const updateStmts = toUpdate.map((j) => {
+        const sal = parseSalary(j.salary);
+        return env.DB.prepare(
+          `UPDATE jobs SET title=?,company=?,location=?,description=?,salary=?,remote_type=?,skills=?,seniority=?,employment_type=?,job_handle=?,source=?,status='active',updated_at=CURRENT_TIMESTAMP,expires_at=datetime('now','+45 days'),salary_min_usd=?,salary_max_usd=? WHERE url=?`
         ).bind(
           j.title || 'Unknown', j.company || 'Company', j.location || '',
           j.description || '', j.salary || '', j.remote_type || '',
           JSON.stringify(j.skills || []), j.seniority || '', j.employment_type || '', j.job_handle || '',
-          providerId, j.url
-        )
-      );
+          providerId, sal.annualMinUsd, sal.annualMaxUsd, j.url
+        );
+      });
       try {
         const results = await env.DB.batch(updateStmts);
         batchesUsed++;
@@ -454,4 +400,44 @@ export async function syncJobs(env) {
   };
   await logSync(env, result);
   return result;
+}
+
+// ────────────────────────────────────────────────────────────────
+// Salary backfill — existing jobs (synced before salary_min_usd/
+// salary_max_usd existed) have those columns NULL until their provider
+// naturally re-syncs them. Rather than wait an unpredictable amount of
+// time for that to happen organically, this lets an admin trigger it
+// directly (see the "Backfill Salary Data" button on /admin/jobs).
+//
+// Bounded to `batchSize` rows per call — same philosophy as everything
+// else in this file: never try to process an unbounded amount of work in
+// one Worker invocation. An admin clicks the button repeatedly (or it can
+// be wired to auto-continue client-side) until `remaining` reaches 0.
+// ────────────────────────────────────────────────────────────────
+export async function backfillSalaryUsd(env, { batchSize = 300 } = {}) {
+  await ensureTable(env);
+  const { results: rows } = await env.DB.prepare(
+    `SELECT id, salary FROM jobs WHERE salary IS NOT NULL AND salary != '' AND salary_min_usd IS NULL LIMIT ?`
+  ).bind(batchSize).all();
+
+  let processed = 0;
+  if (rows && rows.length) {
+    const stmts = rows.map((r) => {
+      const sal = parseSalary(r.salary);
+      // Jobs whose salary text genuinely can't be parsed (e.g.
+      // "Competitive") get salary_min_usd = -1 as a sentinel — NOT NULL,
+      // so this same backfill query never picks them up again on the next
+      // batch, without falsely claiming they have a real numeric salary.
+      const min = sal.annualMinUsd ?? -1;
+      const max = sal.annualMaxUsd ?? -1;
+      return env.DB.prepare('UPDATE jobs SET salary_min_usd = ?, salary_max_usd = ? WHERE id = ?').bind(min, max, r.id);
+    });
+    await env.DB.batch(stmts);
+    processed = rows.length;
+  }
+
+  const { results: remainingRows } = await env.DB.prepare(
+    `SELECT COUNT(*) c FROM jobs WHERE salary IS NOT NULL AND salary != '' AND salary_min_usd IS NULL`
+  ).all();
+  return { processed, remaining: remainingRows?.[0]?.c || 0 };
 }
