@@ -7,6 +7,7 @@ import { navHtml, mobileHeaderHtml } from '../components/nav.js';
 import { footerHtml } from '../components/footer.js';
 import { postJobModalHtml } from '../components/post-job-modal.js';
 import { SHARED_CSS } from '../styles/shared-css.js';
+import { JOB_CARD_CSS } from '../styles/job-card-css.js';
 import { ICON_HEAD } from '../assets/favicon.js';
 import { BASE_URL } from '../config/constants.js';
 import { escapeHtml } from '../lib/entities.js';
@@ -65,6 +66,7 @@ ${extraHead}
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700;800&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
 <style>
 ${SHARED_CSS}
+${JOB_CARD_CSS}
 .page{max-width:860px;margin:0 auto;padding:36px 20px 72px}
 .page-sm{max-width:680px;margin:0 auto;padding:36px 20px 72px}
 .breadcrumb{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--ink3);margin-bottom:28px;flex-wrap:wrap}
