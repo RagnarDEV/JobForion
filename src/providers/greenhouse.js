@@ -1,17 +1,45 @@
 // src/providers/greenhouse.js
-// Provider: Greenhouse job boards — fully public, no auth of any kind.
-// The "company" field holds the board token(s) used in
-// boards.greenhouse.io/<token> — comma-separated tokens are still
-// supported in a single row for backward compatibility, but the admin UI
-// now normally creates one row per company via bulk-add instead.
+// Provider: Greenhouse job boards — public per-company API, no auth key.
+// The "api_key" field for this provider holds one or more board tokens
+// (the slug in boards.greenhouse.io/<token>), separated by commas —
+// e.g. "airbnb, figma, netflix" — so a single "Add Source" entry can pull
+// from several companies at once instead of needing one entry per board.
 export const id = 'greenhouse';
-export const displayName = 'Greenhouse';
-export const keyFormatHint = 'board token from boards.greenhouse.io/<token> — e.g. airbnb';
+export const needsKey = true;
+export const keyFormatHint = 'board token(s), comma-separated — e.g. airbnb, figma. Large lists (10+) are processed a few at a time per run automatically — see MAX_BOARDS_PER_RUN below.';
 export const ignoresQuery = true;
 
-export async function fetchJobs({ company, timeoutMs = 15000 } = {}) {
-  const tokens = String(company || '').split(',').map(t => t.trim()).filter(Boolean);
-  if (!tokens.length) throw new Error('No board token provided');
+// SAFETY CAP: this is what actually failed when 20 board tokens were put
+// in one source — the API fetches `content=true` (full HTML job bodies)
+// for every posting on every board, sequentially, in a single sync.js
+// invocation. 20 external fetches plus their combined payload size is
+// exactly what blows past both Cloudflare's per-invocation subrequest
+// ceiling and reasonable execution time. Only this many boards are fetched
+// per run; the rest rotate in on later runs (see pickTokensForThisRun
+// below) instead of a single run ever trying to hit all of them at once.
+export const MAX_BOARDS_PER_RUN = 5;
+
+// Rotates which slice of tokens gets processed this run, based on the
+// current hour — so with 20 tokens and a cap of 5, every board still gets
+// synced roughly every ~4 runs (a few hours apart, since the cron itself
+// runs every few hours — see wrangler.toml) instead of tokens 6-20 simply
+// never running. No extra D1 state needed: purely a function of the
+// current time and the token list itself.
+function pickTokensForThisRun(tokens) {
+  if (tokens.length <= MAX_BOARDS_PER_RUN) return tokens;
+  const hourSlot = Math.floor(Date.now() / (1000 * 60 * 60));
+  const start = (hourSlot * MAX_BOARDS_PER_RUN) % tokens.length;
+  const picked = [];
+  for (let i = 0; i < MAX_BOARDS_PER_RUN; i++) {
+    picked.push(tokens[(start + i) % tokens.length]);
+  }
+  return picked;
+}
+
+export async function fetchJobs({ apiKey, timeoutMs = 15000 } = {}) {
+  const allTokens = String(apiKey || '').split(',').map(t => t.trim()).filter(Boolean);
+  if (!allTokens.length) throw new Error('No board token provided');
+  const tokens = pickTokensForThisRun(allTokens);
 
   const allJobs = [];
   let lastError = null;
@@ -32,8 +60,9 @@ export async function fetchJobs({ company, timeoutMs = 15000 } = {}) {
     }
   }
 
-  // Only fail the whole entry if EVERY token failed — a single bad/expired
-  // board token among several must not sink the good ones.
+  // Only fail the whole entry if EVERY token in THIS run's slice failed. A
+  // single bad/expired board token among several must not sink the good
+  // ones.
   if (!allJobs.length && lastError) throw lastError;
   return allJobs.filter(j => j.url);
 }

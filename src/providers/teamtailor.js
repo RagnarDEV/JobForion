@@ -1,40 +1,55 @@
 // src/providers/teamtailor.js
-// Provider: Teamtailor public career-site JSON feed — no auth of any kind.
-// The "company" field holds the subdomain used in <company>.teamtailor.com.
+// Provider: Teamtailor official REST API (api.teamtailor.com/v1/jobs).
+// Unlike Greenhouse/Lever/Ashby/Recruitee, Teamtailor's API is NOT public —
+// it requires a real API token generated from the company's Teamtailor
+// admin (Settings → Integrations → API keys). The "api_key" field for this
+// provider holds that token.
 export const id = 'teamtailor';
-export const displayName = 'Teamtailor';
-export const keyFormatHint = 'career-site subdomain from <company>.teamtailor.com';
+export const needsKey = true;
+export const keyFormatHint = 'Teamtailor API token';
 export const ignoresQuery = true;
 
-export async function fetchJobs({ company, timeoutMs = 15000 } = {}) {
-  if (!company) throw new Error('No career-site subdomain provided');
-  const url = `https://${encodeURIComponent(company)}.teamtailor.com/jobs.json`;
+const API_VERSION = '20240404';
+
+export async function fetchJobs({ apiKey, timeoutMs = 15000, pageSize = 60 } = {}) {
+  if (!apiKey) throw new Error('Teamtailor API token is required');
+  const url = `https://api.teamtailor.com/v1/jobs?filter[status]=published&page[size]=${pageSize}`;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const res = await fetch(url, { signal: controller.signal, headers: { 'Accept': 'application/json' } });
+    const res = await fetch(url, {
+      headers: {
+        'Authorization': `Token token=${apiKey}`,
+        'X-Api-Version': API_VERSION,
+        'Accept': 'application/vnd.api+json',
+      },
+      signal: controller.signal,
+    });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
-    const jobs = Array.isArray(data) ? data : (data.jobs || []);
-    return jobs.map(j => map(j, company)).filter(j => j.url);
+    return (data.data || []).map(map).filter(j => j.url);
   } finally {
     clearTimeout(timer);
   }
 }
 
-function map(job, company) {
+function map(job) {
+  const attrs = job.attributes || {};
+  const locationStr = attrs['remote-status'] === 'fully'
+    ? 'Remote'
+    : (attrs['location-name'] || attrs.city || '');
   return {
-    title: job.title || job.name || 'Unknown',
-    company,
-    location: job.location || job.city || (job.remote ? 'Remote' : ''),
-    url: job.url || job.careersite_job_url || `https://${company}.teamtailor.com/jobs/${job.id}`,
-    description: (job.body || job.description || '').replace(/<[^>]+>/g, ' ').slice(0, 5000),
+    title: attrs.title || 'Unknown',
+    company: attrs['company-name'] || '',
+    location: locationStr,
+    url: attrs['careersite-job-url'] || attrs['careersite-job-apply-url'] || '',
+    description: (attrs.body || '').replace(/<[^>]+>/g, ' ').slice(0, 5000),
     salary: '',
-    remote_type: job.remote ? 'fully_remote' : '',
+    remote_type: attrs['remote-status'] === 'fully' ? 'fully_remote' : (attrs['remote-status'] === 'hybrid' ? 'hybrid' : ''),
     skills: [],
     seniority: '',
-    employment_type: (job.employment_type || '').toLowerCase().replace(/[\s-]+/g, '_'),
-    job_handle: String(job.id || ''),
+    employment_type: (attrs['employment-type'] || '').toLowerCase().replace(/[\s-]+/g, '_'),
+    job_handle: job.id || '',
     source: 'teamtailor',
   };
 }
