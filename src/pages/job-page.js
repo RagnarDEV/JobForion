@@ -1,6 +1,6 @@
 // src/pages/job-page.js
 
-import { logoImgHtml, remoteTagHtml, catForTitleServer, jobTypeBadgeHtml, jobTypeCardClass, normalizeJobType } from '../components/job-card.js';
+import { logoImgHtml, remoteTagHtml, catForTitleServer, jobTypeBadgeHtml, jobTypeCardClass, normalizeJobType, isHotJob } from '../components/job-card.js';
 import { baseLayout } from '../layout/base-layout.js';
 import { slugify, escapeHtml, cleanDescription, parseSalaryRange, categorySalaryStats, companySnapshot } from '../lib/entities.js';
 import { adSlot } from '../components/ad-slot.js';
@@ -11,6 +11,7 @@ import { getCategories } from '../lib/categories.js';
 import { getCardStyles } from '../lib/job-card-styles.js';
 import { getAdSlotsConfig } from '../lib/ad-slots.js';
 import { getFooterPages } from '../lib/pages-cms.js';
+import { getLogoOverrides } from '../lib/company-logos.js';
 
 // SECURITY: JSON.stringify() does NOT escape "<", so a malicious job title
 // like `</script><script>...` embedded in scraped/submitted data could
@@ -76,13 +77,19 @@ export async function renderJobPage(job, related, base, env) {
   let skills = [];
   try { skills = JSON.parse(job.skills || '[]'); } catch (e) {}
   const isNew = job.created_at && Date.now() - new Date(job.created_at).getTime() < 86400000;
-  const isHot = job.salary && parseInt(job.salary.replace(/\D/g, '').slice(0, 3)) >= 150;
+  const isHot = isHotJob(job);
   const canonical = `${base}/job/${job.id}`;
   const cleanDesc = cleanDescription(job.description);
 
   const [categories, settings, cardStyles] = await Promise.all([getCategories(env), getSettings(env), getCardStyles(env)]);
   const adConfig = await getAdSlotsConfig(env);
   const footerPages = await getFooterPages(env);
+  // Custom logo overrides (see /admin/companies → lib/company-logos.js) —
+  // one small batch query for this job's own company plus every related
+  // job's company, so every logo on the page (not just the header) can
+  // use an admin-set override where one exists.
+  const logoOverrides = await getLogoOverrides(env, [job.company, ...related.map(r => r.company)]);
+  const jobLogoOverride = logoOverrides[(job.company || '').toLowerCase()] || null;
   const adsEnabled = settings.ads_enabled !== '0';
   const categoryOrder = categories.map(c => c.key);
   const categoryMap = Object.fromEntries(categories.map(c => [c.key, { label: c.label, emoji: c.emoji, color: c.color }]));
@@ -112,7 +119,7 @@ export async function renderJobPage(job, related, base, env) {
   <div class="job-hero${jobTypeCardClass(job.job_type)}">
     <div class="job-hero-hdr">
       <div class="job-co-row">
-        ${logoImgHtml(job.company, '64px', 'job-logo')}
+        ${logoImgHtml(job.company, '64px', 'job-logo', jobLogoOverride)}
         <div style="flex:1"><div class="job-co-name"><a href="/companies/${slugify(job.company)}" style="color:inherit">${escapeHtml(job.company)}</a> <span class="verified-ico" title="Verified listing">${iconBadgeCheck({ size: 14 })}</span>${normalizeJobType(job.job_type) === 'Sponsored' ? '<span class="jt-sponsored-tag">Sponsored Company</span>' : ''}</div><div class="job-co-loc">${iconMapPin({ size: 12 })} ${escapeHtml(job.location || 'Remote')}</div>${normalizeJobType(job.job_type) === 'Sponsored' && job.job_type_note ? `<div class="jt-note" style="margin-top:4px">${escapeHtml(job.job_type_note)}</div>` : ''}</div>
         <div class="job-actions">
           <button class="job-act-btn" id="jobSaveBtn" onclick="toggleJobSave(${job.id})" title="Save job">${iconBookmark({ size: 16 })}<span class="job-act-label">Save</span></button>
@@ -145,7 +152,7 @@ export async function renderJobPage(job, related, base, env) {
     <div class="related-grid">
       ${related.map(r => `
         <a href="/job/${r.id}" class="related-card">
-          ${logoImgHtml(r.company, '38px', 'related-logo')}
+          ${logoImgHtml(r.company, '38px', 'related-logo', logoOverrides[(r.company || '').toLowerCase()] || null)}
           <div class="related-info"><div class="related-jt">${escapeHtml(r.title)}</div><div class="related-co"><a href="/companies/${slugify(r.company)}" style="color:inherit">${escapeHtml(r.company)}</a></div></div>
           ${r.salary ? `<div class="related-sal">${escapeHtml(r.salary)}</div>` : ''}
           <span style="color:var(--ink3)">›</span>
