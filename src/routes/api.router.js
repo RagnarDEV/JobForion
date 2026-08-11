@@ -82,7 +82,7 @@ export async function handleApiRoute(url, request, env) {
     if (remoteType) { conditions.push("remote_type = ?"); params.push(remoteType); }
     if (employType) { conditions.push("employment_type = ?"); params.push(employType); }
     if (seniority) { conditions.push("LOWER(seniority) LIKE ?"); params.push(`%${seniority.toLowerCase()}%`); }
-    if (salaryMin) { conditions.push("CAST(REPLACE(REPLACE(salary,'$',''),'k','') AS INTEGER) >= ?"); params.push(parseInt(salaryMin)); }
+    if (salaryMin) { conditions.push("salary_max_usd >= ?"); params.push(parseInt(salaryMin) * 1000); }
     if (days) { conditions.push("created_at >= datetime('now', '-' || ? || ' days')"); params.push(parseInt(days)); }
     if (country) {
       // See lib/directory-overrides.js: `country` here is the DISPLAY
