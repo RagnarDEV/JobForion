@@ -15,6 +15,7 @@
 
 import { JOB_TYPE_SORT_SQL } from '../config/constants.js';
 import { getOverrides, applyDirectoryOverrides } from './directory-overrides.js';
+import { canonicalizeRegion } from './geo-data.js';
 
 // ════════════════════════════════════════════════════════════════
 // THIN-CONTENT THRESHOLD — a directory detail page (company/skill/
@@ -127,13 +128,22 @@ export async function jobsByCompany(env, companyName, { limit = 100 } = {}) {
 }
 
 // ── Countries / Cities (heuristic split on `location`) ──────────
+// DATA QUALITY: the trailing "region" segment now passes through
+// canonicalizeRegion() (lib/geo-data.js) — this resolves the most common
+// unambiguous aliases automatically ("USA"/"US"/"U.S." → "United States",
+// a US state abbreviation like "TX" → "United States", etc.) BEFORE the
+// manual /admin/directory override system ever sees it, so admins have
+// far fewer near-duplicate entries to manually merge. Anything not
+// covered by the dictionary still falls through unchanged, exactly as
+// before this pass — the manual override system remains the final
+// authority for anything the dictionary doesn't catch.
 function splitLocation(location) {
   if (!location || /remote/i.test(location.trim()) && !location.includes(',')) {
     return { city: null, region: location && location.trim() ? location.trim() : 'Remote' };
   }
   const parts = location.split(',').map(s => s.trim()).filter(Boolean);
-  if (parts.length >= 2) return { city: parts[0], region: parts[parts.length - 1] };
-  return { city: null, region: parts[0] || 'Remote' };
+  if (parts.length >= 2) return { city: parts[0], region: canonicalizeRegion(parts[parts.length - 1]) };
+  return { city: null, region: canonicalizeRegion(parts[0]) || 'Remote' };
 }
 
 // Raw aggregation, BEFORE overrides are applied — exported so
