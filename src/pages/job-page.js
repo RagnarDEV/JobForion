@@ -1,6 +1,6 @@
 // src/pages/job-page.js
 
-import { logoImgHtml, remoteTagHtml, catForTitleServer, jobTypeBadgeHtml, jobTypeCardClass, normalizeJobType, isHotJob } from '../components/job-card.js';
+import { logoImgHtml, remoteTagHtml, catForTitleServer, jobTypeBadgeHtml, jobTypeCardClass, normalizeJobType, isHotJob, jobCardSSR } from '../components/job-card.js';
 import { baseLayout } from '../layout/base-layout.js';
 import { slugify, escapeHtml, cleanDescription, parseSalaryRange, categorySalaryStats, companySnapshot } from '../lib/entities.js';
 import { adSlot } from '../components/ad-slot.js';
@@ -149,14 +149,8 @@ export async function renderJobPage(job, related, base, env) {
   ${insightsHtml ? `<div class="insights-wrap">${insightsHtml}</div>` : ''}
   ${related.length ? `
     <div class="related-title" style="margin-top:24px">Similar Jobs</div>
-    <div class="related-grid">
-      ${related.map(r => `
-        <a href="/job/${r.id}" class="related-card">
-          ${logoImgHtml(r.company, '38px', 'related-logo', logoOverrides[(r.company || '').toLowerCase()] || null)}
-          <div class="related-info"><div class="related-jt">${escapeHtml(r.title)}</div><div class="related-co"><a href="/companies/${slugify(r.company)}" style="color:inherit">${escapeHtml(r.company)}</a></div></div>
-          ${r.salary ? `<div class="related-sal">${escapeHtml(r.salary)}</div>` : ''}
-          <span style="color:var(--ink3)">›</span>
-        </a>`).join('')}
+    <div class="jobs-list">
+      ${related.map((r, i) => jobCardSSR(r, i, categoryMap, categoryOrder, cardStyles, logoOverrides)).join('')}
     </div>` : ''}
   ${adSlot('job-detail-footer', 'margin-top:24px', adConfig, adsEnabled)}
 </div>
