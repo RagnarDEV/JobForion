@@ -6,7 +6,7 @@
 // creates/edits/reorders/removes them, no code edit required.
 
 import { baseLayout } from '../layout/base-layout.js';
-import { logoImgHtml, jobRowMini, directoryGridHtml } from '../components/job-card.js';
+import { logoImgHtml, jobCardSSR, directoryGridHtml } from '../components/job-card.js';
 import {
   listCompanies, findCompanyBySlug, jobsByCompany,
   listSkills, findSkillBySlug, jobsBySkill,
@@ -21,15 +21,30 @@ import { truncateDescription } from '../lib/seo.js';
 import { JOB_TYPE_SORT_SQL } from '../config/constants.js';
 import { getSettings } from '../lib/settings.js';
 import { getCategories } from '../lib/categories.js';
+import { getCardStyles } from '../lib/job-card-styles.js';
+import { getLogoOverrides } from '../lib/company-logos.js';
 
 // Shared by every function below: resolves site settings + the dynamic
-// category list (as both an ordered array and a {order, map} bundle
-// ready to hand straight to baseLayout() for the "Post a Job" dropdown).
+// category list + card-style tiers (as both an ordered array and a
+// {order, map} bundle ready to hand straight to baseLayout() for the
+// "Post a Job" dropdown) — the exact same bundle home.js and job-page.js
+// use, so job cards rendered here (via jobCardSSR) are pixel-identical to
+// the homepage's, including any admin-customized card styles/colors.
 async function loadPageContext(env) {
-  const [settings, categories] = await Promise.all([getSettings(env), getCategories(env)]);
+  const [settings, categories, cardStyles] = await Promise.all([getSettings(env), getCategories(env), getCardStyles(env)]);
   const categoryOrder = categories.map(c => c.key);
   const categoryMap = Object.fromEntries(categories.map(c => [c.key, { label: c.label, emoji: c.emoji, color: c.color }]));
-  return { settings, categories, categoryOrder, categoryMap, categoryBundle: { order: categoryOrder, map: categoryMap } };
+  return { settings, categories, categoryOrder, categoryMap, cardStyles, categoryBundle: { order: categoryOrder, map: categoryMap } };
+}
+
+// Renders a list of jobs as full homepage-style cards (jobCardSSR) inside
+// a `.jobs-list` container — used by every directory detail page below
+// (category/company/country/skill/search) so "Similar Jobs" and every
+// listing page look identical to the homepage, not a stripped-down row.
+async function jobsListHtml(env, jobs, categoryMap, categoryOrder, cardStyles, emptyHtml) {
+  if (!jobs || !jobs.length) return emptyHtml;
+  const logoOverrides = await getLogoOverrides(env, jobs.map(j => j.company));
+  return `<div class="jobs-list">${jobs.map((j, i) => jobCardSSR(j, i, categoryMap, categoryOrder, cardStyles, logoOverrides)).join('')}</div>`;
 }
 
 // ── /categories ──
@@ -50,15 +65,16 @@ export async function renderCategoriesIndex(env, base) {
 }
 
 export async function renderCategoryDetail(env, base, key) {
-  const { settings, categoryMap, categoryBundle } = await loadPageContext(env);
+  const { settings, categoryMap, categoryOrder, cardStyles, categoryBundle } = await loadPageContext(env);
   const meta = categoryMap[key];
   if (!meta) return null;
   const { results } = await env.DB.prepare(`SELECT * FROM jobs WHERE LOWER(title) LIKE ? ORDER BY ${JOB_TYPE_SORT_SQL} ASC, id DESC LIMIT 60`).bind(`%${key}%`).all();
   const { html: bc, jsonLd: bcSchema } = buildBreadcrumb(base, [{ name: 'Categories', path: '/categories' }, { name: meta.label, path: `/categories/${key}` }]);
+  const jobsHtml = await jobsListHtml(env, results, categoryMap, categoryOrder, cardStyles, '<div class="empty"><div class="e-icon">📭</div><h3>No jobs in this category yet</h3></div>');
   const content = `<div class="page">${bc}
     <h1 style="font-family:'Space Grotesk',sans-serif;font-size:26px;font-weight:700;margin-bottom:8px;color:var(--ink)">${meta.emoji} ${escapeHtml(meta.label)} Remote Jobs</h1>
     <p style="color:var(--ink2);font-size:14px;margin-bottom:24px">${(results || []).length} open remote ${escapeHtml(meta.label.toLowerCase())} positions, updated hourly.</p>
-    <div class="related-grid">${(results || []).map(jobRowMini).join('') || '<div class="empty"><div class="e-icon">📭</div><h3>No jobs in this category yet</h3></div>'}</div>
+    ${jobsHtml}
   </div>`;
   const desc = truncateDescription(`Browse ${(results || []).length} remote ${meta.label.toLowerCase()} jobs updated hourly. Filter by seniority, salary, and location on ${settings.site_name}.`);
   const schema = ldJsonTag(itemListSchema((results || []).slice(0, 20).map(j => ({ url: `${base}/job/${j.id}` }))));
@@ -80,7 +96,7 @@ export async function renderCompaniesIndex(env, base) {
 }
 
 export async function renderCompanyDetail(env, base, slug) {
-  const { settings, categoryBundle } = await loadPageContext(env);
+  const { settings, categoryMap, categoryOrder, cardStyles, categoryBundle } = await loadPageContext(env);
   const company = await findCompanyBySlug(env, slug);
   if (!company) return null;
   const jobs = await jobsByCompany(env, company.name, { limit: 60 });
@@ -89,13 +105,15 @@ export async function renderCompanyDetail(env, base, slug) {
   // Job" submissions) — always escape before inserting into HTML, even
   // though logoImgHtml() escapes its own internal alt text separately.
   const safeName = escapeHtml(company.name);
+  const companyLogoOverride = (await getLogoOverrides(env, [company.name]))[company.name.toLowerCase()] || null;
+  const jobsHtml = await jobsListHtml(env, jobs, categoryMap, categoryOrder, cardStyles, '<div class="empty"><div class="e-icon">📭</div><h3>No open jobs right now</h3></div>');
   const content = `<div class="page">${bc}
     <div style="display:flex;align-items:center;gap:14px;margin-bottom:8px">
-      ${logoImgHtml(company.name, '56px', 'job-logo')}
+      ${logoImgHtml(company.name, '56px', 'job-logo', companyLogoOverride)}
       <h1 style="font-family:'Space Grotesk',sans-serif;font-size:24px;font-weight:700;color:var(--ink)">${safeName}</h1>
     </div>
     <p style="color:var(--ink2);font-size:14px;margin-bottom:24px">${jobs.length} open remote position${jobs.length === 1 ? '' : 's'} at ${safeName}, sourced from verified listings.</p>
-    <div class="related-grid">${jobs.map(jobRowMini).join('') || '<div class="empty"><div class="e-icon">📭</div><h3>No open jobs right now</h3></div>'}</div>
+    ${jobsHtml}
   </div>`;
   const desc = truncateDescription(`${company.name} has ${jobs.length} open remote job${jobs.length === 1 ? '' : 's'} on ${settings.site_name}. Browse roles and apply directly with the employer.`);
   const schema = ldJsonTag({ "@context": "https://schema.org", "@type": "Organization", "name": company.name, "url": `${base}/companies/${slug}` });
@@ -128,7 +146,7 @@ export async function renderCountriesIndex(env, base) {
 }
 
 export async function renderCountryDetail(env, base, slug) {
-  const { settings, categoryBundle } = await loadPageContext(env);
+  const { settings, categoryMap, categoryOrder, cardStyles, categoryBundle } = await loadPageContext(env);
   const country = await findCountryBySlug(env, slug);
   if (!country) return null;
   const jobs = await jobsByRegion(env, country.rawNames || country.name, { limit: 60 });
@@ -137,10 +155,11 @@ export async function renderCountryDetail(env, base, slug) {
   // traces back to external provider data — escape before rendering.
   const safeName = escapeHtml(country.name);
   const flag = countryFlag(country.name);
+  const jobsHtml = await jobsListHtml(env, jobs, categoryMap, categoryOrder, cardStyles, '<div class="empty"><div class="e-icon">📭</div><h3>No open jobs in this location yet</h3></div>');
   const content = `<div class="page">${bc}
     <h1 style="font-family:'Space Grotesk',sans-serif;font-size:26px;font-weight:700;margin-bottom:8px;color:var(--ink)">${flag} Remote Jobs in ${safeName}</h1>
     <p style="color:var(--ink2);font-size:14px;margin-bottom:24px">${jobs.length} open remote position${jobs.length === 1 ? '' : 's'} located in or hiring from ${safeName}.</p>
-    <div class="related-grid">${jobs.map(jobRowMini).join('') || '<div class="empty"><div class="e-icon">📭</div><h3>No open jobs in this location yet</h3></div>'}</div>
+    ${jobsHtml}
   </div>`;
   const desc = truncateDescription(`Browse ${jobs.length} remote jobs in ${country.name}. Updated hourly on ${settings.site_name}.`);
   const schema = ldJsonTag(itemListSchema(jobs.slice(0, 20).map(j => ({ url: `${base}/job/${j.id}` }))));
@@ -164,7 +183,7 @@ export async function renderSkillsIndex(env, base) {
 }
 
 export async function renderSkillDetail(env, base, slug) {
-  const { settings, categoryBundle } = await loadPageContext(env);
+  const { settings, categoryMap, categoryOrder, cardStyles, categoryBundle } = await loadPageContext(env);
   const skill = await findSkillBySlug(env, slug);
   if (!skill) return null;
   const jobs = await jobsBySkill(env, skill.rawNames || skill.name, { limit: 60 });
@@ -172,10 +191,11 @@ export async function renderSkillDetail(env, base, slug) {
   // SECURITY: skill.name is parsed from the jobs.skills JSON column,
   // itself sourced from external providers — escape before rendering.
   const safeName = escapeHtml(skill.name);
+  const jobsHtml = await jobsListHtml(env, jobs, categoryMap, categoryOrder, cardStyles, '<div class="empty"><div class="e-icon">📭</div><h3>No jobs currently require this skill</h3></div>');
   const content = `<div class="page">${bc}
     <h1 style="font-family:'Space Grotesk',sans-serif;font-size:26px;font-weight:700;margin-bottom:8px;color:var(--ink)">Remote Jobs Requiring ${safeName}</h1>
     <p style="color:var(--ink2);font-size:14px;margin-bottom:24px">${jobs.length} open remote positions listing ${safeName} as a required skill.</p>
-    <div class="related-grid">${jobs.map(jobRowMini).join('') || '<div class="empty"><div class="e-icon">📭</div><h3>No jobs currently require this skill</h3></div>'}</div>
+    ${jobsHtml}
   </div>`;
   const desc = truncateDescription(`Browse ${jobs.length} remote jobs requiring ${skill.name}. Updated hourly on ${settings.site_name}.`);
   const schema = ldJsonTag(itemListSchema(jobs.slice(0, 20).map(j => ({ url: `${base}/job/${j.id}` }))));
@@ -186,7 +206,7 @@ export async function renderSkillDetail(env, base, slug) {
 
 // ── /search/:query — indexable only when it returns real content ──
 export async function renderSearchPage(env, base, query) {
-  const { settings, categoryBundle } = await loadPageContext(env);
+  const { settings, categoryMap, categoryOrder, cardStyles, categoryBundle } = await loadPageContext(env);
   const q = decodeURIComponent(query || '').trim();
   const { results } = await env.DB.prepare(
     `SELECT * FROM jobs WHERE LOWER(title) LIKE ? OR LOWER(company) LIKE ? OR LOWER(location) LIKE ? ORDER BY ${JOB_TYPE_SORT_SQL} ASC, id DESC LIMIT 50`
@@ -200,10 +220,11 @@ export async function renderSearchPage(env, base, query) {
   // <title>/<meta description> tags separately (this `content` string is
   // inserted as-is, unescaped, by baseLayout).
   const safeQ = escapeHtml(q);
+  const jobsHtml = await jobsListHtml(env, results, categoryMap, categoryOrder, cardStyles, `<div class="empty"><div class="e-icon">🔍</div><h3>No matches for "${safeQ}"</h3><p>Try browsing <a href="/categories" style="color:var(--brand)">categories</a> instead.</p></div>`);
   const content = `<div class="page">${bc}
     <h1 style="font-family:'Space Grotesk',sans-serif;font-size:24px;font-weight:700;margin-bottom:8px;color:var(--ink)">Remote "${safeQ}" Jobs</h1>
     <p style="color:var(--ink2);font-size:14px;margin-bottom:24px">${(results || []).length} results for "${safeQ}"</p>
-    <div class="related-grid">${(results || []).map(jobRowMini).join('') || `<div class="empty"><div class="e-icon">🔍</div><h3>No matches for "${safeQ}"</h3><p>Try browsing <a href="/categories" style="color:var(--brand)">categories</a> instead.</p></div>`}</div>
+    ${jobsHtml}
   </div>`;
   const desc = hasResults
     ? truncateDescription(`${results.length} remote "${q}" jobs available now. Browse and apply directly on ${settings.site_name}.`)
