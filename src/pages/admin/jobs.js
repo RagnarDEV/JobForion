@@ -88,6 +88,11 @@ export async function renderJobsListContent(env, params) {
   ).all();
   const staleCount = staleCountRows[0]?.c || 0;
 
+  const { results: unbackfilledRows } = await env.DB.prepare(
+    "SELECT COUNT(*) c FROM jobs WHERE salary IS NOT NULL AND salary != '' AND salary_min_usd IS NULL"
+  ).all();
+  const unbackfilledCount = unbackfilledRows[0]?.c || 0;
+
   const rowsHtml = (rows || []).map(j => jobRow(j, categoryOrder, categoryMap)).join('').replaceAll('__REDIRECT__', escapeHtml(redirectTarget));
 
   const qs = (overrides) => {
@@ -113,6 +118,18 @@ export async function renderJobsListContent(env, params) {
         <form method="POST" action="/admin/jobs/delete-stale" onsubmit="return confirm('Permanently delete ' + ${staleCount} + ' jobs older than the chosen age? This cannot be undone.')" style="display:flex;gap:6px;align-items:center">
           <input class="adm-input" type="number" name="days" value="45" min="7" style="width:70px" title="Age in days">
           <button class="adm-btn adm-btn-primary" type="submit" style="background:#e0a83a;border-color:#e0a83a">Delete Stale Jobs</button>
+        </form>
+      </div>
+    </div>` : ''}
+
+    ${unbackfilledCount > 0 ? `
+    <div class="adm-card" style="margin-bottom:14px;border-color:rgba(53,86,255,.3)">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
+        <div style="font-size:12.5px;color:var(--ink2)">
+          <b>${unbackfilledCount.toLocaleString()}</b> jobs have a salary but were synced before salary normalization existed — their "Hot" badge and salary filter may be inaccurate until backfilled.
+        </div>
+        <form method="POST" action="/admin/jobs/backfill-salary" style="display:inline">
+          <button class="adm-btn adm-btn-primary" type="submit">💰 Backfill Salary Data (300 at a time)</button>
         </form>
       </div>
     </div>` : ''}
@@ -250,8 +267,16 @@ export async function renderJobEditContent(env, id) {
 
 export async function renderDuplicatesContent(env) {
   await ensureTable(env);
+  // DATA QUALITY: normalize dash-character variants (- – —) and trim
+  // whitespace before grouping — cross-provider duplicates often differ
+  // only in which dash character or how much padding a provider happens
+  // to use (e.g. "Backend Engineer - Remote" vs "Backend Engineer — Remote"),
+  // which the old exact LOWER(title) match missed entirely.
   const { results: groups } = await env.DB.prepare(`
-    SELECT LOWER(title) t, LOWER(company) c, GROUP_CONCAT(id) ids, COUNT(*) n
+    SELECT
+      TRIM(REPLACE(REPLACE(LOWER(title), '–', '-'), '—', '-')) t,
+      LOWER(TRIM(company)) c,
+      GROUP_CONCAT(id) ids, COUNT(*) n
     FROM jobs GROUP BY t, c HAVING n > 1 ORDER BY n DESC LIMIT 50
   `).all();
 
