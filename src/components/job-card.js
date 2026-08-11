@@ -9,12 +9,27 @@ import { iconSparkle, iconFlame, iconPin, iconMapPin, iconBadgeCheck, iconClock,
 import { countryFlag } from '../lib/country-flags.js';
 import { DEFAULT_CARD_STYLES, buildCardStyleAttr, buildBadgeStyleAttr } from '../lib/job-card-styles.js';
 
-export function logoImgHtml(company, size = '64px', cls = 'job-logo') {
+export function logoImgHtml(company, size = '64px', cls = 'job-logo', overrideUrl = null) {
   const safeCompany = escapeHtml(company);
+  const fs = Math.round(parseInt(size) * .34) + 'px';
+  // Admin-set custom logo (see /admin/companies → lib/company-logos.js)
+  // takes priority, but still falls back into the same auto-detection
+  // chain if the custom URL itself 404s — a bad manual URL should degrade
+  // gracefully, never show a broken image.
+  if (overrideUrl) {
+    const slug = (company || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const domain = slug + '.com';
+    const safeOverride = escapeHtml(overrideUrl);
+    return `<div class="${cls}" style="width:${size};height:${size}">
+    <img src="${safeOverride}" alt="${safeCompany}"
+      style="width:100%;height:100%;object-fit:contain;padding:7px"
+      onerror="this.onerror=null;this.src='https://www.google.com/s2/favicons?domain=${domain}&sz=64';this.onerror=function(){this.style.display='none';this.nextElementSibling.style.display='flex'}">
+    <span style="display:none;width:100%;height:100%;align-items:center;justify-content:center;font-size:${fs};font-weight:800;color:var(--brand)">${escapeHtml((company || '?').split(' ').slice(0, 2).map(w => w[0] || '').join('').toUpperCase())}</span>
+  </div>`;
+  }
   const slug = (company || '').toLowerCase().replace(/[^a-z0-9]/g, '');
   const domain = slug + '.com';
   const ini = (company || '?').split(' ').slice(0, 2).map(w => w[0] || '').join('').toUpperCase();
-  const fs = Math.round(parseInt(size) * .34) + 'px';
   return `<div class="${cls}" style="width:${size};height:${size}">
     <img src="https://www.google.com/s2/favicons?domain=${domain}&sz=64" alt="${safeCompany}"
       style="width:100%;height:100%;object-fit:contain;padding:7px"
@@ -40,14 +55,15 @@ export function remoteTagHtml(t) {
 // logo → title/company/meta → salary + arrow — even in the worst case.
 // The `.related-card` CLASS is still applied on top for the hover-lift
 // transition (see base-layout.js), but nothing structural depends on it.
-export function jobRowMini(job) {
+export function jobRowMini(job, logoOverrides = {}) {
   const jobType = normalizeJobType(job.job_type);
   const tierIcon = jobType !== 'Free'
     ? `<span title="${escapeHtml(JOB_TYPE_META[jobType].label)}" style="margin-right:4px;flex-shrink:0">${JOB_TYPE_META[jobType].icon}</span>`
     : '';
   const remoteBadge = job.remote_type ? remoteTagHtml(job.remote_type) : '';
+  const logoOverride = logoOverrides[(job.company || '').toLowerCase()] || null;
   return `<a href="/job/${job.id}" class="related-card${jobTypeCardClass(job.job_type)}" style="display:flex;align-items:center;gap:14px;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:13px 16px;text-decoration:none">
-    <div style="flex-shrink:0;display:flex">${logoImgHtml(job.company, '40px', 'related-logo')}</div>
+    <div style="flex-shrink:0;display:flex">${logoImgHtml(job.company, '40px', 'related-logo', logoOverride)}</div>
     <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:4px">
       <div style="display:flex;align-items:center;font-size:13.5px;font-weight:700;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${tierIcon}${escapeHtml(job.title)}</div>
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0">
@@ -139,9 +155,23 @@ export function pastelForJob(job) {
   // doesn't need to also recolor the whole card — that was just visual
   // noise competing with the badges for attention.
   if (job.featured) return 'var(--pastel-blue)';
-  const isHot = job.salary && parseInt(job.salary.replace(/\D/g, '').slice(0, 3)) >= 150;
-  if (isHot) return 'var(--pastel-yellow)';
+  if (isHotJob(job)) return 'var(--pastel-yellow)';
   return 'var(--surface)';
+}
+
+// DATA QUALITY: single source of truth for the "$150k+" hot-job threshold,
+// reading the salary_min_usd/salary_max_usd columns computed once at sync
+// time (see lib/salary.js + db/sync.js) instead of re-parsing the raw
+// salary string with a fragile regex on every render. Falls back to the
+// old regex ONLY for rows synced before this column existed and not yet
+// backfilled (see the "Backfill Salary Data" tool on /admin/jobs) —
+// salary_max_usd === -1 is the backfill's sentinel for "checked, but
+// unparseable", which correctly counts as not-hot rather than retrying
+// the same fragile regex forever.
+export function isHotJob(job) {
+  if (typeof job.salary_max_usd === 'number' && job.salary_max_usd >= 0) return job.salary_max_usd >= 150000;
+  if (!job.salary) return false;
+  return parseInt(job.salary.replace(/\D/g, '').slice(0, 3)) >= 150;
 }
 export function timeAgoServer(dateStr) {
   if (!dateStr) return '';
@@ -165,11 +195,12 @@ const FALLBACK_CATEGORY_META = { label: 'General', emoji: '🏷️', color: '#35
 // Sponsored} object from lib/job-card-styles.js — defaults to
 // DEFAULT_CARD_STYLES so this renders identically whether or not a
 // caller has fetched dynamic styles yet.
-export function jobCardSSR(job, idx, categoryMap = CATEGORY_META, categoryOrder = CATEGORY_ORDER, cardStyles = DEFAULT_CARD_STYLES) {
+export function jobCardSSR(job, idx, categoryMap = CATEGORY_META, categoryOrder = CATEGORY_ORDER, cardStyles = DEFAULT_CARD_STYLES, logoOverrides = {}) {
   const catKey = catForTitleServer(job.title, categoryOrder);
   const meta = categoryMap[catKey] || FALLBACK_CATEGORY_META;
   const isNew = job.created_at && Date.now() - new Date(job.created_at).getTime() < 86400000;
-  const isHot = job.salary && parseInt(job.salary.replace(/\D/g, '').slice(0, 3)) >= 150;
+  const isHot = isHotJob(job);
+  const logoOverride = logoOverrides[(job.company || '').toLowerCase()] || null;
   const timeAgo = timeAgoServer(job.created_at);
   const jobType = normalizeJobType(job.job_type);
   const jtStyle = cardStyles[jobType] || DEFAULT_CARD_STYLES[jobType];
@@ -186,7 +217,7 @@ export function jobCardSSR(job, idx, categoryMap = CATEGORY_META, categoryOrder 
     ${timeAgo ? `<span class="card-time-corner">${iconClock({ size: 11 })} ${timeAgo}</span>` : ''}
     <div class="card-inner" style="padding:${jtStyle.card_padding}px 16px">
       <div class="card-row1">
-        ${logoImgHtml(job.company, `${jtStyle.logo_size}px`, 'co-logo')}
+        ${logoImgHtml(job.company, `${jtStyle.logo_size}px`, 'co-logo', logoOverride)}
         <div class="card-body">
           <div class="card-badges">
             ${jobTypeBadgeHtml(job.job_type, cardStyles)}
