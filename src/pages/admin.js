@@ -1,9 +1,8 @@
 // src/pages/admin.js
 // Thin entry point: renderAdminLogin (unchanged signature) + renderAdminDashboard
-// composes the shared shell (src/pages/admin/shell.js) with the dashboard
-// page content (src/pages/admin/dashboard.js). renderAdminDashboard now
-// accepts an optional pcPage (provider-companies pagination, see
-// dashboard.js) — admin.router.js passes url.searchParams.get('pc_page').
+// now composes the shared shell (src/pages/admin/shell.js) with the dashboard
+// page content (src/pages/admin/dashboard.js). Both exported function names
+// and signatures are identical to before — admin.router.js needs zero changes.
 
 import { ICON_HEAD } from '../assets/favicon.js';
 import { SHARED_CSS } from '../styles/shared-css.js';
