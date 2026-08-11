@@ -357,19 +357,25 @@ export async function ensureTable(env) {
     )
   `).run();
 
-  // ── Indexes ────────────────────────────────────────────────────
-  // PERFORMANCE: the visits table grows unbounded (bot/scanner traffic is
-  // filtered out at the source now — see db/analytics.js — but real
-  // traffic still accumulates indefinitely) and several dashboard queries
-  // filter/group on created_at and path. Without an index those become
-  // full-table scans that get slower every day. jobs(status) and
-  // jobs(created_at) get the same treatment since cleanup/dashboard
-  // queries filter on both constantly.
-  await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_visits_created_at ON visits(created_at)`).run();
-  await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_visits_path ON visits(path)`).run();
-  await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_jobs_created_at ON jobs(created_at)`).run();
-  await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status)`).run();
-  await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_api_sources_provider_active ON api_sources(provider, active)`).run();
+  // ── Salary normalization (data-quality pass, see lib/salary.js) ──
+  // Computed once at sync time from the raw `salary` text and stored here
+  // so every "hot job" check / salary filter / sort reads a plain integer
+  // instead of re-parsing free text on every request. NULL for jobs with
+  // no salary listed or text that couldn't be parsed (e.g. "Competitive").
+  await ensureColumn(env, 'jobs', 'salary_min_usd', 'INTEGER');
+  await ensureColumn(env, 'jobs', 'salary_max_usd', 'INTEGER');
+
+  // ── Custom company logo overrides (data-quality pass) ─────────────
+  // Falls back to the existing Google/DuckDuckGo favicon auto-detection
+  // in components/job-card.js's logoImgHtml() whenever a company has no
+  // row here — see lib/company-logos.js.
+  await env.DB.prepare(`
+    CREATE TABLE IF NOT EXISTS company_logos (
+      company_lower TEXT PRIMARY KEY,
+      logo_url TEXT NOT NULL,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `).run();
 
   schemaEnsured = true;
 }
