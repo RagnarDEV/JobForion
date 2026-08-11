@@ -12,7 +12,7 @@
 
 import { makeAdminCookie, verifyAdminCookie } from '../auth/admin-auth.js';
 import { renderAdminLogin, renderAdminDashboard } from '../pages/admin.js';
-import { insertApiSource, bulkInsertApiSources, updateApiSource } from '../db/sync.js';
+import { insertApiSource, backfillSalaryUsd } from '../db/sync.js';
 import { cleanupStaleJobs } from '../db/cleanup.js';
 import { renderJobsListContent, renderJobEditContent, renderDuplicatesContent } from '../pages/admin/jobs.js';
 import { renderCompaniesListContent } from '../pages/admin/companies.js';
@@ -32,6 +32,7 @@ import { getPageBySlug, createPage, updatePage, deletePage, movePage } from '../
 import { getPostById, createPost, updatePost, deletePost } from '../lib/blog-cms.js';
 import { updateCardStyle, resetCardStyle, CARD_STYLE_JOB_TYPES } from '../lib/job-card-styles.js';
 import { updateAdSlot, resetAdSlot, AD_SLOT_DEFS } from '../lib/ad-slots.js';
+import { setCompanyLogo, removeCompanyLogo } from '../lib/company-logos.js';
 
 function errorPage(err) {
   const msg = (err && err.message ? err.message : String(err)).replace(/</g, '&lt;');
@@ -84,56 +85,6 @@ export async function handleAdminRoute(url, request, env, base) {
       if (apiKey) {
         await insertApiSource(env, label, apiKey, provider);
       }
-      return new Response(null, { status: 302, headers: { 'Location': '/admin' } });
-    } catch (e) { return errorPage(e); }
-  }
-
-  // Bulk add — one company per line (or comma-separated), optional
-  // "slug|Display Name" per line. Complements the single-add form above
-  // rather than replacing it; both write to the same api_sources table.
-  if (url.pathname === '/admin/api-sources/bulk-add' && request.method === 'POST') {
-    try {
-      const ok = await verifyAdminCookie(env, request.headers.get('Cookie'));
-      if (!ok) return new Response('Unauthorized', { status: 401 });
-      const form = await request.formData();
-      const provider = (form.get('provider') || '').toString().trim().slice(0, 40);
-      const companies = (form.get('companies') || '').toString().slice(0, 20000);
-      if (!provider || !companies.trim()) {
-        return new Response(null, { status: 302, headers: { 'Location': `/admin?flash=${encodeURIComponent('يرجى اختيار مزود وإدخال شركة واحدة على الأقل')}` } });
-      }
-      const { added, skipped, truncated } = await bulkInsertApiSources(env, provider, companies);
-      const msg = `تمت إضافة ${added} شركة${skipped ? ` (تم تجاهل ${skipped} مكرر)` : ''}${truncated ? ' — تم الاكتفاء بأول 500 شركة' : ''}`;
-      return new Response(null, { status: 302, headers: { 'Location': `/admin?flash=${encodeURIComponent(msg)}` } });
-    } catch (e) { return errorPage(e); }
-  }
-
-  // Inline edit — label / company identifier / active flag, without
-  // deleting and re-adding the row.
-  if (url.pathname === '/admin/api-sources/update' && request.method === 'POST') {
-    try {
-      const ok = await verifyAdminCookie(env, request.headers.get('Cookie'));
-      if (!ok) return new Response('Unauthorized', { status: 401 });
-      const form = await request.formData();
-      const id = form.get('id');
-      if (!id) return new Response(null, { status: 302, headers: { 'Location': '/admin' } });
-      const label = (form.get('label') || '').toString().trim().slice(0, 100);
-      const company = (form.get('company') || '').toString().trim().replace(/\s+/g, '').slice(0, 200);
-      const active = form.get('active') ? 1 : 0;
-      if (!label || !company) {
-        return new Response(null, { status: 302, headers: { 'Location': `/admin?flash=${encodeURIComponent('الاسم ومعرف الشركة مطلوبان')}` } });
-      }
-      await updateApiSource(env, id, { label, company, active });
-      return new Response(null, { status: 302, headers: { 'Location': `/admin?flash=${encodeURIComponent('تم تحديث بيانات الشركة')}` } });
-    } catch (e) { return errorPage(e); }
-  }
-
-  if (url.pathname === '/admin/api-sources/toggle' && request.method === 'POST') {
-    try {
-      const ok = await verifyAdminCookie(env, request.headers.get('Cookie'));
-      if (!ok) return new Response('Unauthorized', { status: 401 });
-      const form = await request.formData();
-      const id = form.get('id');
-      if (id) await env.DB.prepare('UPDATE api_sources SET active = CASE WHEN active = 1 THEN 0 ELSE 1 END WHERE id = ?').bind(id).run();
       return new Response(null, { status: 302, headers: { 'Location': '/admin' } });
     } catch (e) { return errorPage(e); }
   }
@@ -243,6 +194,33 @@ export async function handleAdminRoute(url, request, env, base) {
         await env.DB.prepare("DELETE FROM hidden_companies WHERE company_lower = ?").bind(company.toLowerCase()).run();
       }
       return new Response(null, { status: 302, headers: { 'Location': `/admin/companies?flash=${encodeURIComponent('Company unhidden')}` } });
+    } catch (e) { return errorPage(e); }
+  }
+
+  // Custom company logo (see lib/company-logos.js) — falls back to the
+  // existing favicon auto-detection whenever no row exists for a company.
+  if (url.pathname === '/admin/companies/logo/set' && request.method === 'POST') {
+    try {
+      const ok = await verifyAdminCookie(env, request.headers.get('Cookie'));
+      if (!ok) return new Response('Unauthorized', { status: 401 });
+      const form = await request.formData();
+      const company = (form.get('company') || '').toString().trim();
+      const logoUrl = (form.get('logo_url') || '').toString().trim().slice(0, 500);
+      if (company && logoUrl) {
+        await setCompanyLogo(env, company, logoUrl);
+      }
+      return new Response(null, { status: 302, headers: { 'Location': `/admin/companies?flash=${encodeURIComponent('Logo saved')}` } });
+    } catch (e) { return errorPage(e); }
+  }
+
+  if (url.pathname === '/admin/companies/logo/remove' && request.method === 'POST') {
+    try {
+      const ok = await verifyAdminCookie(env, request.headers.get('Cookie'));
+      if (!ok) return new Response('Unauthorized', { status: 401 });
+      const form = await request.formData();
+      const company = (form.get('company') || '').toString().trim();
+      if (company) await removeCompanyLogo(env, company);
+      return new Response(null, { status: 302, headers: { 'Location': `/admin/companies?flash=${encodeURIComponent('Logo removed')}` } });
     } catch (e) { return errorPage(e); }
   }
 
@@ -704,6 +682,22 @@ export async function handleAdminRoute(url, request, env, base) {
     } catch (e) { return errorPage(e); }
   }
 
+  // Bounded backfill (300 rows/click) of salary_min_usd/salary_max_usd for
+  // jobs synced before that normalization existed — see
+  // db/sync.js:backfillSalaryUsd() for why this is intentionally bounded
+  // rather than processing the whole table in one request.
+  if (url.pathname === '/admin/jobs/backfill-salary' && request.method === 'POST') {
+    try {
+      const ok = await verifyAdminCookie(env, request.headers.get('Cookie'));
+      if (!ok) return new Response('Unauthorized', { status: 401 });
+      const { processed, remaining } = await backfillSalaryUsd(env, { batchSize: 300 });
+      const msg = remaining > 0
+        ? `تمت معالجة ${processed} وظيفة — تبقّى ${remaining}، اضغط الزر مجدداً لمتابعة التعبئة`
+        : `تمت معالجة ${processed} وظيفة — اكتملت التعبئة الرجعية بالكامل ✅`;
+      return new Response(null, { status: 302, headers: { 'Location': `/admin/jobs?flash=${encodeURIComponent(msg)}` } });
+    } catch (e) { return errorPage(e); }
+  }
+
   if (url.pathname === '/admin/cleanup' && request.method === 'POST') {
     try {
       const ok = await verifyAdminCookie(env, request.headers.get('Cookie'));
@@ -717,7 +711,7 @@ export async function handleAdminRoute(url, request, env, base) {
     try {
       const ok = await verifyAdminCookie(env, request.headers.get('Cookie'));
       if (!ok) return new Response(renderAdminLogin(false), { headers: { "Content-Type": "text/html; charset=utf-8" } });
-      const html = await renderAdminDashboard(env, base, url.searchParams.get('pc_page'));
+      const html = await renderAdminDashboard(env, base);
       return new Response(html, { headers: { "Content-Type": "text/html; charset=utf-8" } });
     } catch (e) { return errorPage(e); }
   }
