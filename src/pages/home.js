@@ -14,11 +14,12 @@ import { adSlot } from '../components/ad-slot.js';
 import { escapeHtml, slugify, listCompanies } from '../lib/entities.js';
 import { COUNTRY_TO_ISO } from '../lib/country-flags.js';
 import { googleAnalyticsTag } from '../lib/analytics-tag.js';
-import { getSettings } from '../lib/settings.js';
+import { getSettings, HERO_FONT_OPTIONS } from '../lib/settings.js';
 import { getCategories } from '../lib/categories.js';
 import { getCardStyles } from '../lib/job-card-styles.js';
 import { getAdSlotsConfig } from '../lib/ad-slots.js';
-import { getFooterPages } from '../lib/pages-cms.js';
+import { getFooterPages, getMenuPages } from '../lib/pages-cms.js';
+import { getNavButtons } from '../lib/nav-buttons.js';
 import { iconSparkle, iconFlame, iconPin, iconMapPin, iconBookmark, iconLink, iconArrowRight, iconBadgeCheck, iconClock, iconGlobe, iconBuilding, iconSearch, iconCheck, iconInfo, iconAlertTriangle } from '../assets/icons.js';
 
 // Same icon markup used by the server-rendered cards (job-card.js) is
@@ -45,6 +46,14 @@ export async function renderMainHTML(env, base) {
   const adConfig = await getAdSlotsConfig(env);
   const adsEnabled = settings.ads_enabled !== '0';
   const footerPages = await getFooterPages(env);
+  const menuPages = await getMenuPages(env);
+  const navButtons = await getNavButtons(env);
+  // Hero customization (see /admin/settings → "Hero & Branding") — falls
+  // back to HERO_FONT_OPTIONS[0] (Space Grotesk, the site's existing
+  // default) for any unrecognized/stale value, so a bad save can never
+  // leave the heading with no font applied at all.
+  const heroFont = HERO_FONT_OPTIONS.find(f => f.name === settings.hero_heading_font) || HERO_FONT_OPTIONS[0];
+  const heroFontGoogleParam = heroFont.name === 'Space Grotesk' ? '' : `&family=${heroFont.googleParam}`;
   let initialJobs = [], initialTotal = 0, totalJobsCount = 0, companiesCount = 0;
   try {
     const { results } = await env.DB.prepare(`SELECT * FROM jobs ORDER BY ${JOB_TYPE_SORT_SQL} ASC, featured DESC, id DESC LIMIT 20`).all();
@@ -105,17 +114,17 @@ ${ICON_HEAD}
 <script type="application/ld+json">${orgSchema}</script>
 <script type="application/ld+json">${itemListSchema}</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Space+Grotesk:wght@700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Space+Grotesk:wght@700;800&family=JetBrains+Mono:wght@500;700${heroFontGoogleParam}&display=swap" rel="stylesheet">
 <style>
 ${SHARED_CSS}
 
 /* ── HERO (navy → indigo gradient, bold headline, red CTA search) ── */
-.hero{padding:96px 24px 84px;background:linear-gradient(135deg,#1830C4 0%,#3556FF 55%,#6C3FE0 100%);position:relative;overflow:hidden}
+.hero{padding:96px 24px 84px;background:linear-gradient(135deg,${settings.hero_gradient_start} 0%,${settings.hero_gradient_mid} 55%,${settings.hero_gradient_end} 100%);position:relative;overflow:hidden}
 .hero::before{content:'';position:absolute;inset:0;background:radial-gradient(ellipse 60% 50% at 80% 0%,rgba(255,255,255,.12),transparent 60%)}
 .hero-inner{max-width:1180px;margin:0 auto;position:relative}
 .hero-eyebrow{display:inline-flex;align-items:center;gap:7px;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.22);border-radius:20px;padding:5px 13px;font-size:12px;color:#fff;font-weight:700;margin-bottom:20px}
 .hero-eyebrow-dot{width:6px;height:6px;border-radius:50%;background:var(--green);animation:pulse-dot 2s infinite}
-.hero-title{font-family:'Space Grotesk',sans-serif;font-size:54px;font-weight:800;letter-spacing:-1px;line-height:1.1;margin-bottom:20px;color:#fff;max-width:680px}
+.hero-title{font-family:'${heroFont.name}',sans-serif;font-size:54px;font-weight:800;letter-spacing:-1px;line-height:1.1;margin-bottom:20px;color:#fff;max-width:680px}
 .hero-title .hl{position:relative;display:inline-block}
 .hero-title .hl::after{content:'';position:absolute;left:0;right:0;bottom:2px;height:5px;background:var(--coral);border-radius:3px;opacity:.85;z-index:-1}
 .hero-sub{color:rgba(255,255,255,.85);font-size:16px;margin-bottom:28px;line-height:1.65;max-width:540px}
@@ -125,8 +134,8 @@ ${SHARED_CSS}
 .search-icon{position:absolute;left:16px;top:50%;transform:translateY(-50%);color:var(--ink3);pointer-events:none;font-size:15px}
 .search-input{width:100%;background:transparent;border:none;padding:13px 12px 13px 42px;color:var(--ink);font-size:15px;font-family:inherit;outline:none}
 .search-input::placeholder{color:var(--ink3)}
-.search-btn{background:var(--coral);color:#fff;border:none;border-radius:13px;padding:0 28px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;transition:all .2s;white-space:nowrap}
-.search-btn:hover{background:#e64d68;box-shadow:0 6px 16px rgba(255,92,122,.32)}
+.search-btn{background:${settings.hero_search_button_color};color:#fff;border:none;border-radius:13px;padding:0 28px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;transition:all .2s;white-space:nowrap}
+.search-btn:hover{filter:brightness(1.08);box-shadow:0 6px 16px rgba(0,0,0,.22)}
 .hero-stats{display:flex;gap:30px;flex-wrap:wrap}
 .hero-stat{display:flex;flex-direction:column}
 .hero-stat-num{font-family:'Plus Jakarta Sans',sans-serif;font-size:22px;font-weight:700;color:#fff;line-height:1.2}
@@ -232,22 +241,22 @@ ${SHARED_CSS}
 </style>
 </head>
 <body>
-${navHtml(settings)}
-${mobileHeaderHtml(settings)}
+${navHtml(settings, menuPages, navButtons)}
+${mobileHeaderHtml(settings, menuPages, navButtons)}
 
 <main>
   <!-- JOBS VIEW -->
   <div id="vJobs">
     <div class="hero">
       <div class="hero-inner">
-        <h1 class="hero-title">Find your next <span class="hl">remote job</span></h1>
-        <p class="hero-sub">Browse curated remote positions from top companies worldwide. Filter by category, country, skill, or company — or post your own opening in minutes.</p>
+        <h1 class="hero-title">${escapeHtml(settings.hero_title_line1)} <span class="hl">${escapeHtml(settings.hero_title_line2)}</span></h1>
+        <p class="hero-sub">${escapeHtml(settings.hero_subtitle)}</p>
         <div class="search-row">
           <div class="search-wrap">
             <span class="search-icon">${iconSearch({ size: 16 })}</span>
-            <input type="text" class="search-input" id="searchInput" placeholder="Job title, skill, or company..." oninput="debounceSearch(this.value)">
+            <input type="text" class="search-input" id="searchInput" placeholder="${escapeHtml(settings.hero_search_placeholder)}" oninput="debounceSearch(this.value)">
           </div>
-          <button class="search-btn" onclick="document.getElementById('searchInput').focus()">Search</button>
+          <button class="search-btn" onclick="document.getElementById('searchInput').focus()">${escapeHtml(settings.hero_search_button_text)}</button>
         </div>
       </div>
     </div>
