@@ -281,6 +281,28 @@ export async function ensureTable(env) {
       ).bind(slug, p.title, p.description, p.body, i)
     ));
   }
+  // Independent of show_in_footer — a page can appear in the footer, the
+  // site's mobile/nav menu, both, or neither. Defaults to 0 (off) so
+  // existing pages don't suddenly appear in the menu unannounced; an
+  // admin opts each one in explicitly from /admin/pages.
+  await ensureColumn(env, 'pages', 'show_in_menu', 'INTEGER DEFAULT 0');
+
+  // ── Custom menu buttons (see lib/nav-buttons.js) ──────────────────
+  // Arbitrary extra links/buttons for the site's mobile menu (and desktop
+  // nav) — label, destination, emoji icon, and a per-button color, fully
+  // admin-managed from /admin/pages without any code edit or redeploy.
+  await env.DB.prepare(`
+    CREATE TABLE IF NOT EXISTS nav_buttons (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      label TEXT NOT NULL,
+      url TEXT NOT NULL,
+      icon TEXT DEFAULT '🔗',
+      color TEXT DEFAULT '#3556FF',
+      active INTEGER DEFAULT 1,
+      sort_order INTEGER DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `).run();
 
   // ── CMS: Blog ─────────────────────────────────────────────────
   // Backs lib/blog-cms.js. Replaces the old hardcoded BLOG_POSTS
@@ -353,26 +375,6 @@ export async function ensureTable(env) {
       enabled INTEGER DEFAULT 1,
       width INTEGER,
       height INTEGER,
-      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    )
-  `).run();
-
-  // ── Salary normalization (data-quality pass, see lib/salary.js) ──
-  // Computed once at sync time from the raw `salary` text and stored here
-  // so every "hot job" check / salary filter / sort reads a plain integer
-  // instead of re-parsing free text on every request. NULL for jobs with
-  // no salary listed or text that couldn't be parsed (e.g. "Competitive").
-  await ensureColumn(env, 'jobs', 'salary_min_usd', 'INTEGER');
-  await ensureColumn(env, 'jobs', 'salary_max_usd', 'INTEGER');
-
-  // ── Custom company logo overrides (data-quality pass) ─────────────
-  // Falls back to the existing Google/DuckDuckGo favicon auto-detection
-  // in components/job-card.js's logoImgHtml() whenever a company has no
-  // row here — see lib/company-logos.js.
-  await env.DB.prepare(`
-    CREATE TABLE IF NOT EXISTS company_logos (
-      company_lower TEXT PRIMARY KEY,
-      logo_url TEXT NOT NULL,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )
   `).run();
