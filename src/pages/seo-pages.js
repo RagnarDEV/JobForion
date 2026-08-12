@@ -23,6 +23,8 @@ import { getSettings } from '../lib/settings.js';
 import { getCategories } from '../lib/categories.js';
 import { getCardStyles } from '../lib/job-card-styles.js';
 import { getLogoOverrides } from '../lib/company-logos.js';
+import { getFooterPages, getMenuPages } from '../lib/pages-cms.js';
+import { getNavButtons } from '../lib/nav-buttons.js';
 
 // Shared by every function below: resolves site settings + the dynamic
 // category list + card-style tiers (as both an ordered array and a
@@ -30,11 +32,18 @@ import { getLogoOverrides } from '../lib/company-logos.js';
 // "Post a Job" dropdown) — the exact same bundle home.js and job-page.js
 // use, so job cards rendered here (via jobCardSSR) are pixel-identical to
 // the homepage's, including any admin-customized card styles/colors.
+// footerPages/menuPages/navButtons are likewise fetched once here and
+// handed to every baseLayout() call below, so custom CMS pages and
+// admin-added menu buttons appear consistently across every directory
+// page, not just the homepage.
 async function loadPageContext(env) {
-  const [settings, categories, cardStyles] = await Promise.all([getSettings(env), getCategories(env), getCardStyles(env)]);
+  const [settings, categories, cardStyles, footerPages, menuPages, navButtons] = await Promise.all([
+    getSettings(env), getCategories(env), getCardStyles(env),
+    getFooterPages(env), getMenuPages(env), getNavButtons(env),
+  ]);
   const categoryOrder = categories.map(c => c.key);
   const categoryMap = Object.fromEntries(categories.map(c => [c.key, { label: c.label, emoji: c.emoji, color: c.color }]));
-  return { settings, categories, categoryOrder, categoryMap, cardStyles, categoryBundle: { order: categoryOrder, map: categoryMap } };
+  return { settings, categories, categoryOrder, categoryMap, cardStyles, footerPages, menuPages, navButtons, categoryBundle: { order: categoryOrder, map: categoryMap } };
 }
 
 // Renders a list of jobs as full homepage-style cards (jobCardSSR) inside
@@ -49,7 +58,7 @@ async function jobsListHtml(env, jobs, categoryMap, categoryOrder, cardStyles, e
 
 // ── /categories ──
 export async function renderCategoriesIndex(env, base) {
-  const { settings, categoryOrder, categoryMap, categoryBundle } = await loadPageContext(env);
+  const { settings, categoryOrder, categoryMap, categoryBundle, footerPages, menuPages, navButtons } = await loadPageContext(env);
   const { html: bc, jsonLd: bcSchema } = buildBreadcrumb(base, [{ name: 'Categories', path: '/categories' }]);
   const content = `<div class="page">${bc}
     <h1 style="font-family:'Space Grotesk',sans-serif;font-size:26px;font-weight:700;margin-bottom:8px;color:var(--ink)">Browse Jobs by Category</h1>
@@ -61,11 +70,11 @@ export async function renderCategoriesIndex(env, base) {
     </div>
   </div>`;
   const schema = ldJsonTag(collectionPageSchema(`Job Categories — ${settings.site_name}`, 'Browse remote jobs by category.', `${base}/categories`));
-  return baseLayout(`Browse Remote Jobs by Category — ${settings.site_name}`, 'Explore curated remote job listings grouped by discipline: development, design, marketing, data, DevOps, management and writing.', `${base}/categories`, '', content, schema + bcSchema, 'index, follow', settings, categoryBundle);
+  return baseLayout(`Browse Remote Jobs by Category — ${settings.site_name}`, 'Explore curated remote job listings grouped by discipline: development, design, marketing, data, DevOps, management and writing.', `${base}/categories`, '', content, schema + bcSchema, 'index, follow', settings, categoryBundle, footerPages, menuPages, navButtons);
 }
 
 export async function renderCategoryDetail(env, base, key) {
-  const { settings, categoryMap, categoryOrder, cardStyles, categoryBundle } = await loadPageContext(env);
+  const { settings, categoryMap, categoryOrder, cardStyles, categoryBundle, footerPages, menuPages, navButtons } = await loadPageContext(env);
   const meta = categoryMap[key];
   if (!meta) return null;
   const { results } = await env.DB.prepare(`SELECT * FROM jobs WHERE LOWER(title) LIKE ? ORDER BY ${JOB_TYPE_SORT_SQL} ASC, id DESC LIMIT 60`).bind(`%${key}%`).all();
@@ -78,12 +87,12 @@ export async function renderCategoryDetail(env, base, key) {
   </div>`;
   const desc = truncateDescription(`Browse ${(results || []).length} remote ${meta.label.toLowerCase()} jobs updated hourly. Filter by seniority, salary, and location on ${settings.site_name}.`);
   const schema = ldJsonTag(itemListSchema((results || []).slice(0, 20).map(j => ({ url: `${base}/job/${j.id}` }))));
-  return baseLayout(`${meta.label} Remote Jobs — ${settings.site_name}`, desc, `${base}/categories/${key}`, '', content, schema + bcSchema, 'index, follow', settings, categoryBundle);
+  return baseLayout(`${meta.label} Remote Jobs — ${settings.site_name}`, desc, `${base}/categories/${key}`, '', content, schema + bcSchema, 'index, follow', settings, categoryBundle, footerPages, menuPages, navButtons);
 }
 
 // ── /companies ──
 export async function renderCompaniesIndex(env, base) {
-  const { settings, categoryBundle } = await loadPageContext(env);
+  const { settings, categoryBundle, footerPages, menuPages, navButtons } = await loadPageContext(env);
   const companies = await listCompanies(env, { limit: 200 });
   const { html: bc, jsonLd: bcSchema } = buildBreadcrumb(base, [{ name: 'Companies', path: '/companies' }]);
   const content = `<div class="page">${bc}
@@ -92,11 +101,11 @@ export async function renderCompaniesIndex(env, base) {
     ${directoryGridHtml(companies, '/companies')}
   </div>`;
   const schema = ldJsonTag(collectionPageSchema(`Companies Hiring Remotely — ${settings.site_name}`, 'Directory of companies with active remote job listings.', `${base}/companies`));
-  return baseLayout(`Companies Hiring Remotely — ${settings.site_name}`, `Browse ${companies.length} companies with active remote job openings, updated hourly on ${settings.site_name}.`, `${base}/companies`, '', content, schema + bcSchema, 'index, follow', settings, categoryBundle);
+  return baseLayout(`Companies Hiring Remotely — ${settings.site_name}`, `Browse ${companies.length} companies with active remote job openings, updated hourly on ${settings.site_name}.`, `${base}/companies`, '', content, schema + bcSchema, 'index, follow', settings, categoryBundle, footerPages, menuPages, navButtons);
 }
 
 export async function renderCompanyDetail(env, base, slug) {
-  const { settings, categoryMap, categoryOrder, cardStyles, categoryBundle } = await loadPageContext(env);
+  const { settings, categoryMap, categoryOrder, cardStyles, categoryBundle, footerPages, menuPages, navButtons } = await loadPageContext(env);
   const company = await findCompanyBySlug(env, slug);
   if (!company) return null;
   const jobs = await jobsByCompany(env, company.name, { limit: 60 });
@@ -123,7 +132,7 @@ export async function renderCompanyDetail(env, base, slug) {
   // Search Console. noindex it (still crawlable/linked, just excluded from
   // the index) until it has enough real content to be worth ranking.
   const robots = jobs.length >= MIN_JOBS_FOR_INDEXING ? 'index, follow' : 'noindex, follow';
-  return baseLayout(`Remote Jobs at ${company.name} — ${settings.site_name}`, desc, `${base}/companies/${slug}`, '', content, schema + bcSchema, robots, settings, categoryBundle);
+  return baseLayout(`Remote Jobs at ${company.name} — ${settings.site_name}`, desc, `${base}/companies/${slug}`, '', content, schema + bcSchema, robots, settings, categoryBundle, footerPages, menuPages, navButtons);
 }
 
 // ── /countries ──
@@ -133,7 +142,7 @@ export async function renderCompanyDetail(env, base, slug) {
 // Every country name is prefixed with a flag emoji via countryFlag()
 // (lib/country-flags.js), both in the directory grid and the detail heading.
 export async function renderCountriesIndex(env, base) {
-  const { settings, categoryBundle } = await loadPageContext(env);
+  const { settings, categoryBundle, footerPages, menuPages, navButtons } = await loadPageContext(env);
   const countries = await listCountries(env, { limit: 200 });
   const { html: bc, jsonLd: bcSchema } = buildBreadcrumb(base, [{ name: 'Countries', path: '/countries' }]);
   const content = `<div class="page">${bc}
@@ -142,11 +151,11 @@ export async function renderCountriesIndex(env, base) {
     ${directoryGridHtml(countries, '/countries', (c) => `<span aria-hidden="true">${countryFlag(c.name)}</span> `)}
   </div>`;
   const schema = ldJsonTag(collectionPageSchema(`Countries — ${settings.site_name}`, 'Browse remote jobs by country or region.', `${base}/countries`));
-  return baseLayout(`Browse Remote Jobs by Country — ${settings.site_name}`, `Explore remote job listings across ${countries.length} countries and regions, updated hourly on ${settings.site_name}.`, `${base}/countries`, '', content, schema + bcSchema, 'index, follow', settings, categoryBundle);
+  return baseLayout(`Browse Remote Jobs by Country — ${settings.site_name}`, `Explore remote job listings across ${countries.length} countries and regions, updated hourly on ${settings.site_name}.`, `${base}/countries`, '', content, schema + bcSchema, 'index, follow', settings, categoryBundle, footerPages, menuPages, navButtons);
 }
 
 export async function renderCountryDetail(env, base, slug) {
-  const { settings, categoryMap, categoryOrder, cardStyles, categoryBundle } = await loadPageContext(env);
+  const { settings, categoryMap, categoryOrder, cardStyles, categoryBundle, footerPages, menuPages, navButtons } = await loadPageContext(env);
   const country = await findCountryBySlug(env, slug);
   if (!country) return null;
   const jobs = await jobsByRegion(env, country.rawNames || country.name, { limit: 60 });
@@ -165,12 +174,12 @@ export async function renderCountryDetail(env, base, slug) {
   const schema = ldJsonTag(itemListSchema(jobs.slice(0, 20).map(j => ({ url: `${base}/job/${j.id}` }))));
   // THIN CONTENT: see the identical note on renderCompanyDetail above.
   const robots = jobs.length >= MIN_JOBS_FOR_INDEXING ? 'index, follow' : 'noindex, follow';
-  return baseLayout(`Remote Jobs in ${country.name} — ${settings.site_name}`, desc, `${base}/countries/${slug}`, '', content, schema + bcSchema, robots, settings, categoryBundle);
+  return baseLayout(`Remote Jobs in ${country.name} — ${settings.site_name}`, desc, `${base}/countries/${slug}`, '', content, schema + bcSchema, robots, settings, categoryBundle, footerPages, menuPages, navButtons);
 }
 
 // ── /skills ──
 export async function renderSkillsIndex(env, base) {
-  const { settings, categoryBundle } = await loadPageContext(env);
+  const { settings, categoryBundle, footerPages, menuPages, navButtons } = await loadPageContext(env);
   const skills = await listSkills(env, { limit: 200 });
   const { html: bc, jsonLd: bcSchema } = buildBreadcrumb(base, [{ name: 'Skills', path: '/skills' }]);
   const content = `<div class="page">${bc}
@@ -179,11 +188,11 @@ export async function renderSkillsIndex(env, base) {
     ${directoryGridHtml(skills, '/skills')}
   </div>`;
   const schema = ldJsonTag(collectionPageSchema(`Skills — ${settings.site_name}`, 'Browse remote jobs by required skill.', `${base}/skills`));
-  return baseLayout(`Browse Remote Jobs by Skill — ${settings.site_name}`, `Explore ${skills.length} in-demand skills across current remote job listings on ${settings.site_name}.`, `${base}/skills`, '', content, schema + bcSchema, 'index, follow', settings, categoryBundle);
+  return baseLayout(`Browse Remote Jobs by Skill — ${settings.site_name}`, `Explore ${skills.length} in-demand skills across current remote job listings on ${settings.site_name}.`, `${base}/skills`, '', content, schema + bcSchema, 'index, follow', settings, categoryBundle, footerPages, menuPages, navButtons);
 }
 
 export async function renderSkillDetail(env, base, slug) {
-  const { settings, categoryMap, categoryOrder, cardStyles, categoryBundle } = await loadPageContext(env);
+  const { settings, categoryMap, categoryOrder, cardStyles, categoryBundle, footerPages, menuPages, navButtons } = await loadPageContext(env);
   const skill = await findSkillBySlug(env, slug);
   if (!skill) return null;
   const jobs = await jobsBySkill(env, skill.rawNames || skill.name, { limit: 60 });
@@ -201,12 +210,12 @@ export async function renderSkillDetail(env, base, slug) {
   const schema = ldJsonTag(itemListSchema(jobs.slice(0, 20).map(j => ({ url: `${base}/job/${j.id}` }))));
   // THIN CONTENT: see the identical note on renderCompanyDetail above.
   const robots = jobs.length >= MIN_JOBS_FOR_INDEXING ? 'index, follow' : 'noindex, follow';
-  return baseLayout(`Remote ${skill.name} Jobs — ${settings.site_name}`, desc, `${base}/skills/${slug}`, '', content, schema + bcSchema, robots, settings, categoryBundle);
+  return baseLayout(`Remote ${skill.name} Jobs — ${settings.site_name}`, desc, `${base}/skills/${slug}`, '', content, schema + bcSchema, robots, settings, categoryBundle, footerPages, menuPages, navButtons);
 }
 
 // ── /search/:query — indexable only when it returns real content ──
 export async function renderSearchPage(env, base, query) {
-  const { settings, categoryMap, categoryOrder, cardStyles, categoryBundle } = await loadPageContext(env);
+  const { settings, categoryMap, categoryOrder, cardStyles, categoryBundle, footerPages, menuPages, navButtons } = await loadPageContext(env);
   const q = decodeURIComponent(query || '').trim();
   const { results } = await env.DB.prepare(
     `SELECT * FROM jobs WHERE LOWER(title) LIKE ? OR LOWER(company) LIKE ? OR LOWER(location) LIKE ? ORDER BY ${JOB_TYPE_SORT_SQL} ASC, id DESC LIMIT 50`
@@ -232,5 +241,5 @@ export async function renderSearchPage(env, base, query) {
   const schema = hasResults ? ldJsonTag(itemListSchema(results.slice(0, 20).map(j => ({ url: `${base}/job/${j.id}` })))) : '';
   // thin/empty search pages are noindexed to avoid low-quality-page SEO penalties
   const robots = hasResults ? 'index, follow' : 'noindex, follow';
-  return baseLayout(`Remote "${q}" Jobs — ${settings.site_name}`, desc, `${base}/search/${encodeURIComponent(q)}`, '', content, schema + bcSchema, robots, settings, categoryBundle);
+  return baseLayout(`Remote "${q}" Jobs — ${settings.site_name}`, desc, `${base}/search/${encodeURIComponent(q)}`, '', content, schema + bcSchema, robots, settings, categoryBundle, footerPages, menuPages, navButtons);
 }
