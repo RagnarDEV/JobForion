@@ -48,7 +48,38 @@ export const SETTINGS_DEFAULTS = {
   sync_warmup_threshold: '150',
   sync_warmup_cap_per_provider: '15',
   sync_hard_cap_per_provider: '100',
+
+  // ── Hero section customization (homepage) ─────────────────────────
+  // Every field here is rendered by pages/home.js's hero block. Colors
+  // are plain hex strings so they can feed straight into <input
+  // type="color"> on the admin form without any parsing/formatting step.
+  hero_title_line1: 'Find your next',
+  hero_title_line2: 'remote job',
+  hero_subtitle: 'Browse curated remote positions from top companies worldwide. Filter by category, country, skill, or company — or post your own opening in minutes.',
+  hero_gradient_start: '#1830C4',
+  hero_gradient_mid: '#3556FF',
+  hero_gradient_end: '#6C3FE0',
+  hero_search_placeholder: 'Job title, skill, or company...',
+  hero_search_button_text: 'Search',
+  hero_search_button_color: '#FF5C7A',
+  // One of the curated options in HERO_FONT_OPTIONS below — anything else
+  // silently falls back to the first option, so a bad/stale value can
+  // never break the Google Fonts <link> or leave the heading unstyled.
+  hero_heading_font: 'Space Grotesk',
 };
+
+// Curated so the admin picker is a safe dropdown, never free text — a
+// mistyped font name would silently fall back to the browser default with
+// no visible error. Each entry is exactly what's needed to build both the
+// Google Fonts URL and the CSS font-family declaration.
+export const HERO_FONT_OPTIONS = [
+  { name: 'Space Grotesk', googleParam: 'Space+Grotesk:wght@700;800' },
+  { name: 'Poppins', googleParam: 'Poppins:wght@700;800' },
+  { name: 'Inter', googleParam: 'Inter:wght@700;800' },
+  { name: 'Sora', googleParam: 'Sora:wght@700;800' },
+  { name: 'Manrope', googleParam: 'Manrope:wght@700;800' },
+  { name: 'Outfit', googleParam: 'Outfit:wght@700;800' },
+];
 
 // Keys the general Settings form is allowed to write. Kept as an
 // explicit allow-list (rather than accepting any posted field name) so
