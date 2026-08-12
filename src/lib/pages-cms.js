@@ -59,13 +59,23 @@ export async function getFooterPages(env) {
   return results || [];
 }
 
+// Same idea as getFooterPages(), for the site's mobile/nav menu instead —
+// see the show_in_menu column added in db/schema.js. A page can appear in
+// the footer, the menu, both, or neither, independently.
+export async function getMenuPages(env) {
+  const { results } = await env.DB.prepare(
+    `SELECT slug, title FROM pages WHERE ${EFFECTIVE_STATUS_SQL} AND show_in_menu = 1 ORDER BY sort_order ASC, title ASC`
+  ).all();
+  return results || [];
+}
+
 export async function getPageBySlug(env, slug, { includeUnpublished = false } = {}) {
   const where = includeUnpublished ? 'slug = ?' : `slug = ? AND ${EFFECTIVE_STATUS_SQL}`;
   const { results } = await env.DB.prepare(`SELECT * FROM pages WHERE ${where}`).bind(slug).all();
   return results?.[0] || null;
 }
 
-export async function createPage(env, { slug, title, meta_description, body, status, scheduled_at, show_in_footer }) {
+export async function createPage(env, { slug, title, meta_description, body, status, scheduled_at, show_in_footer, show_in_menu }) {
   const cleanSlug = String(slug || '').trim().toLowerCase();
   validateSlug(cleanSlug);
   const cleanTitle = String(title || '').trim().slice(0, 150);
@@ -75,26 +85,26 @@ export async function createPage(env, { slug, title, meta_description, body, sta
   const { results } = await env.DB.prepare('SELECT COALESCE(MAX(sort_order), -1) AS m FROM pages').all();
   const nextOrder = (results?.[0]?.m ?? -1) + 1;
   await env.DB.prepare(
-    `INSERT INTO pages (slug, title, meta_description, body, status, scheduled_at, show_in_footer, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO pages (slug, title, meta_description, body, status, scheduled_at, show_in_footer, show_in_menu, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).bind(
     cleanSlug, cleanTitle, String(meta_description || '').slice(0, 300), String(body || ''),
     ['published', 'draft', 'scheduled'].includes(status) ? status : 'draft',
     status === 'scheduled' ? (scheduled_at || null) : null,
-    show_in_footer ? 1 : 0, nextOrder
+    show_in_footer ? 1 : 0, show_in_menu ? 1 : 0, nextOrder
   ).run();
 }
 
-export async function updatePage(env, slug, { title, meta_description, body, status, scheduled_at, show_in_footer }) {
+export async function updatePage(env, slug, { title, meta_description, body, status, scheduled_at, show_in_footer, show_in_menu }) {
   validateSlug(slug);
   const cleanTitle = String(title || '').trim().slice(0, 150);
   if (!cleanTitle) throw new Error('Title is required.');
   await env.DB.prepare(
-    `UPDATE pages SET title = ?, meta_description = ?, body = ?, status = ?, scheduled_at = ?, show_in_footer = ?, updated_at = CURRENT_TIMESTAMP WHERE slug = ?`
+    `UPDATE pages SET title = ?, meta_description = ?, body = ?, status = ?, scheduled_at = ?, show_in_footer = ?, show_in_menu = ?, updated_at = CURRENT_TIMESTAMP WHERE slug = ?`
   ).bind(
     cleanTitle, String(meta_description || '').slice(0, 300), String(body || ''),
     ['published', 'draft', 'scheduled'].includes(status) ? status : 'draft',
     status === 'scheduled' ? (scheduled_at || null) : null,
-    show_in_footer ? 1 : 0, slug
+    show_in_footer ? 1 : 0, show_in_menu ? 1 : 0, slug
   ).run();
 }
 
