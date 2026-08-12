@@ -12,7 +12,7 @@
 
 import { makeAdminCookie, verifyAdminCookie } from '../auth/admin-auth.js';
 import { renderAdminLogin, renderAdminDashboard } from '../pages/admin.js';
-import { insertApiSource, backfillSalaryUsd } from '../db/sync.js';
+import { insertApiSource } from '../db/sync.js';
 import { cleanupStaleJobs } from '../db/cleanup.js';
 import { renderJobsListContent, renderJobEditContent, renderDuplicatesContent } from '../pages/admin/jobs.js';
 import { renderCompaniesListContent } from '../pages/admin/companies.js';
@@ -29,10 +29,10 @@ import { setSettings, SETTINGS_KEYS } from '../lib/settings.js';
 import { createCategory, updateCategory, deleteCategory, moveCategory } from '../lib/categories.js';
 import { setOverride, clearOverride, DIRECTORY_KINDS } from '../lib/directory-overrides.js';
 import { getPageBySlug, createPage, updatePage, deletePage, movePage } from '../lib/pages-cms.js';
+import { createNavButton, updateNavButton, deleteNavButton } from '../lib/nav-buttons.js';
 import { getPostById, createPost, updatePost, deletePost } from '../lib/blog-cms.js';
 import { updateCardStyle, resetCardStyle, CARD_STYLE_JOB_TYPES } from '../lib/job-card-styles.js';
 import { updateAdSlot, resetAdSlot, AD_SLOT_DEFS } from '../lib/ad-slots.js';
-import { setCompanyLogo, removeCompanyLogo } from '../lib/company-logos.js';
 
 function errorPage(err) {
   const msg = (err && err.message ? err.message : String(err)).replace(/</g, '&lt;');
@@ -194,33 +194,6 @@ export async function handleAdminRoute(url, request, env, base) {
         await env.DB.prepare("DELETE FROM hidden_companies WHERE company_lower = ?").bind(company.toLowerCase()).run();
       }
       return new Response(null, { status: 302, headers: { 'Location': `/admin/companies?flash=${encodeURIComponent('Company unhidden')}` } });
-    } catch (e) { return errorPage(e); }
-  }
-
-  // Custom company logo (see lib/company-logos.js) — falls back to the
-  // existing favicon auto-detection whenever no row exists for a company.
-  if (url.pathname === '/admin/companies/logo/set' && request.method === 'POST') {
-    try {
-      const ok = await verifyAdminCookie(env, request.headers.get('Cookie'));
-      if (!ok) return new Response('Unauthorized', { status: 401 });
-      const form = await request.formData();
-      const company = (form.get('company') || '').toString().trim();
-      const logoUrl = (form.get('logo_url') || '').toString().trim().slice(0, 500);
-      if (company && logoUrl) {
-        await setCompanyLogo(env, company, logoUrl);
-      }
-      return new Response(null, { status: 302, headers: { 'Location': `/admin/companies?flash=${encodeURIComponent('Logo saved')}` } });
-    } catch (e) { return errorPage(e); }
-  }
-
-  if (url.pathname === '/admin/companies/logo/remove' && request.method === 'POST') {
-    try {
-      const ok = await verifyAdminCookie(env, request.headers.get('Cookie'));
-      if (!ok) return new Response('Unauthorized', { status: 401 });
-      const form = await request.formData();
-      const company = (form.get('company') || '').toString().trim();
-      if (company) await removeCompanyLogo(env, company);
-      return new Response(null, { status: 302, headers: { 'Location': `/admin/companies?flash=${encodeURIComponent('Logo removed')}` } });
     } catch (e) { return errorPage(e); }
   }
 
@@ -394,6 +367,7 @@ export async function handleAdminRoute(url, request, env, base) {
         status: (form.get('status') || '').toString(),
         scheduled_at: (form.get('scheduled_at') || '').toString(),
         show_in_footer: !!form.get('show_in_footer'),
+        show_in_menu: !!form.get('show_in_menu'),
       });
       return new Response(null, { status: 302, headers: { 'Location': `/admin/pages?flash=${encodeURIComponent('Page created')}` } });
     } catch (e) { return errorPage(e); }
@@ -412,6 +386,7 @@ export async function handleAdminRoute(url, request, env, base) {
         status: (form.get('status') || '').toString(),
         scheduled_at: (form.get('scheduled_at') || '').toString(),
         show_in_footer: !!form.get('show_in_footer'),
+        show_in_menu: !!form.get('show_in_menu'),
       });
       return new Response(null, { status: 302, headers: { 'Location': `/admin/pages/edit?slug=${encodeURIComponent(slug)}&flash=${encodeURIComponent('Saved')}` } });
     } catch (e) { return errorPage(e); }
@@ -434,6 +409,46 @@ export async function handleAdminRoute(url, request, env, base) {
       const form = await request.formData();
       await deletePage(env, (form.get('slug') || '').toString());
       return new Response(null, { status: 302, headers: { 'Location': `/admin/pages?flash=${encodeURIComponent('Page deleted')}` } });
+    } catch (e) { return errorPage(e); }
+  }
+
+  // ── Custom menu buttons (see lib/nav-buttons.js) — managed from the
+  // same /admin/pages screen since both control what appears in the
+  // site's nav/menu. ──────────────────────────────────────────────
+  if (url.pathname === '/admin/nav-buttons/create' && request.method === 'POST') {
+    try {
+      const ok = await verifyAdminCookie(env, request.headers.get('Cookie'));
+      if (!ok) return new Response('Unauthorized', { status: 401 });
+      const form = await request.formData();
+      await createNavButton(env, {
+        label: (form.get('label') || '').toString(),
+        url: (form.get('url') || '').toString(),
+        icon: (form.get('icon') || '').toString(),
+        color: (form.get('color') || '').toString(),
+      });
+      return new Response(null, { status: 302, headers: { 'Location': `/admin/pages?flash=${encodeURIComponent('Button added')}` } });
+    } catch (e) { return errorPage(e); }
+  }
+
+  if (url.pathname === '/admin/nav-buttons/toggle' && request.method === 'POST') {
+    try {
+      const ok = await verifyAdminCookie(env, request.headers.get('Cookie'));
+      if (!ok) return new Response('Unauthorized', { status: 401 });
+      const form = await request.formData();
+      const id = form.get('id');
+      if (id) await env.DB.prepare('UPDATE nav_buttons SET active = CASE WHEN active = 1 THEN 0 ELSE 1 END WHERE id = ?').bind(id).run();
+      return new Response(null, { status: 302, headers: { 'Location': '/admin/pages' } });
+    } catch (e) { return errorPage(e); }
+  }
+
+  if (url.pathname === '/admin/nav-buttons/delete' && request.method === 'POST') {
+    try {
+      const ok = await verifyAdminCookie(env, request.headers.get('Cookie'));
+      if (!ok) return new Response('Unauthorized', { status: 401 });
+      const form = await request.formData();
+      const id = form.get('id');
+      if (id) await deleteNavButton(env, id);
+      return new Response(null, { status: 302, headers: { 'Location': `/admin/pages?flash=${encodeURIComponent('Button deleted')}` } });
     } catch (e) { return errorPage(e); }
   }
 
@@ -679,22 +694,6 @@ export async function handleAdminRoute(url, request, env, base) {
       const days = Math.max(7, parseInt(form.get('days') || '45', 10) || 45);
       const r = await env.DB.prepare(`DELETE FROM jobs WHERE created_at < datetime('now', '-' || ? || ' day')`).bind(days).run();
       return new Response(null, { status: 302, headers: { 'Location': `/admin/jobs?flash=${encodeURIComponent(`Deleted ${r.meta?.changes || 0} stale jobs`)}` } });
-    } catch (e) { return errorPage(e); }
-  }
-
-  // Bounded backfill (300 rows/click) of salary_min_usd/salary_max_usd for
-  // jobs synced before that normalization existed — see
-  // db/sync.js:backfillSalaryUsd() for why this is intentionally bounded
-  // rather than processing the whole table in one request.
-  if (url.pathname === '/admin/jobs/backfill-salary' && request.method === 'POST') {
-    try {
-      const ok = await verifyAdminCookie(env, request.headers.get('Cookie'));
-      if (!ok) return new Response('Unauthorized', { status: 401 });
-      const { processed, remaining } = await backfillSalaryUsd(env, { batchSize: 300 });
-      const msg = remaining > 0
-        ? `تمت معالجة ${processed} وظيفة — تبقّى ${remaining}، اضغط الزر مجدداً لمتابعة التعبئة`
-        : `تمت معالجة ${processed} وظيفة — اكتملت التعبئة الرجعية بالكامل ✅`;
-      return new Response(null, { status: 302, headers: { 'Location': `/admin/jobs?flash=${encodeURIComponent(msg)}` } });
     } catch (e) { return errorPage(e); }
   }
 
