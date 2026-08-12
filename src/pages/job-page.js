@@ -10,7 +10,8 @@ import { getSettings } from '../lib/settings.js';
 import { getCategories } from '../lib/categories.js';
 import { getCardStyles } from '../lib/job-card-styles.js';
 import { getAdSlotsConfig } from '../lib/ad-slots.js';
-import { getFooterPages } from '../lib/pages-cms.js';
+import { getFooterPages, getMenuPages } from '../lib/pages-cms.js';
+import { getNavButtons } from '../lib/nav-buttons.js';
 import { getLogoOverrides } from '../lib/company-logos.js';
 
 // SECURITY: JSON.stringify() does NOT escape "<", so a malicious job title
@@ -84,6 +85,8 @@ export async function renderJobPage(job, related, base, env) {
   const [categories, settings, cardStyles] = await Promise.all([getCategories(env), getSettings(env), getCardStyles(env)]);
   const adConfig = await getAdSlotsConfig(env);
   const footerPages = await getFooterPages(env);
+  const menuPages = await getMenuPages(env);
+  const navButtons = await getNavButtons(env);
   // Custom logo overrides (see /admin/companies → lib/company-logos.js) —
   // one small batch query for this job's own company plus every related
   // job's company, so every logo on the page (not just the header) can
@@ -202,5 +205,5 @@ export async function renderJobPage(job, related, base, env) {
   refreshBtn();
 })();
 </script>`;
-  return baseLayout(`${job.title} at ${job.company} — ${settings.site_name}`, desc, canonical, '', content, `<script type="application/ld+json">${schema}</script><script type="application/ld+json">${breadcrumbSchema}</script>`, 'index, follow', settings, { order: categoryOrder, map: categoryMap }, footerPages);
+  return baseLayout(`${job.title} at ${job.company} — ${settings.site_name}`, desc, canonical, '', content, `<script type="application/ld+json">${schema}</script><script type="application/ld+json">${breadcrumbSchema}</script>`, 'index, follow', settings, { order: categoryOrder, map: categoryMap }, footerPages, menuPages, navButtons);
 }
