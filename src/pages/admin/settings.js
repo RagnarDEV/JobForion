@@ -18,6 +18,22 @@ function field(label, name, value, opts = {}) {
   </label>`;
 }
 
+// Renders one Feature Flag checkbox row. Uses the SAME '1'/'0' string
+// convention as maintenance_mode/ads_enabled — see lib/settings.js —
+// and the SAME allow-list save path (SETTINGS_KEYS) in
+// admin.router.js's /admin/settings/update handler, so a flag here is
+// never a parallel system, just another entry in the existing one.
+function featureFlag(name, label, value, hint) {
+  const on = value !== '0';
+  return `<label style="display:flex;align-items:flex-start;gap:9px;padding:8px 0;cursor:pointer">
+    <input type="checkbox" name="${name}" value="1" ${on ? 'checked' : ''} style="width:17px;height:17px;margin-top:1px;flex-shrink:0">
+    <span>
+      <span style="font-size:12.5px;font-weight:700;color:var(--ink);display:block">${label}</span>
+      ${hint ? `<span style="font-size:10.5px;color:var(--ink3)">${hint}</span>` : ''}
+    </span>
+  </label>`;
+}
+
 export async function renderSettingsContent(env) {
   const s = await getSettings(env);
 
@@ -130,6 +146,18 @@ export async function renderSettingsContent(env) {
           <textarea class="adm-input" name="maintenance_message" style="width:100%;min-height:80px;font-family:inherit">${escapeHtml(s.maintenance_message)}</textarea>
         </label>
         <div style="font-size:11px;color:var(--ink3);margin-top:8px">While enabled, every public page returns HTTP 503 with this message. The admin panel (this page included) always stays reachable so you can turn it back off.</div>
+      </div>
+
+      <div class="adm-card">
+        <div class="adm-card-title">Feature Flags <span style="font-weight:400;color:var(--ink3);font-size:12px">— turn whole sections of the site on/off without a redeploy</span></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 20px">
+          ${featureFlag('feature_blog', 'Blog', s.feature_blog, 'Enforced now — /blog 404s site-wide when off.')}
+          ${featureFlag('feature_job_alerts', 'Job Alerts', s.feature_job_alerts, 'Enforced now — the subscribe form returns a disabled message when off.')}
+          ${featureFlag('feature_company_pages', 'Company Pages', s.feature_company_pages, 'Flag ready — route-level enforcement is next up.')}
+          ${featureFlag('feature_country_pages', 'Country Pages', s.feature_country_pages, 'Flag ready — route-level enforcement is next up.')}
+          ${featureFlag('feature_skill_pages', 'Skill Pages', s.feature_skill_pages, 'Flag ready — route-level enforcement is next up.')}
+          ${featureFlag('feature_featured_jobs', 'Featured Jobs Badges', s.feature_featured_jobs, 'Flag ready — route-level enforcement is next up.')}
+        </div>
       </div>
 
       <div style="display:flex;gap:10px">

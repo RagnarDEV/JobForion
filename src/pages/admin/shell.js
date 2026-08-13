@@ -9,21 +9,50 @@
 
 import { ICON_HEAD } from '../../assets/favicon.js';
 import { SHARED_CSS } from '../../styles/shared-css.js';
+import {
+  iconLayoutDashboard, iconBriefcase, iconBuilding, iconPlug, iconTag, iconGlobe,
+  iconFileText, iconEdit3, iconPalette, iconSettingsGear, iconMegaphone,
+  iconServer, iconShieldCheck, iconLogOut,
+} from '../../assets/icons.js';
 
-const NAV_ITEMS = [
-  { id: 'dashboard', label: 'Dashboard', icon: '📊', href: '/admin' },
-  { id: 'jobs', label: 'Jobs', icon: '💼', href: '/admin/jobs' },
-  { id: 'companies', label: 'Companies', icon: '🏢', href: '/admin/companies' },
-  { id: 'categories', label: 'Categories', icon: '🗂️', href: '/admin/categories' },
-  { id: 'directory', label: 'Directory', icon: '🌐', href: '/admin/directory' },
-  { id: 'pages', label: 'Pages', icon: '📄', href: '/admin/pages' },
-  { id: 'blog', label: 'Blog', icon: '📝', href: '/admin/blog' },
-  { id: 'card-styles', label: 'Card Styles', icon: '🎨', href: '/admin/card-styles' },
-  { id: 'ads', label: 'Ads', icon: '📢', href: '/admin/ads' },
-  { id: 'settings', label: 'Settings', icon: '⚙️', href: '/admin/settings' },
-  // Future phases plug in here, e.g.:
-  // { id: 'theme', label: 'Theme', icon: '🖌️', href: '/admin/theme' },
+// ── Admin Dashboard V2 sidebar IA ──────────────────────────────────
+// Grouped to mirror the site's real management surface (Overview / Jobs &
+// Companies / Job Sources / Taxonomy & Directory / Content / Website /
+// Monetization / System / Security) instead of one flat list. Adding a
+// future admin page is still "one entry in the right group" — no new
+// architecture, just a clearer map of what's already here.
+const NAV_GROUPS = [
+  { title: 'Overview', items: [
+    { id: 'dashboard', label: 'Dashboard', icon: iconLayoutDashboard, href: '/admin' },
+  ]},
+  { title: 'Jobs & Companies', items: [
+    { id: 'jobs', label: 'Jobs', icon: iconBriefcase, href: '/admin/jobs' },
+    { id: 'companies', label: 'Companies', icon: iconBuilding, href: '/admin/companies' },
+    { id: 'sources', label: 'Job Sources', icon: iconPlug, href: '/admin/sources' },
+  ]},
+  { title: 'Taxonomy & Directory', items: [
+    { id: 'categories', label: 'Categories', icon: iconTag, href: '/admin/categories' },
+    { id: 'directory', label: 'Directory', icon: iconGlobe, href: '/admin/directory' },
+  ]},
+  { title: 'Content', items: [
+    { id: 'pages', label: 'Pages', icon: iconFileText, href: '/admin/pages' },
+    { id: 'blog', label: 'Blog', icon: iconEdit3, href: '/admin/blog' },
+  ]},
+  { title: 'Website', items: [
+    { id: 'card-styles', label: 'Card Styles', icon: iconPalette, href: '/admin/card-styles' },
+    { id: 'settings', label: 'Settings', icon: iconSettingsGear, href: '/admin/settings' },
+  ]},
+  { title: 'Monetization', items: [
+    { id: 'ads', label: 'Ads', icon: iconMegaphone, href: '/admin/ads' },
+  ]},
+  { title: 'System & Security', items: [
+    { id: 'system', label: 'System', icon: iconServer, href: '/admin/system' },
+    { id: 'security', label: 'Security', icon: iconShieldCheck, href: '/admin/security' },
+  ]},
 ];
+// Flat list — used for the mobile horizontal nav (no grouping there, same
+// as before) and to find the active item's label/group.
+const NAV_ITEMS = NAV_GROUPS.flatMap(g => g.items);
 
 const DARK_THEME_CSS = `
 [data-theme="dark"]{
@@ -52,10 +81,14 @@ const SHELL_CSS = `
 .skeleton{background:linear-gradient(90deg,var(--surface2) 25%,var(--border) 50%,var(--surface2) 75%);background-size:200% 100%;animation:skel 1.3s ease-in-out infinite;border-radius:8px}
 @keyframes skel{0%{background-position:200% 0}100%{background-position:-200% 0}}
 .adm-mobile-nav{display:none}
+.adm-nav-group-title{font-size:10px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:var(--ink3);padding:14px 10px 6px}
+.adm-nav-group-title:first-child{padding-top:2px}
+.adm-nav-link svg{flex-shrink:0}
+.adm-sidebar-footer{margin-top:10px;padding-top:10px;border-top:1px solid var(--border)}
 @media(max-width:768px){
   .adm-sidebar{display:none}
   .adm-mobile-nav{display:flex;gap:8px;overflow-x:auto;padding:10px 14px;border-bottom:1px solid var(--border);background:var(--surface)}
-  .adm-mobile-nav a{flex-shrink:0;padding:7px 14px;border-radius:20px;background:var(--surface2);color:var(--ink2);font-size:12.5px;font-weight:700;text-decoration:none;white-space:nowrap}
+  .adm-mobile-nav a{flex-shrink:0;display:inline-flex;align-items:center;gap:5px;padding:7px 14px;border-radius:20px;background:var(--surface2);color:var(--ink2);font-size:12.5px;font-weight:700;text-decoration:none;white-space:nowrap}
   .adm-mobile-nav a.active{background:var(--brand);color:#fff}
 }
 `;
@@ -167,11 +200,17 @@ export function adminShell(activeId, content) {
 <div class="adm-shell">
   <aside class="adm-sidebar">
     <div class="adm-logo"><img src="/favicon.svg" alt="JobForion">JobForion</div>
-    ${NAV_ITEMS.map(n => `<a href="${n.href}" class="adm-nav-link${n.id === activeId ? ' active' : ''}">${n.icon} ${n.label}</a>`).join('')}
+    ${NAV_GROUPS.map(g => `
+      <div class="adm-nav-group-title">${g.title}</div>
+      ${g.items.map(n => `<a href="${n.href}" class="adm-nav-link${n.id === activeId ? ' active' : ''}">${n.icon({ size: 15 })} ${n.label}</a>`).join('')}
+    `).join('')}
+    <div class="adm-sidebar-footer">
+      <a href="/admin/logout" class="adm-nav-link">${iconLogOut({ size: 15 })} Logout</a>
+    </div>
   </aside>
   <main class="adm-main">
     <nav class="adm-mobile-nav">
-      ${NAV_ITEMS.map(n => `<a href="${n.href}" class="${n.id === activeId ? ' active' : ''}">${n.icon} ${n.label}</a>`).join('')}
+      ${NAV_ITEMS.map(n => `<a href="${n.href}" class="${n.id === activeId ? 'active' : ''}">${n.icon({ size: 13 })} ${n.label}</a>`).join('')}
     </nav>
     <div class="adm-topbar">
       <button class="theme-toggle" id="themeToggleBtn" onclick="jnToggleTheme()" title="Toggle dark mode">🌙</button>

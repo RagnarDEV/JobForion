@@ -8,6 +8,7 @@ import { ensureTable } from '../../db/schema.js';
 import { escapeHtml } from '../../lib/entities.js';
 import { PROVIDERS } from '../../providers/index.js';
 import { BLOG_POSTS } from '../../data/blog-posts.js';
+import { getRecentActivity, ACTION_LABELS } from '../../lib/activity-log.js';
 
 function barChart(rows) {
   const max = Math.max(1, ...rows.map(r => r.count));
@@ -118,6 +119,8 @@ export async function renderDashboardContent(env) {
   const { results: syncLogs } = await q("SELECT * FROM sync_logs ORDER BY id DESC LIMIT 10");
   const { results: apiSources } = await q("SELECT * FROM api_sources ORDER BY id DESC");
   const { results: pendingPostings } = await q("SELECT * FROM job_postings WHERE status='pending' ORDER BY id DESC LIMIT 20");
+  const recentActivity = await getRecentActivity(env, 8);
+  const activeSourcesCount = (apiSources || []).filter(s => s.active).length;
 
   // ── System Health ──────────────────────────────────────────────
   // Worker: if this code is executing, the Worker itself is up — that's
@@ -173,6 +176,18 @@ export async function renderDashboardContent(env) {
           <button class="adm-btn" type="submit" style="border-color:var(--coral);color:var(--coral)">🧹 Run Cleanup Now</button>
         </form>
         <a href="/admin/logout" class="adm-btn">Logout</a>
+      </div>
+    </div>
+
+    <div class="adm-card" style="margin-bottom:16px">
+      <div class="adm-card-title">Quick Actions</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <a class="adm-btn" href="/admin/sources">🔌 Add Company / Manage Sources</a>
+        <a class="adm-btn" href="/admin/jobs">💼 Manage Jobs</a>
+        <a class="adm-btn" href="/admin/companies">🏢 Manage Companies</a>
+        <a class="adm-btn" href="/admin/ads">📢 Manage Ads</a>
+        <a class="adm-btn" href="/admin/settings">⚙️ Website Settings</a>
+        <a class="adm-btn" href="/admin/system">🖥️ System</a>
       </div>
     </div>
 
@@ -271,6 +286,13 @@ export async function renderDashboardContent(env) {
         ${(sourceBreakdownR || []).length ? barChart(sourceBreakdownR.map(r => ({ label: r.s, count: r.c }))) : '<div class="adm-empty">No source data yet — runs after the next sync</div>'}
       </div>
       <div class="adm-card">
+        <div class="adm-card-title">Recent Activity <span style="font-weight:400;color:var(--ink3);font-size:12px">— <a href="/admin/security" style="color:var(--brand)">full log →</a></span></div>
+        ${recentActivity.length ? recentActivity.map(l => `<div class="adm-row">
+          <span class="adm-row-label" style="max-width:65%">${escapeHtml(ACTION_LABELS[l.action] || l.action)}${l.target ? ` — <span style="color:var(--ink3);font-weight:500">${escapeHtml(l.target)}</span>` : ''}</span>
+          <span class="adm-row-val" style="font-weight:500;color:var(--ink3);font-size:10.5px">${l.created_at ? new Date(l.created_at).toLocaleString() : ''}</span>
+        </div>`).join('') : '<div class="adm-empty">No activity recorded yet</div>'}
+      </div>
+      <div class="adm-card">
         <div class="adm-card-title">Recent Cleanup History <span style="font-weight:400;color:var(--ink3);font-size:12px">— daily, 03:00 UTC</span></div>
         ${(cleanupLogs || []).length ? cleanupLogs.map(c => {
           let breakdown = {};
@@ -289,44 +311,14 @@ export async function renderDashboardContent(env) {
     </div>
 
     <div class="adm-card" style="margin-top:16px">
-      <div class="adm-card-title">API Sources <span style="font-weight:400;color:var(--ink3);font-size:12px">— add company boards without redeploying · new sources sync gradually, see Settings → Warm-up Governor</span></div>
-      <form method="POST" action="/admin/api-sources" style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">
-        <input class="adm-input" name="label" placeholder="Label (e.g. Primary)" required>
-        <select class="adm-input" name="provider" id="providerSelect" onchange="document.getElementById('apiKeyInput').placeholder=this.options[this.selectedIndex].dataset.hint">
-          <option value="greenhouse" data-hint="board token, e.g. airbnb">Greenhouse</option>
-          <option value="lever" data-hint="company slug, e.g. netflix">Lever</option>
-          <option value="ashby" data-hint="job board name">Ashby</option>
-          <option value="smartrecruiters" data-hint="company identifier, e.g. Visa">SmartRecruiters</option>
-          <option value="workable" data-hint="account subdomain, e.g. acme">Workable</option>
-          <option value="teamtailor" data-hint="Teamtailor API token">Teamtailor</option>
-          <option value="recruitee" data-hint="company subdomain, e.g. acme">Recruitee</option>
-          <option value="workday" data-hint="full careers URL, e.g. https://acme.wd5.myworkdayjobs.com/External">Workday</option>
-          <option value="icims" data-hint="iCIMS subdomain, e.g. acme">iCIMS</option>
-        </select>
-        <input class="adm-input" id="apiKeyInput" name="api_key" placeholder="board token, e.g. airbnb" required style="flex:1;min-width:200px">
-        <button class="adm-btn adm-btn-primary" type="submit">+ Add Source</button>
-      </form>
-      <script>
-        // The placeholder only updates via the select's onchange — which
-        // never fires just because a provider happens to be the default
-        // selected option on page load. This sets it correctly the moment
-        // the page renders, regardless of which provider is first in the
-        // list.
-        (function () {
-          var sel = document.getElementById('providerSelect');
-          var input = document.getElementById('apiKeyInput');
-          if (sel && input && sel.selectedIndex >= 0) {
-            input.placeholder = sel.options[sel.selectedIndex].dataset.hint || 'API Key';
-          }
-        })();
-      </script>
-      ${(apiSources || []).length ? apiSources.map(s => `<div class="adm-row">
-        <span class="adm-row-label">${escapeHtml(s.label)} <span style="color:var(--brand);font-size:10px;font-weight:700;text-transform:uppercase">${escapeHtml(s.provider || 'greenhouse')}</span> <span style="color:var(--ink3);font-weight:400">····${escapeHtml((s.api_key || '').slice(-4))}</span> ${s.active ? '<span style="color:var(--green);font-size:10px;font-weight:700">● ACTIVE</span>' : '<span style="color:var(--ink3);font-size:10px">○ off</span>'}</span>
-        <form method="POST" action="/admin/api-sources/delete" style="display:inline">
-          <input type="hidden" name="id" value="${s.id}">
-          <button class="adm-btn-sm" type="submit" onclick="return confirm('Remove this key?')">Remove</button>
-        </form>
-      </div>`).join('') : '<div class="adm-empty">No sources added yet — add a company board above (e.g. a Greenhouse token) to start syncing.</div>'}
+      <div class="adm-card-title">Job Sources <span style="font-weight:400;color:var(--ink3);font-size:12px">— add company boards without redeploying</span></div>
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
+        <div style="font-size:12.5px;color:var(--ink2)">
+          <b style="color:var(--ink)">${(apiSources || []).length}</b> companies configured across ${Object.keys(PROVIDERS).length} providers ·
+          <b style="color:var(--green)">${activeSourcesCount}</b> active
+        </div>
+        <a href="/admin/sources" class="adm-btn adm-btn-primary">🔌 Manage Job Sources →</a>
+      </div>
     </div>
   </div>`;
 
