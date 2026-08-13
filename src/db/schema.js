@@ -192,6 +192,23 @@ export async function ensureTable(env) {
     )
   `).run();
 
+  // ── Admin Activity Log ────────────────────────────────────────────
+  // Backs lib/activity-log.js — WHO changed WHAT and WHEN across the admin
+  // panel (login attempts, job deletions, settings changes, source
+  // add/remove, ...). Powers the Dashboard's "Recent Activity" panel and
+  // the full log at /admin/security. Purely additive/append-only; never
+  // read by any business logic, so it can never change site behavior —
+  // it exists solely for the admin's own visibility.
+  await env.DB.prepare(`
+    CREATE TABLE IF NOT EXISTS admin_activity_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      action TEXT NOT NULL,
+      target TEXT,
+      meta TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `).run();
+
   // ── Dynamic Site Settings ────────────────────────────────────────
   // Backs lib/settings.js. Plain key/value store — deliberately NOT a
   // fixed-column table, so adding a new admin-editable setting in the
