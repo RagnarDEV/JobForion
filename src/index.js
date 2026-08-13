@@ -106,11 +106,24 @@ export default {
     // maintenance mode could lock themselves out of the one place that
     // can turn it back off. Static assets are already handled above (so
     // the maintenance page itself still gets its favicon/branding).
+    let settingsForRequest = null;
     if (!url.pathname.startsWith('/admin')) {
-      const settings = await getSettings(env);
-      if (settings.maintenance_mode === '1') {
-        return withSecurityHeaders(renderMaintenancePage(settings.site_name, settings.maintenance_message));
+      settingsForRequest = await getSettings(env);
+      if (settingsForRequest.maintenance_mode === '1') {
+        return withSecurityHeaders(renderMaintenancePage(settingsForRequest.site_name, settingsForRequest.maintenance_message));
       }
+    }
+
+    // ── Feature Flags (Admin Dashboard V2) ──────────────────────────
+    // First concrete example of flag ENFORCEMENT (not just storage — see
+    // lib/settings.js for the full flag list and rollout plan): when an
+    // admin turns "Blog" off from /admin/settings, the blog index and
+    // every article 404 immediately, site-wide, no redeploy. /admin/blog
+    // itself stays reachable so content can still be edited while the
+    // public section is switched off.
+    if (settingsForRequest && settingsForRequest.feature_blog === '0' &&
+        (url.pathname === '/blog' || url.pathname.startsWith('/blog/'))) {
+      return withSecurityHeaders(new Response('Not found', { status: 404 }));
     }
 
     // ── visitor analytics (best-effort, non-blocking) ──
