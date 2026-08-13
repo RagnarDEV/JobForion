@@ -6,10 +6,19 @@ import { syncJobs } from '../db/sync.js';
 import { checkRateLimit } from '../lib/rate-limit.js';
 import { JOB_TYPE_SORT_SQL } from '../config/constants.js';
 import { resolveRawNames } from '../lib/directory-overrides.js';
+import { getSettings } from '../lib/settings.js';
+import { logActivity } from '../lib/activity-log.js';
 
 export async function handleApiRoute(url, request, env) {
   if (url.pathname === '/api/subscribe' && request.method === 'POST') {
     try {
+      // Feature Flag: Job Alerts — see lib/settings.js. Turning this off
+      // from /admin/settings stops new subscriptions immediately without
+      // touching existing subscriber rows or the sync/cleanup crons.
+      const settings = await getSettings(env);
+      if (settings.feature_job_alerts === '0') {
+        return new Response(JSON.stringify({ success: false, error: "Job alerts are currently disabled." }), { status: 503, headers: { "Content-Type": "application/json" } });
+      }
       const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
       const rl = await checkRateLimit(env, `subscribe:${ip}`, { maxRequests: 5, windowMinutes: 60 });
       if (!rl.allowed) {
@@ -117,7 +126,10 @@ export async function handleApiRoute(url, request, env) {
   if (url.pathname === '/api/sync') {
     try {
       const result = await syncJobs(env);
-      if (request.method === 'POST') return new Response(null, { status: 302, headers: { 'Location': '/admin' } });
+      if (request.method === 'POST') {
+        await logActivity(env, 'sync_run', 'manual trigger', `+${result.inserted} jobs, ${(result.errors || []).length} errors`);
+        return new Response(null, { status: 302, headers: { 'Location': '/admin' } });
+      }
       return new Response(JSON.stringify({ success: true, ...result }), { headers: { "Content-Type": "application/json" } });
     } catch (e) { return new Response(JSON.stringify({ success: false, error: e.message }), { status: 500, headers: { "Content-Type": "application/json" } }); }
   }

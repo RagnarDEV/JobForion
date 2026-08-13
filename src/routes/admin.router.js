@@ -10,7 +10,7 @@
 // what actually went wrong. Now the real error message is rendered inline
 // so it can be diagnosed immediately instead of guessing.
 
-import { makeAdminCookie, verifyAdminCookie } from '../auth/admin-auth.js';
+import { makeAdminCookie, verifyAdminCookie, timingSafeEqualStr } from '../auth/admin-auth.js';
 import { renderAdminLogin, renderAdminDashboard } from '../pages/admin.js';
 import { insertApiSource } from '../db/sync.js';
 import { cleanupStaleJobs } from '../db/cleanup.js';
@@ -23,9 +23,12 @@ import { renderPagesListContent, renderPageEditContent, renderPageNewContent } f
 import { renderBlogListContent, renderBlogEditContent, renderBlogNewContent } from '../pages/admin/blog-cms.js';
 import { renderCardStylesContent } from '../pages/admin/card-styles.js';
 import { renderAdsContent } from '../pages/admin/ads.js';
+import { renderSourcesContent } from '../pages/admin/sources.js';
+import { renderSystemContent } from '../pages/admin/system.js';
+import { renderSecurityContent } from '../pages/admin/security.js';
 import { adminShell } from '../pages/admin/shell.js';
 import { JOB_TYPE_META } from '../config/constants.js';
-import { setSettings, SETTINGS_KEYS } from '../lib/settings.js';
+import { setSettings, SETTINGS_KEYS, CHECKBOX_SETTINGS_KEYS } from '../lib/settings.js';
 import { createCategory, updateCategory, deleteCategory, moveCategory } from '../lib/categories.js';
 import { setOverride, clearOverride, DIRECTORY_KINDS } from '../lib/directory-overrides.js';
 import { getPageBySlug, createPage, updatePage, deletePage, movePage } from '../lib/pages-cms.js';
@@ -33,6 +36,8 @@ import { createNavButton, updateNavButton, deleteNavButton } from '../lib/nav-bu
 import { getPostById, createPost, updatePost, deletePost } from '../lib/blog-cms.js';
 import { updateCardStyle, resetCardStyle, CARD_STYLE_JOB_TYPES } from '../lib/job-card-styles.js';
 import { updateAdSlot, resetAdSlot, AD_SLOT_DEFS } from '../lib/ad-slots.js';
+import { checkRateLimit } from '../lib/rate-limit.js';
+import { logActivity } from '../lib/activity-log.js';
 
 function errorPage(err) {
   const msg = (err && err.message ? err.message : String(err)).replace(/</g, '&lt;');
@@ -60,12 +65,29 @@ a:hover{text-decoration:underline}
 export async function handleAdminRoute(url, request, env, base) {
   if (url.pathname === '/admin/login' && request.method === 'POST') {
     try {
+      const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
+      // SECURITY: brute-force protection on the single most sensitive
+      // endpoint in the app. Same lib/rate-limit.js already protecting
+      // /api/subscribe and /api/post-job — this was the one write
+      // endpoint that had been missed. Checked BEFORE reading the form
+      // body so a flood of attempts can't even spend time parsing.
+      const rl = await checkRateLimit(env, `admin-login:${ip}`, { maxRequests: 5, windowMinutes: 15 });
+      if (!rl.allowed) {
+        await logActivity(env, 'login_rate_limited', ip);
+        return new Response(renderAdminLogin(true), { status: 429, headers: { "Content-Type": "text/html; charset=utf-8" } });
+      }
       const form = await request.formData();
       const pw = form.get('password') || '';
-      if (env.ADMIN_PASSWORD && pw === env.ADMIN_PASSWORD) {
+      // SECURITY: timing-safe comparison (see auth/admin-auth.js) instead
+      // of `===`, which short-circuits on the first mismatched character
+      // and can theoretically leak how many leading characters were
+      // correct via response timing.
+      if (env.ADMIN_PASSWORD && timingSafeEqualStr(pw, env.ADMIN_PASSWORD)) {
         const cookie = await makeAdminCookie(env);
+        await logActivity(env, 'login_success', ip);
         return new Response(null, { status: 302, headers: { 'Location': '/admin', 'Set-Cookie': `jn_admin=${cookie}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=86400` } });
       }
+      await logActivity(env, 'login_failed', ip);
       return new Response(renderAdminLogin(true), { status: 401, headers: { "Content-Type": "text/html; charset=utf-8" } });
     } catch (e) { return errorPage(e); }
   }
@@ -84,8 +106,21 @@ export async function handleAdminRoute(url, request, env, base) {
       const provider = (form.get('provider') || 'greenhouse').toString().trim().slice(0, 40);
       if (apiKey) {
         await insertApiSource(env, label, apiKey, provider);
+        await logActivity(env, 'source_added', `${label} (${provider})`);
       }
-      return new Response(null, { status: 302, headers: { 'Location': '/admin' } });
+      return new Response(null, { status: 302, headers: { 'Location': '/admin/sources' } });
+    } catch (e) { return errorPage(e); }
+  }
+
+  if (url.pathname === '/admin/api-sources/toggle' && request.method === 'POST') {
+    try {
+      const ok = await verifyAdminCookie(env, request.headers.get('Cookie'));
+      if (!ok) return new Response('Unauthorized', { status: 401 });
+      const form = await request.formData();
+      const id = form.get('id');
+      if (id) await env.DB.prepare('UPDATE api_sources SET active = CASE WHEN active = 1 THEN 0 ELSE 1 END WHERE id = ?').bind(id).run();
+      await logActivity(env, 'source_toggled', `source #${id}`);
+      return new Response(null, { status: 302, headers: { 'Location': `/admin/sources?flash=${encodeURIComponent('Source updated')}` } });
     } catch (e) { return errorPage(e); }
   }
 
@@ -96,7 +131,8 @@ export async function handleAdminRoute(url, request, env, base) {
       const form = await request.formData();
       const id = form.get('id');
       if (id) await env.DB.prepare("DELETE FROM api_sources WHERE id = ?").bind(id).run();
-      return new Response(null, { status: 302, headers: { 'Location': '/admin' } });
+      await logActivity(env, 'source_deleted', `source #${id}`);
+      return new Response(null, { status: 302, headers: { 'Location': '/admin/sources' } });
     } catch (e) { return errorPage(e); }
   }
 
@@ -171,6 +207,57 @@ export async function handleAdminRoute(url, request, env, base) {
     } catch (e) { return errorPage(e); }
   }
 
+  // ── Job Sources (see pages/admin/sources.js) ──────────────────────
+  if (url.pathname === '/admin/sources' && request.method === 'GET') {
+    try {
+      const ok = await verifyAdminCookie(env, request.headers.get('Cookie'));
+      if (!ok) return new Response(renderAdminLogin(false), { headers: { "Content-Type": "text/html; charset=utf-8" } });
+      const content = await renderSourcesContent(env);
+      return new Response(adminShell('sources', content), { headers: { "Content-Type": "text/html; charset=utf-8" } });
+    } catch (e) { return errorPage(e); }
+  }
+
+  // ── System (see pages/admin/system.js) ─────────────────────────────
+  if (url.pathname === '/admin/system' && request.method === 'GET') {
+    try {
+      const ok = await verifyAdminCookie(env, request.headers.get('Cookie'));
+      if (!ok) return new Response(renderAdminLogin(false), { headers: { "Content-Type": "text/html; charset=utf-8" } });
+      const content = await renderSystemContent(env);
+      return new Response(adminShell('system', content), { headers: { "Content-Type": "text/html; charset=utf-8" } });
+    } catch (e) { return errorPage(e); }
+  }
+
+  if (url.pathname === '/admin/cache/purge' && request.method === 'POST') {
+    try {
+      const ok = await verifyAdminCookie(env, request.headers.get('Cookie'));
+      if (!ok) return new Response('Unauthorized', { status: 401 });
+      // Best-effort purge of the Cache API entries this Worker itself
+      // writes to (see lib/cache.js and routes/feed.router.js) — those
+      // are keyed on the exact request URL, so we can't enumerate what's
+      // cached, only proactively delete the known, common no-query-string
+      // URLs. Query-string variants (paginated/filtered views) simply
+      // expire on their normal TTL instead — never a correctness issue,
+      // only a "how fresh right now" one.
+      const cache = caches.default;
+      const reqUrl = new URL(request.url);
+      const base = `${reqUrl.protocol}//${reqUrl.host}`;
+      const paths = ['/sitemap.xml', '/categories', '/companies', '/skills', '/countries'];
+      await Promise.all(paths.map(p => cache.delete(new Request(`${base}${p}`, { method: 'GET' })).catch(() => {})));
+      await logActivity(env, 'cache_purged', paths.join(', '));
+      return new Response(null, { status: 302, headers: { 'Location': `/admin/system?flash=${encodeURIComponent('Cache purged')}` } });
+    } catch (e) { return errorPage(e); }
+  }
+
+  // ── Admin & Security (see pages/admin/security.js) ─────────────────
+  if (url.pathname === '/admin/security' && request.method === 'GET') {
+    try {
+      const ok = await verifyAdminCookie(env, request.headers.get('Cookie'));
+      if (!ok) return new Response(renderAdminLogin(false), { headers: { "Content-Type": "text/html; charset=utf-8" } });
+      const content = await renderSecurityContent(env);
+      return new Response(adminShell('security', content), { headers: { "Content-Type": "text/html; charset=utf-8" } });
+    } catch (e) { return errorPage(e); }
+  }
+
   if (url.pathname === '/admin/companies/hide' && request.method === 'POST') {
     try {
       const ok = await verifyAdminCookie(env, request.headers.get('Cookie'));
@@ -179,6 +266,7 @@ export async function handleAdminRoute(url, request, env, base) {
       const company = (form.get('company') || '').toString().trim();
       if (company) {
         await env.DB.prepare("INSERT OR IGNORE INTO hidden_companies (company_lower) VALUES (?)").bind(company.toLowerCase()).run();
+        await logActivity(env, 'company_hidden', company);
       }
       return new Response(null, { status: 302, headers: { 'Location': `/admin/companies?flash=${encodeURIComponent('Company hidden')}` } });
     } catch (e) { return errorPage(e); }
@@ -192,6 +280,7 @@ export async function handleAdminRoute(url, request, env, base) {
       const company = (form.get('company') || '').toString().trim();
       if (company) {
         await env.DB.prepare("DELETE FROM hidden_companies WHERE company_lower = ?").bind(company.toLowerCase()).run();
+        await logActivity(env, 'company_unhidden', company);
       }
       return new Response(null, { status: 302, headers: { 'Location': `/admin/companies?flash=${encodeURIComponent('Company unhidden')}` } });
     } catch (e) { return errorPage(e); }
@@ -214,12 +303,16 @@ export async function handleAdminRoute(url, request, env, base) {
       // Explicit allow-list (SETTINGS_KEYS) rather than trusting arbitrary
       // posted field names — setSettings() also enforces this itself, but
       // filtering here too keeps the intent obvious at the call site.
+      // Checkbox-style keys (CHECKBOX_SETTINGS_KEYS) need `form.get(key)
+      // ? '1' : '0'` because an unchecked box is simply absent from the
+      // POST body — `form.has(key)` would never see it turn OFF.
       const updates = {};
       for (const key of SETTINGS_KEYS) {
-        if (key === 'maintenance_mode') { updates[key] = form.get('maintenance_mode') ? '1' : '0'; continue; }
+        if (CHECKBOX_SETTINGS_KEYS.includes(key)) { updates[key] = form.get(key) ? '1' : '0'; continue; }
         if (form.has(key)) updates[key] = (form.get(key) || '').toString().slice(0, 2000);
       }
       await setSettings(env, updates);
+      await logActivity(env, 'settings_updated', 'General Settings');
       return new Response(null, { status: 302, headers: { 'Location': `/admin/settings?flash=${encodeURIComponent('Settings saved')}` } });
     } catch (e) { return errorPage(e); }
   }
@@ -244,6 +337,7 @@ export async function handleAdminRoute(url, request, env, base) {
         emoji: (form.get('emoji') || '').toString(),
         color: (form.get('color') || '').toString(),
       });
+      await logActivity(env, 'category_created', (form.get('label') || '').toString());
       return new Response(null, { status: 302, headers: { 'Location': `/admin/categories?flash=${encodeURIComponent('Category added')}` } });
     } catch (e) { return errorPage(e); }
   }
@@ -260,6 +354,7 @@ export async function handleAdminRoute(url, request, env, base) {
         color: (form.get('color') || '').toString(),
         active: !!form.get('active'),
       });
+      await logActivity(env, 'category_updated', key);
       return new Response(null, { status: 302, headers: { 'Location': `/admin/categories?flash=${encodeURIComponent('Category updated')}` } });
     } catch (e) { return errorPage(e); }
   }
@@ -283,6 +378,7 @@ export async function handleAdminRoute(url, request, env, base) {
       const form = await request.formData();
       const key = (form.get('key') || '').toString();
       await deleteCategory(env, key);
+      await logActivity(env, 'category_deleted', key);
       return new Response(null, { status: 302, headers: { 'Location': `/admin/categories?flash=${encodeURIComponent('Category deleted')}` } });
     } catch (e) { return errorPage(e); }
   }
@@ -369,6 +465,7 @@ export async function handleAdminRoute(url, request, env, base) {
         show_in_footer: !!form.get('show_in_footer'),
         show_in_menu: !!form.get('show_in_menu'),
       });
+      await logActivity(env, 'page_created', (form.get('slug') || '').toString());
       return new Response(null, { status: 302, headers: { 'Location': `/admin/pages?flash=${encodeURIComponent('Page created')}` } });
     } catch (e) { return errorPage(e); }
   }
@@ -388,6 +485,7 @@ export async function handleAdminRoute(url, request, env, base) {
         show_in_footer: !!form.get('show_in_footer'),
         show_in_menu: !!form.get('show_in_menu'),
       });
+      await logActivity(env, 'page_updated', slug);
       return new Response(null, { status: 302, headers: { 'Location': `/admin/pages/edit?slug=${encodeURIComponent(slug)}&flash=${encodeURIComponent('Saved')}` } });
     } catch (e) { return errorPage(e); }
   }
@@ -408,6 +506,7 @@ export async function handleAdminRoute(url, request, env, base) {
       if (!ok) return new Response('Unauthorized', { status: 401 });
       const form = await request.formData();
       await deletePage(env, (form.get('slug') || '').toString());
+      await logActivity(env, 'page_deleted', (form.get('slug') || '').toString());
       return new Response(null, { status: 302, headers: { 'Location': `/admin/pages?flash=${encodeURIComponent('Page deleted')}` } });
     } catch (e) { return errorPage(e); }
   }
@@ -497,6 +596,7 @@ export async function handleAdminRoute(url, request, env, base) {
         scheduled_at: (form.get('scheduled_at') || '').toString(),
         read_time: (form.get('read_time') || '').toString(),
       });
+      await logActivity(env, 'blog_created', (form.get('title') || '').toString());
       return new Response(null, { status: 302, headers: { 'Location': `/admin/blog?flash=${encodeURIComponent('Article created')}` } });
     } catch (e) { return errorPage(e); }
   }
@@ -518,6 +618,7 @@ export async function handleAdminRoute(url, request, env, base) {
         scheduled_at: (form.get('scheduled_at') || '').toString(),
         read_time: (form.get('read_time') || '').toString(),
       });
+      await logActivity(env, 'blog_updated', (form.get('title') || '').toString());
       return new Response(null, { status: 302, headers: { 'Location': `/admin/blog/edit?id=${id}&flash=${encodeURIComponent('Saved')}` } });
     } catch (e) { return errorPage(e); }
   }
@@ -528,6 +629,7 @@ export async function handleAdminRoute(url, request, env, base) {
       if (!ok) return new Response('Unauthorized', { status: 401 });
       const form = await request.formData();
       await deletePost(env, parseInt((form.get('id') || '0').toString(), 10));
+      await logActivity(env, 'blog_deleted', `post #${form.get('id')}`);
       return new Response(null, { status: 302, headers: { 'Location': `/admin/blog?flash=${encodeURIComponent('Article deleted')}` } });
     } catch (e) { return errorPage(e); }
   }
@@ -595,6 +697,7 @@ export async function handleAdminRoute(url, request, env, base) {
       if (!ok) return new Response('Unauthorized', { status: 401 });
       const form = await request.formData();
       await setSettings(env, { ads_enabled: form.get('ads_enabled') ? '1' : '0' });
+      await logActivity(env, 'ads_toggled', form.get('ads_enabled') ? 'enabled' : 'disabled');
       return new Response(null, { status: 302, headers: { 'Location': `/admin/ads?flash=${encodeURIComponent('Saved')}` } });
     } catch (e) { return errorPage(e); }
   }
@@ -612,6 +715,7 @@ export async function handleAdminRoute(url, request, env, base) {
         width: form.get('width'),
         height: form.get('height'),
       });
+      await logActivity(env, 'ads_updated', slotId);
       return new Response(null, { status: 302, headers: { 'Location': `/admin/ads?flash=${encodeURIComponent('Ad slot saved')}` } });
     } catch (e) { return errorPage(e); }
   }
@@ -656,6 +760,7 @@ export async function handleAdminRoute(url, request, env, base) {
         (form.get('job_type_note') || '').toString().slice(0, 140),
         id
       ).run();
+      await logActivity(env, 'job_updated', (form.get('title') || '').toString());
       return new Response(null, { status: 302, headers: { 'Location': `/admin/jobs/edit?id=${id}&flash=${encodeURIComponent('Job updated')}` } });
     } catch (e) { return errorPage(e); }
   }
@@ -668,6 +773,7 @@ export async function handleAdminRoute(url, request, env, base) {
       const id = form.get('id');
       const redirect = (form.get('redirect') || '/admin/jobs').toString();
       if (id) await env.DB.prepare('DELETE FROM jobs WHERE id = ?').bind(id).run();
+      await logActivity(env, 'job_deleted', `job #${id}`);
       const sep = redirect.includes('?') ? '&' : '?';
       return new Response(null, { status: 302, headers: { 'Location': `${redirect}${sep}flash=${encodeURIComponent('Job deleted')}` } });
     } catch (e) { return errorPage(e); }
@@ -681,6 +787,7 @@ export async function handleAdminRoute(url, request, env, base) {
       const id = form.get('id');
       const redirect = (form.get('redirect') || '/admin/jobs').toString();
       if (id) await env.DB.prepare('UPDATE jobs SET featured = CASE WHEN featured = 1 THEN 0 ELSE 1 END WHERE id = ?').bind(id).run();
+      await logActivity(env, 'job_featured_toggled', `job #${id}`);
       const sep = redirect.includes('?') ? '&' : '?';
       return new Response(null, { status: 302, headers: { 'Location': `${redirect}${sep}flash=${encodeURIComponent('Job pin updated')}` } });
     } catch (e) { return errorPage(e); }
@@ -693,6 +800,7 @@ export async function handleAdminRoute(url, request, env, base) {
       const form = await request.formData();
       const days = Math.max(7, parseInt(form.get('days') || '45', 10) || 45);
       const r = await env.DB.prepare(`DELETE FROM jobs WHERE created_at < datetime('now', '-' || ? || ' day')`).bind(days).run();
+      await logActivity(env, 'jobs_bulk_deleted', `${r.meta?.changes || 0} jobs older than ${days}d`);
       return new Response(null, { status: 302, headers: { 'Location': `/admin/jobs?flash=${encodeURIComponent(`Deleted ${r.meta?.changes || 0} stale jobs`)}` } });
     } catch (e) { return errorPage(e); }
   }
@@ -702,6 +810,7 @@ export async function handleAdminRoute(url, request, env, base) {
       const ok = await verifyAdminCookie(env, request.headers.get('Cookie'));
       if (!ok) return new Response('Unauthorized', { status: 401 });
       const result = await cleanupStaleJobs(env);
+      await logActivity(env, 'cleanup_run', `${result.deleted} jobs removed`);
       return new Response(null, { status: 302, headers: { 'Location': `/admin?flash=${encodeURIComponent(`Cleanup ran — deleted ${result.deleted} jobs`)}` } });
     } catch (e) { return errorPage(e); }
   }
