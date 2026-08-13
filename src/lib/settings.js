@@ -66,6 +66,24 @@ export const SETTINGS_DEFAULTS = {
   // silently falls back to the first option, so a bad/stale value can
   // never break the Google Fonts <link> or leave the heading unstyled.
   hero_heading_font: 'Space Grotesk',
+
+  // ── Feature Flags (Admin Dashboard V2, Phase 1) ────────────────────
+  // Same '1'/'0' convention as ads_enabled/maintenance_mode above — every
+  // flag's VALUE is always safely readable/settable from /admin/settings
+  // today. Route-level ENFORCEMENT is wired in incrementally, flag by
+  // flag, to keep each change small and reviewable rather than one large
+  // sweep across every router:
+  //   feature_blog        → wired: index.js 404s /blog and /blog/:id when off
+  //   feature_job_alerts  → wired: /api/subscribe returns a disabled message when off
+  //   feature_company_pages / feature_country_pages / feature_skill_pages
+  //   / feature_featured_jobs → reserved, safe to toggle, enforcement is
+  //     next up (Phase 2) in seo-pages.router.js / job-card badges.
+  feature_blog: '1',
+  feature_job_alerts: '1',
+  feature_company_pages: '1',
+  feature_country_pages: '1',
+  feature_skill_pages: '1',
+  feature_featured_jobs: '1',
 };
 
 // Curated so the admin picker is a safe dropdown, never free text — a
@@ -86,6 +104,23 @@ export const HERO_FONT_OPTIONS = [
 // a future admin-page bug or malicious form submission can't smuggle
 // arbitrary keys into the table.
 export const SETTINGS_KEYS = Object.keys(SETTINGS_DEFAULTS);
+
+// Subset of SETTINGS_KEYS that render as HTML checkboxes (maintenance_mode
+// + every feature_* flag). Checkboxes are only present in form-encoded
+// POST bodies when CHECKED — an unchecked box simply isn't submitted at
+// all — so these need `form.get(key) ? '1' : '0'` in the update handler
+// instead of the `if (form.has(key))` pattern used for text fields.
+// Centralized here (rather than hardcoded in admin.router.js) so a new
+// checkbox-style setting only needs to be added to this one list.
+export const CHECKBOX_SETTINGS_KEYS = [
+  'maintenance_mode',
+  'feature_blog',
+  'feature_job_alerts',
+  'feature_company_pages',
+  'feature_country_pages',
+  'feature_skill_pages',
+  'feature_featured_jobs',
+];
 
 const TTL_MS = 60000;
 let cache = null; // { values: {...}, loadedAt: number }
