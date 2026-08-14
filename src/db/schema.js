@@ -192,6 +192,22 @@ export async function ensureTable(env) {
     )
   `).run();
 
+  // ── Homepage Sections Builder (Admin Dashboard V2, Phase 4) ────────
+  // Mirrors ad_slots: a FIXED set of section keys defined in code (see
+  // lib/homepage-sections.js) — an admin can enable/disable and reorder
+  // existing sections, but never create a new key here (a code-less
+  // section id would be inert since no template renders it). Missing
+  // rows simply mean "use the default" (enabled, code-defined order),
+  // so an empty table renders the homepage identically to before this
+  // feature existed.
+  await env.DB.prepare(`
+    CREATE TABLE IF NOT EXISTS homepage_sections (
+      section_key TEXT PRIMARY KEY,
+      enabled INTEGER DEFAULT 1,
+      sort_order INTEGER DEFAULT 0
+    )
+  `).run();
+
   // ── Admin Activity Log ────────────────────────────────────────────
   // Backs lib/activity-log.js — WHO changed WHAT and WHEN across the admin
   // panel (login attempts, job deletions, settings changes, source
