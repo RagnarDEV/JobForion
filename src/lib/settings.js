@@ -67,17 +67,19 @@ export const SETTINGS_DEFAULTS = {
   // never break the Google Fonts <link> or leave the heading unstyled.
   hero_heading_font: 'Space Grotesk',
 
-  // ── Feature Flags (Admin Dashboard V2, Phase 1) ────────────────────
-  // Same '1'/'0' convention as ads_enabled/maintenance_mode above — every
-  // flag's VALUE is always safely readable/settable from /admin/settings
-  // today. Route-level ENFORCEMENT is wired in incrementally, flag by
-  // flag, to keep each change small and reviewable rather than one large
-  // sweep across every router:
-  //   feature_blog        → wired: index.js 404s /blog and /blog/:id when off
-  //   feature_job_alerts  → wired: /api/subscribe returns a disabled message when off
-  //   feature_company_pages / feature_country_pages / feature_skill_pages
-  //   / feature_featured_jobs → reserved, safe to toggle, enforcement is
-  //     next up (Phase 2) in seo-pages.router.js / job-card badges.
+  // ── Feature Flags (Admin Dashboard V2 — Phase 1 + 2 + 3) ───────────
+  // Same '1'/'0' convention as ads_enabled/maintenance_mode above. As of
+  // Phase 3, every flag below has real route/render-level enforcement —
+  // none are placeholders anymore:
+  //   feature_blog            → index.js 404s /blog and /blog/:id when off
+  //   feature_job_alerts      → /api/subscribe returns a disabled message when off
+  //   feature_company_pages   → seo-pages.router.js 404s /companies* when off
+  //   feature_country_pages   → seo-pages.router.js 404s /countries* when off
+  //   feature_skill_pages     → seo-pages.router.js 404s /skills* when off
+  //   feature_featured_jobs   → admin pin/unpin blocked server-side AND the
+  //                             "Pinned" badge + blue tint hidden everywhere
+  //                             jobCardSSR renders (home, job detail,
+  //                             directory pages, both SSR and client JS)
   feature_blog: '1',
   feature_job_alerts: '1',
   feature_company_pages: '1',
