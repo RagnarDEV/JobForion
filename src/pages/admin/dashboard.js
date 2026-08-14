@@ -185,6 +185,7 @@ export async function renderDashboardContent(env) {
         <a class="adm-btn" href="/admin/sources">🔌 Add Company / Manage Sources</a>
         <a class="adm-btn" href="/admin/jobs">💼 Manage Jobs</a>
         <a class="adm-btn" href="/admin/companies">🏢 Manage Companies</a>
+        <a class="adm-btn" href="/admin/homepage">🏠 Homepage Sections</a>
         <a class="adm-btn" href="/admin/ads">📢 Manage Ads</a>
         <a class="adm-btn" href="/admin/settings">⚙️ Website Settings</a>
         <a class="adm-btn" href="/admin/system">🖥️ System</a>

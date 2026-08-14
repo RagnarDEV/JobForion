@@ -12,7 +12,7 @@ import { SHARED_CSS } from '../../styles/shared-css.js';
 import {
   iconLayoutDashboard, iconBriefcase, iconBuilding, iconPlug, iconTag, iconGlobe,
   iconFileText, iconEdit3, iconPalette, iconSettingsGear, iconMegaphone,
-  iconServer, iconShieldCheck, iconLogOut,
+  iconServer, iconShieldCheck, iconLogOut, iconHome,
 } from '../../assets/icons.js';
 
 // ── Admin Dashboard V2 sidebar IA ──────────────────────────────────
@@ -39,6 +39,7 @@ const NAV_GROUPS = [
     { id: 'blog', label: 'Blog', icon: iconEdit3, href: '/admin/blog' },
   ]},
   { title: 'Website', items: [
+    { id: 'homepage', label: 'Homepage', icon: iconHome, href: '/admin/homepage' },
     { id: 'card-styles', label: 'Card Styles', icon: iconPalette, href: '/admin/card-styles' },
     { id: 'settings', label: 'Settings', icon: iconSettingsGear, href: '/admin/settings' },
   ]},
