@@ -87,3 +87,8 @@ export const iconTrash2 = (opts) => svg(`<path d="M3 6h18"/><path d="M19 6v14a2 
 export const iconHome = (opts) => svg(`<path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>`, opts);
 export const iconArrowUp = (opts) => svg(`<path d="m5 12 7-7 7 7"/><path d="M12 19V5"/>`, opts);
 export const iconArrowDown = (opts) => svg(`<path d="M12 5v14"/><path d="m19 12-7 7-7-7"/>`, opts);
+export const iconCode = (opts) => svg(`<polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/>`, opts);
+export const iconBarChart3 = (opts) => svg(`<path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/>`, opts);
+export const iconHeadphones = (opts) => svg(`<path d="M3 14h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H3v-7a9 9 0 0 1 18 0v7h-3a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3"/>`, opts);
+export const iconPackage = (opts) => svg(`<path d="M11 21.73a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73Z"/><path d="M12 22V12"/><path d="M3.29 7 12 12l8.71-5"/><path d="m7.5 4.27 9 5.15"/>`, opts);
+export const iconUsers = (opts) => svg(`<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>`, opts);
