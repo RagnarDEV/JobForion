@@ -149,12 +149,17 @@ export function jobTypeCardClass(jobType) {
   return type === 'Free' ? '' : ` jt-card-${type.toLowerCase()}`;
 }
 
-export function pastelForJob(job) {
+export function pastelForJob(job, featuredEnabled = true) {
   // Background tint is now meaningful, not decorative: only pinned and
   // high-salary jobs get a tint. "New" already has its own badge, so it
   // doesn't need to also recolor the whole card — that was just visual
   // noise competing with the badges for attention.
-  if (job.featured) return 'var(--pastel-blue)';
+  // `featuredEnabled` (Admin Dashboard V2, Phase 3): when the "Featured
+  // Jobs" feature flag is off (see lib/settings.js), a job's `featured`
+  // column still exists in the DB — the flag only controls whether that
+  // status is ever surfaced visually, so it falls through to the
+  // hot/salary check below exactly as if `featured` were never set.
+  if (featuredEnabled && job.featured) return 'var(--pastel-blue)';
   if (isHotJob(job)) return 'var(--pastel-yellow)';
   return 'var(--surface)';
 }
@@ -195,7 +200,16 @@ const FALLBACK_CATEGORY_META = { label: 'General', emoji: '🏷️', color: '#35
 // Sponsored} object from lib/job-card-styles.js — defaults to
 // DEFAULT_CARD_STYLES so this renders identically whether or not a
 // caller has fetched dynamic styles yet.
-export function jobCardSSR(job, idx, categoryMap = CATEGORY_META, categoryOrder = CATEGORY_ORDER, cardStyles = DEFAULT_CARD_STYLES, logoOverrides = {}) {
+// `featuredEnabled` (optional, defaults true — Admin Dashboard V2, Phase
+// 3) mirrors the `feature_featured_jobs` flag in lib/settings.js. When
+// false, the "Pinned" badge and its blue background tint are suppressed
+// site-wide, without touching the underlying `jobs.featured` column or
+// its `ORDER BY featured DESC` priority in listing queries — those stay
+// exactly as they were, since re-ordering results per flag would be a
+// much bigger, riskier change than hiding a badge. Every caller below
+// defaults to `true` so nothing changes for a caller that hasn't been
+// updated to pass it explicitly yet.
+export function jobCardSSR(job, idx, categoryMap = CATEGORY_META, categoryOrder = CATEGORY_ORDER, cardStyles = DEFAULT_CARD_STYLES, logoOverrides = {}, featuredEnabled = true) {
   const catKey = catForTitleServer(job.title, categoryOrder);
   const meta = categoryMap[catKey] || FALLBACK_CATEGORY_META;
   const isNew = job.created_at && Date.now() - new Date(job.created_at).getTime() < 86400000;
@@ -210,7 +224,7 @@ export function jobCardSSR(job, idx, categoryMap = CATEGORY_META, categoryOrder 
   // free tier specifically. Appending `;background:${bg}` after
   // buildCardStyleAttr()'s own background declaration lets the later
   // one win within the same inline style attribute.
-  const freeTint = jobType === 'Free' ? pastelForJob(job) : null;
+  const freeTint = jobType === 'Free' ? pastelForJob(job, featuredEnabled) : null;
   const cardStyleAttr = buildCardStyleAttr(jtStyle) + (freeTint ? `;background:${freeTint}` : '');
   const locationFlag = job.location ? countryFlag(job.location.split(',').pop().trim()) : '';
   return `<a href="/job/${job.id}" class="job-card${jobTypeCardClass(job.job_type)}" style="--cat-color:${meta.color};${cardStyleAttr};animation:fadeInUp .3s ease ${Math.min(idx, 6) * .04}s both">
@@ -222,7 +236,7 @@ export function jobCardSSR(job, idx, categoryMap = CATEGORY_META, categoryOrder 
           <div class="card-badges">
             ${jobTypeBadgeHtml(job.job_type, cardStyles)}
             <span class="cat-dot"><span class="dot"></span>${meta.label}</span>
-            ${job.featured ? `<span class="tag-pinned">${iconPin({ size: 11 })} Pinned</span>` : ''}
+            ${featuredEnabled && job.featured ? `<span class="tag-pinned">${iconPin({ size: 11 })} Pinned</span>` : ''}
             ${isNew ? `<span class="tag-new">${iconSparkle({ size: 11 })} NEW</span>` : ''}
             ${isHot ? `<span class="tag-hot">${iconFlame({ size: 11 })} HOT</span>` : ''}
           </div>
