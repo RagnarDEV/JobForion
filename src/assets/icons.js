@@ -84,3 +84,6 @@ export const iconEdit3 = (opts) => svg(`<path d="M12 20h9"/><path d="M16.5 3.5a2
 export const iconRefreshCw = (opts) => svg(`<path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 21v-5h-5"/>`, opts);
 export const iconDatabase = (opts) => svg(`<ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5V19A9 3 0 0 0 21 19V5"/><path d="M3 12A9 3 0 0 0 21 12"/>`, opts);
 export const iconTrash2 = (opts) => svg(`<path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/>`, opts);
+export const iconHome = (opts) => svg(`<path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>`, opts);
+export const iconArrowUp = (opts) => svg(`<path d="m5 12 7-7 7 7"/><path d="M12 19V5"/>`, opts);
+export const iconArrowDown = (opts) => svg(`<path d="M12 5v14"/><path d="m19 12-7 7-7-7"/>`, opts);
