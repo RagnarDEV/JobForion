@@ -11,8 +11,17 @@ import {
   renderSearchPage,
 } from '../pages/seo-pages.js';
 import { withCache, CACHE_PRESETS } from '../lib/cache.js';
+import { getSettings } from '../lib/settings.js';
 
 export async function handleSeoPagesRoute(url, request, env, ctx, base) {
+  // Feature Flags (Admin Dashboard V2, Phase 2): Company/Country/Skill
+  // directory pages can each be switched off from /admin/settings without
+  // a redeploy. Checked once, centrally, here — every index AND detail
+  // route below shares the same on/off decision, so there's no risk of
+  // the index page disappearing from nav while its detail pages stay
+  // crawlable (or vice versa).
+  const settings = await getSettings(env);
+
   if (url.pathname === '/categories') {
     return await withCache(ctx, request, CACHE_PRESETS.directory, async () => renderCategoriesIndex(env, base));
   }
@@ -21,6 +30,9 @@ export async function handleSeoPagesRoute(url, request, env, ctx, base) {
     const html = await renderCategoryDetail(env, base, catMatch[1]);
     if (!html) return new Response('Not found', { status: 404 });
     return new Response(html, { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": CACHE_PRESETS.entity } });
+  }
+  if (url.pathname === '/companies' || url.pathname.match(/^\/companies\/([a-z0-9-]+)$/)) {
+    if (settings.feature_company_pages === '0') return new Response('Not found', { status: 404 });
   }
   if (url.pathname === '/companies') {
     return await withCache(ctx, request, CACHE_PRESETS.directory, async () => renderCompaniesIndex(env, base));
@@ -31,6 +43,9 @@ export async function handleSeoPagesRoute(url, request, env, ctx, base) {
     if (!html) return new Response('Company not found', { status: 404 });
     return new Response(html, { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": CACHE_PRESETS.entity } });
   }
+  if (url.pathname === '/countries' || url.pathname.match(/^\/countries\/([a-z0-9-]+)$/)) {
+    if (settings.feature_country_pages === '0') return new Response('Not found', { status: 404 });
+  }
   if (url.pathname === '/countries') {
     return await withCache(ctx, request, CACHE_PRESETS.directory, async () => renderCountriesIndex(env, base));
   }
@@ -39,6 +54,9 @@ export async function handleSeoPagesRoute(url, request, env, ctx, base) {
     const html = await renderCountryDetail(env, base, countryMatch[1]);
     if (!html) return new Response('Country not found', { status: 404 });
     return new Response(html, { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": CACHE_PRESETS.entity } });
+  }
+  if (url.pathname === '/skills' || url.pathname.match(/^\/skills\/([a-z0-9-]+)$/)) {
+    if (settings.feature_skill_pages === '0') return new Response('Not found', { status: 404 });
   }
   if (url.pathname === '/skills') {
     return await withCache(ctx, request, CACHE_PRESETS.directory, async () => renderSkillsIndex(env, base));

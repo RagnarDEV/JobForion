@@ -28,7 +28,7 @@ import { renderSystemContent } from '../pages/admin/system.js';
 import { renderSecurityContent } from '../pages/admin/security.js';
 import { adminShell } from '../pages/admin/shell.js';
 import { JOB_TYPE_META } from '../config/constants.js';
-import { setSettings, SETTINGS_KEYS, CHECKBOX_SETTINGS_KEYS } from '../lib/settings.js';
+import { setSettings, getSettings, SETTINGS_KEYS, CHECKBOX_SETTINGS_KEYS } from '../lib/settings.js';
 import { createCategory, updateCategory, deleteCategory, moveCategory } from '../lib/categories.js';
 import { setOverride, clearOverride, DIRECTORY_KINDS } from '../lib/directory-overrides.js';
 import { getPageBySlug, createPage, updatePage, deletePage, movePage } from '../lib/pages-cms.js';
@@ -783,6 +783,15 @@ export async function handleAdminRoute(url, request, env, base) {
     try {
       const ok = await verifyAdminCookie(env, request.headers.get('Cookie'));
       if (!ok) return new Response('Unauthorized', { status: 401 });
+      // Feature Flag: Featured Jobs (see lib/settings.js). When off, the
+      // pin/unpin action is blocked at the source rather than merely
+      // hidden — turning this flag off is a real behavioral switch, not
+      // just cosmetic, even though the public-facing badge suppression
+      // itself is still Phase 3 (see /admin/settings for the note).
+      const settings = await getSettings(env);
+      if (settings.feature_featured_jobs === '0') {
+        return new Response(null, { status: 302, headers: { 'Location': `/admin/jobs?flash=${encodeURIComponent('Featured Jobs is disabled in Settings')}` } });
+      }
       const form = await request.formData();
       const id = form.get('id');
       const redirect = (form.get('redirect') || '/admin/jobs').toString();
@@ -790,6 +799,78 @@ export async function handleAdminRoute(url, request, env, base) {
       await logActivity(env, 'job_featured_toggled', `job #${id}`);
       const sep = redirect.includes('?') ? '&' : '?';
       return new Response(null, { status: 302, headers: { 'Location': `${redirect}${sep}flash=${encodeURIComponent('Job pin updated')}` } });
+    } catch (e) { return errorPage(e); }
+  }
+
+  // ── Bulk Actions (Admin Dashboard V2, Phase 2) ──────────────────────
+  // Handles every action the bulk bar in pages/admin/jobs.js can send:
+  // delete / feature / unfeature / set_job_type. Same D1 batch pattern
+  // already used everywhere else in this codebase (db/cleanup.js,
+  // db/sync.js) — chunked so a large selection never sends one
+  // enormous SQL statement, and capped at 500 ids per request so a
+  // malformed/huge form post can't turn into an unbounded operation.
+  if (url.pathname === '/admin/jobs/bulk' && request.method === 'POST') {
+    try {
+      const ok = await verifyAdminCookie(env, request.headers.get('Cookie'));
+      if (!ok) return new Response('Unauthorized', { status: 401 });
+      const form = await request.formData();
+      const action = (form.get('bulk_action') || '').toString();
+      const redirect = (form.get('redirect') || '/admin/jobs').toString();
+      const sep = redirect.includes('?') ? '&' : '?';
+      const ids = form.getAll('ids')
+        .map(v => parseInt(v.toString(), 10))
+        .filter(n => Number.isInteger(n) && n > 0)
+        .slice(0, 500);
+
+      if (!ids.length) {
+        return new Response(null, { status: 302, headers: { 'Location': `${redirect}${sep}flash=${encodeURIComponent('No jobs selected')}` } });
+      }
+
+      const BULK_CHUNK = 100; // D1 caps bound parameters per statement at 100 — see db/cleanup.js for the same constraint
+      const chunks = [];
+      for (let i = 0; i < ids.length; i += BULK_CHUNK) chunks.push(ids.slice(i, i + BULK_CHUNK));
+
+      let changed = 0;
+      let flashMsg = '';
+
+      if (action === 'delete') {
+        for (const chunk of chunks) {
+          const placeholders = chunk.map(() => '?').join(',');
+          const r = await env.DB.prepare(`DELETE FROM jobs WHERE id IN (${placeholders})`).bind(...chunk).run();
+          changed += r.meta?.changes || 0;
+        }
+        flashMsg = `Deleted ${changed} job${changed === 1 ? '' : 's'}`;
+        await logActivity(env, 'jobs_bulk_deleted', `${changed} jobs (manual selection)`);
+      } else if (action === 'feature' || action === 'unfeature') {
+        const settings = await getSettings(env);
+        if (settings.feature_featured_jobs === '0') {
+          return new Response(null, { status: 302, headers: { 'Location': `${redirect}${sep}flash=${encodeURIComponent('Featured Jobs is disabled in Settings')}` } });
+        }
+        const val = action === 'feature' ? 1 : 0;
+        for (const chunk of chunks) {
+          const placeholders = chunk.map(() => '?').join(',');
+          const r = await env.DB.prepare(`UPDATE jobs SET featured = ? WHERE id IN (${placeholders})`).bind(val, ...chunk).run();
+          changed += r.meta?.changes || 0;
+        }
+        flashMsg = `${action === 'feature' ? 'Pinned' : 'Unpinned'} ${changed} job${changed === 1 ? '' : 's'}`;
+        await logActivity(env, 'job_featured_toggled', `${changed} jobs → ${action}`);
+      } else if (action === 'set_job_type') {
+        const jobType = (form.get('job_type_value') || '').toString();
+        if (!JOB_TYPE_META[jobType]) {
+          return new Response(null, { status: 302, headers: { 'Location': `${redirect}${sep}flash=${encodeURIComponent('Invalid job type')}` } });
+        }
+        for (const chunk of chunks) {
+          const placeholders = chunk.map(() => '?').join(',');
+          const r = await env.DB.prepare(`UPDATE jobs SET job_type = ? WHERE id IN (${placeholders})`).bind(jobType, ...chunk).run();
+          changed += r.meta?.changes || 0;
+        }
+        flashMsg = `Set ${changed} job${changed === 1 ? '' : 's'} to ${jobType}`;
+        await logActivity(env, 'job_type_bulk_changed', `${changed} jobs → ${jobType}`);
+      } else {
+        return new Response(null, { status: 302, headers: { 'Location': `${redirect}${sep}flash=${encodeURIComponent('Unknown bulk action')}` } });
+      }
+
+      return new Response(null, { status: 302, headers: { 'Location': `${redirect}${sep}flash=${encodeURIComponent(flashMsg)}` } });
     } catch (e) { return errorPage(e); }
   }
 
