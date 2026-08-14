@@ -153,10 +153,10 @@ export async function renderSettingsContent(env) {
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 20px">
           ${featureFlag('feature_blog', 'Blog', s.feature_blog, 'Enforced now — /blog 404s site-wide when off.')}
           ${featureFlag('feature_job_alerts', 'Job Alerts', s.feature_job_alerts, 'Enforced now — the subscribe form returns a disabled message when off.')}
-          ${featureFlag('feature_company_pages', 'Company Pages', s.feature_company_pages, 'Flag ready — route-level enforcement is next up.')}
-          ${featureFlag('feature_country_pages', 'Country Pages', s.feature_country_pages, 'Flag ready — route-level enforcement is next up.')}
-          ${featureFlag('feature_skill_pages', 'Skill Pages', s.feature_skill_pages, 'Flag ready — route-level enforcement is next up.')}
-          ${featureFlag('feature_featured_jobs', 'Featured Jobs Badges', s.feature_featured_jobs, 'Flag ready — route-level enforcement is next up.')}
+          ${featureFlag('feature_company_pages', 'Company Pages', s.feature_company_pages, 'Enforced — /companies 404s site-wide when off.')}
+          ${featureFlag('feature_country_pages', 'Country Pages', s.feature_country_pages, 'Enforced — /countries 404s site-wide when off.')}
+          ${featureFlag('feature_skill_pages', 'Skill Pages', s.feature_skill_pages, 'Enforced — /skills 404s site-wide when off.')}
+          ${featureFlag('feature_featured_jobs', 'Featured Jobs Badges', s.feature_featured_jobs, 'Enforced — pin/unpin blocked, "Pinned" badge hidden everywhere.')}
         </div>
       </div>
 
