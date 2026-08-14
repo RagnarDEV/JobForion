@@ -783,11 +783,9 @@ export async function handleAdminRoute(url, request, env, base) {
     try {
       const ok = await verifyAdminCookie(env, request.headers.get('Cookie'));
       if (!ok) return new Response('Unauthorized', { status: 401 });
-      // Feature Flag: Featured Jobs (see lib/settings.js). When off, the
-      // pin/unpin action is blocked at the source rather than merely
-      // hidden — turning this flag off is a real behavioral switch, not
-      // just cosmetic, even though the public-facing badge suppression
-      // itself is still Phase 3 (see /admin/settings for the note).
+      // Feature Flag: Featured Jobs (see lib/settings.js). Blocked at the
+      // source — the "Pinned" badge/tint is also fully suppressed
+      // site-wide when this is off (see components/job-card.js).
       const settings = await getSettings(env);
       if (settings.feature_featured_jobs === '0') {
         return new Response(null, { status: 302, headers: { 'Location': `/admin/jobs?flash=${encodeURIComponent('Featured Jobs is disabled in Settings')}` } });
