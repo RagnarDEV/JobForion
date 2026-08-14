@@ -47,6 +47,8 @@ export const ACTION_LABELS = {
   cleanup_run: 'Cleanup executed',
   sync_run: 'Job sync triggered',
   cache_purged: 'Cache purged',
+  homepage_section_toggled: 'Homepage section enabled/disabled',
+  homepage_section_moved: 'Homepage section reordered',
 };
 
 // action: short machine-readable key, e.g. 'login_failed', 'job_deleted'.
