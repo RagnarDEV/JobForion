@@ -21,6 +21,7 @@ import { getAdSlotsConfig } from '../lib/ad-slots.js';
 import { getFooterPages, getMenuPages } from '../lib/pages-cms.js';
 import { getNavButtons } from '../lib/nav-buttons.js';
 import { getEnabledHomepageSections } from '../lib/homepage-sections.js';
+import { categoryIconSvg } from '../lib/category-icons.js';
 import { iconSparkle, iconFlame, iconPin, iconMapPin, iconBookmark, iconLink, iconArrowRight, iconBadgeCheck, iconClock, iconGlobe, iconBuilding, iconSearch, iconCheck, iconInfo, iconAlertTriangle } from '../assets/icons.js';
 
 // Same icon markup used by the server-rendered cards (job-card.js) is
@@ -133,7 +134,10 @@ export async function renderMainHTML(env, base) {
     <div class="content-wrap" style="padding-bottom:0">
       <div class="cg-title">Browse by Category</div>
       <div class="cg-grid">
-        ${categories.slice(0, 12).map(c => `<a href="/categories/${c.key}" class="cg-item" style="--cat-color:${c.color}"><span class="cg-emoji">${c.emoji || ''}</span><span class="cg-label">${escapeHtml(c.label)}</span></a>`).join('')}
+        ${categories.slice(0, 12).map(c => {
+          const swatch = /^#[0-9a-fA-F]{6}$/.test(c.color || '') ? c.color : '#3556FF';
+          return `<a href="/categories/${c.key}" class="cg-item" style="--cat-color:${swatch}"><span class="cg-icon" style="background:${swatch}1a;color:${swatch}">${categoryIconSvg(c.key, { size: 18 })}</span><span class="cg-label">${escapeHtml(c.label)}</span></a>`;
+        }).join('')}
       </div>
     </div>` : '',
 
@@ -225,9 +229,9 @@ ${SHARED_CSS}
 /* ── Categories Grid (Homepage Sections Builder, Phase 4) ── */
 .cg-title{font-family:'Plus Jakarta Sans',sans-serif;font-size:15px;font-weight:800;color:var(--ink);margin-bottom:12px}
 .cg-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;margin-bottom:24px}
-.cg-item{display:flex;align-items:center;gap:9px;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px 14px;text-decoration:none;transition:all .2s}
+.cg-item{display:flex;align-items:center;gap:11px;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px 14px;text-decoration:none;transition:all .2s}
 .cg-item:hover{border-color:var(--cat-color,var(--brand));transform:translateY(-1px);box-shadow:var(--shadow)}
-.cg-emoji{font-size:17px;flex-shrink:0}
+.cg-icon{width:34px;height:34px;border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
 .cg-label{font-size:12.5px;font-weight:700;color:var(--ink)}
 
 /* ── Post-a-Job CTA banner (Homepage Sections Builder, Phase 4) ── */
