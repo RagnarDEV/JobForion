@@ -83,8 +83,9 @@ export async function renderMainHTML(env, base) {
     "name": settings.site_name, "url": base, "logo": `${base}/icon-512.png`
   });
 
+  const featuredEnabled = settings.feature_featured_jobs !== '0';
   const ssrJobsHtml = initialJobs.length
-    ? initialJobs.map((j, i) => jobCardSSR(j, i, categoryMap, categoryOrder, cardStyles)).join('')
+    ? initialJobs.map((j, i) => jobCardSSR(j, i, categoryMap, categoryOrder, cardStyles, {}, featuredEnabled)).join('')
     : `<div class="loader-wrap"><div class="loader"></div></div>`;
 
   const siteName = escapeHtml(settings.site_name);
@@ -299,7 +300,7 @@ ${postJobModalHtml(categoryOrder, categoryMap)}
   <div class="toast-bar" id="toastBar"></div>
 </div>
 
-<script>window.__CATEGORY_META__=${JSON.stringify(categoryMap)};window.__CATEGORY_ORDER__=${JSON.stringify(categoryOrder)};window.__ICONS__=${JSON.stringify(CLIENT_ICONS)};window.__COUNTRY_ISO__=${JSON.stringify(COUNTRY_TO_ISO)};window.__JOB_TYPE_META__=${JSON.stringify(JOB_TYPE_META)};window.__JOB_CARD_STYLES__=${JSON.stringify(cardStyles)};</script>
+<script>window.__CATEGORY_META__=${JSON.stringify(categoryMap)};window.__CATEGORY_ORDER__=${JSON.stringify(categoryOrder)};window.__ICONS__=${JSON.stringify(CLIENT_ICONS)};window.__COUNTRY_ISO__=${JSON.stringify(COUNTRY_TO_ISO)};window.__JOB_TYPE_META__=${JSON.stringify(JOB_TYPE_META)};window.__JOB_CARD_STYLES__=${JSON.stringify(cardStyles)};window.__FEATURES__=${JSON.stringify({ featuredJobs: featuredEnabled })};</script>
 <script>
 const CAT_META=window.__CATEGORY_META__;
 const CAT_ORDER=window.__CATEGORY_ORDER__;
@@ -307,6 +308,7 @@ const ICONS=window.__ICONS__;
 const COUNTRY_ISO=window.__COUNTRY_ISO__;
 const JOB_TYPE_META=window.__JOB_TYPE_META__;
 const JOB_CARD_STYLES=window.__JOB_CARD_STYLES__;
+const FEATURES=window.__FEATURES__;
 function isoToFlagEmoji(iso){
   if(!iso||iso.length!==2)return null;
   const cps=[...iso.toUpperCase()].map(c=>127397+c.charCodeAt(0));
@@ -377,7 +379,7 @@ function catForTitle(title){
   return CAT_ORDER[0]||'developer';
 }
 function pastelFor(j){
-  if(j.featured)return'var(--pastel-blue)';
+  if(FEATURES.featuredJobs && j.featured)return'var(--pastel-blue)';
   if(isHot(j.salary))return'var(--pastel-yellow)';
   return'var(--surface)';
 }
@@ -456,7 +458,7 @@ function renderJobsList(){
             <div class="card-badges">
               \${jobTypeBadge(j.job_type)}
               <span class="cat-dot"><span class="dot"></span>\${esc(meta.label)}</span>
-              \${j.featured?'<span class="tag-pinned">'+ICONS.pin+' Pinned</span>':''}
+              \${FEATURES.featuredJobs && j.featured?'<span class="tag-pinned">'+ICONS.pin+' Pinned</span>':''}
               \${nw?'<span class="tag-new">'+ICONS.sparkle+' NEW</span>':''}
               \${hot?'<span class="tag-hot">'+ICONS.flame+' HOT</span>':''}
             </div>

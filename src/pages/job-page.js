@@ -153,7 +153,7 @@ export async function renderJobPage(job, related, base, env) {
   ${related.length ? `
     <div class="related-title" style="margin-top:24px">Similar Jobs</div>
     <div class="jobs-list">
-      ${related.map((r, i) => jobCardSSR(r, i, categoryMap, categoryOrder, cardStyles, logoOverrides)).join('')}
+      ${related.map((r, i) => jobCardSSR(r, i, categoryMap, categoryOrder, cardStyles, logoOverrides, settings.feature_featured_jobs !== '0')).join('')}
     </div>` : ''}
   ${adSlot('job-detail-footer', 'margin-top:24px', adConfig, adsEnabled)}
 </div>

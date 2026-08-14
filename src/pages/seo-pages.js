@@ -52,8 +52,12 @@ async function loadPageContext(env) {
 // listing page look identical to the homepage, not a stripped-down row.
 async function jobsListHtml(env, jobs, categoryMap, categoryOrder, cardStyles, emptyHtml) {
   if (!jobs || !jobs.length) return emptyHtml;
-  const logoOverrides = await getLogoOverrides(env, jobs.map(j => j.company));
-  return `<div class="jobs-list">${jobs.map((j, i) => jobCardSSR(j, i, categoryMap, categoryOrder, cardStyles, logoOverrides)).join('')}</div>`;
+  const [logoOverrides, settings] = await Promise.all([
+    getLogoOverrides(env, jobs.map(j => j.company)),
+    getSettings(env), // cheap: 60s-cached per isolate, see lib/settings.js
+  ]);
+  const featuredEnabled = settings.feature_featured_jobs !== '0';
+  return `<div class="jobs-list">${jobs.map((j, i) => jobCardSSR(j, i, categoryMap, categoryOrder, cardStyles, logoOverrides, featuredEnabled)).join('')}</div>`;
 }
 
 // ── /categories ──
