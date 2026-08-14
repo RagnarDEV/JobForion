@@ -19,6 +19,7 @@ function jobRow(j, categoryOrder = [], categoryMap = {}) {
   const jt = (j.job_type && JOB_TYPE_META[j.job_type]) ? j.job_type : 'Free';
   const jtBadge = jt !== 'Free' ? `<span class="adm-jt-badge">${JOB_TYPE_META[jt].icon} ${jt}</span> ` : '';
   return `<tr>
+    <td style="width:32px"><input type="checkbox" class="bulk-row-check" name="ids" form="bulkForm" value="${j.id}" onchange="jnBulkSync()"></td>
     <td style="max-width:220px">
       <div style="font-weight:700;font-size:12.5px;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${j.featured ? '📌 ' : ''}${jtBadge}${escapeHtml(j.title)}</div>
       <div style="font-size:11px;color:var(--ink3)">${escapeHtml(j.company)}</div>
@@ -163,8 +164,26 @@ export async function renderJobsListContent(env, params) {
     </div>
 
     <div class="adm-card" style="overflow-x:auto">
+      <form id="bulkForm" method="POST" action="/admin/jobs/bulk" onsubmit="return jnBulkSubmit(event)">
+        <input type="hidden" name="bulk_action" id="bulkActionField">
+        <input type="hidden" name="job_type_value" id="bulkJobTypeField">
+        <input type="hidden" name="redirect" value="${escapeHtml(redirectTarget)}">
+      </form>
+      <div class="bulk-bar" id="bulkBar">
+        <span class="bulk-bar-count" id="bulkCount">0 selected</span>
+        <div class="bulk-bar-actions">
+          <button type="button" class="adm-btn-sm" onclick="jnBulkAction('feature')" style="color:var(--brand)">📌 Pin</button>
+          <button type="button" class="adm-btn-sm" onclick="jnBulkAction('unfeature')" style="color:var(--ink2)">Unpin</button>
+          <select class="adm-input" id="bulkJobTypeSelect" style="padding:5px 8px;font-size:11px">
+            ${JOB_TYPE_ORDER.map(t => `<option value="${t}">${JOB_TYPE_META[t].icon} ${t}</option>`).join('')}
+          </select>
+          <button type="button" class="adm-btn-sm" onclick="jnBulkAction('set_job_type')" style="color:var(--brand)">Set Job Type</button>
+          <button type="button" class="adm-btn-sm" onclick="jnBulkAction('delete')" style="color:var(--coral)">🗑 Delete</button>
+        </div>
+      </div>
       <table style="width:100%;border-collapse:collapse;font-size:12px">
         <thead><tr style="text-align:left;border-bottom:1.5px solid var(--border)">
+          <th style="padding:8px 6px;width:32px"><input type="checkbox" id="bulkSelectAll" onchange="jnBulkToggleAll(this)"></th>
           <th style="padding:8px 6px;color:var(--ink3);font-size:10.5px;text-transform:uppercase">Job</th>
           <th style="padding:8px 6px;color:var(--ink3);font-size:10.5px;text-transform:uppercase">Location</th>
           <th style="padding:8px 6px;color:var(--ink3);font-size:10.5px;text-transform:uppercase">Category</th>
@@ -173,7 +192,7 @@ export async function renderJobsListContent(env, params) {
           <th style="padding:8px 6px;color:var(--ink3);font-size:10.5px;text-transform:uppercase">Posted</th>
           <th style="padding:8px 6px;color:var(--ink3);font-size:10.5px;text-transform:uppercase">Actions</th>
         </tr></thead>
-        <tbody>${rowsHtml || `<tr><td colspan="7" style="padding:20px;text-align:center;color:var(--ink3)">No jobs match these filters</td></tr>`}</tbody>
+        <tbody>${rowsHtml || `<tr><td colspan="8" style="padding:20px;text-align:center;color:var(--ink3)">No jobs match these filters</td></tr>`}</tbody>
       </table>
     </div>
 
@@ -187,6 +206,43 @@ export async function renderJobsListContent(env, params) {
   <script>
     function jnCopyLink(url){
       navigator.clipboard.writeText(url).then(function(){ if(window.jnToast) jnToast('Link copied'); });
+    }
+
+    // ── Bulk Actions (Admin Dashboard V2, Phase 2) ──────────────────
+    // Checkboxes live inside <td> cells that are NOT nested inside
+    // #bulkForm (a <form> can never validly wrap a <table> that also
+    // contains other independent per-row <form>s) — instead every
+    // checkbox/hidden field uses the HTML5 form="bulkForm" attribute to
+    // associate with the form from outside it. See jobRow() above.
+    function jnBulkSync(){
+      var checked = document.querySelectorAll('.bulk-row-check:checked').length;
+      var bar = document.getElementById('bulkBar');
+      var count = document.getElementById('bulkCount');
+      count.textContent = checked + ' selected';
+      bar.classList.toggle('show', checked > 0);
+      var all = document.querySelectorAll('.bulk-row-check').length;
+      var selectAll = document.getElementById('bulkSelectAll');
+      if (selectAll) selectAll.checked = all > 0 && checked === all;
+    }
+    function jnBulkToggleAll(cb){
+      document.querySelectorAll('.bulk-row-check').forEach(function(el){ el.checked = cb.checked; });
+      jnBulkSync();
+    }
+    function jnBulkAction(action){
+      var checked = document.querySelectorAll('.bulk-row-check:checked').length;
+      if (!checked) return;
+      if (action === 'delete' && !confirm('Permanently delete ' + checked + ' job' + (checked === 1 ? '' : 's') + '? This cannot be undone.')) return;
+      if (action === 'set_job_type') {
+        document.getElementById('bulkJobTypeField').value = document.getElementById('bulkJobTypeSelect').value;
+      }
+      document.getElementById('bulkActionField').value = action;
+      document.getElementById('bulkForm').requestSubmit ? document.getElementById('bulkForm').requestSubmit() : document.getElementById('bulkForm').submit();
+    }
+    // onsubmit guard: a bare Enter-key submit (no action chosen) must not
+    // fire an empty bulk_action against the server.
+    function jnBulkSubmit(e){
+      if (!document.getElementById('bulkActionField').value) { e.preventDefault(); return false; }
+      return true;
     }
   </script>`;
 }

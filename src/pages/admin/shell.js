@@ -194,6 +194,18 @@ export function adminShell(activeId, content) {
 .health-warn{background:#e0a83a}
 .health-off{background:var(--ink3)}
 .health-err{background:var(--coral)}
+
+/* ── Bulk Actions bar (Admin Dashboard V2, Phase 2) — sticky, mobile-first;
+     hidden until at least one row checkbox is checked (see jobs.js) ── */
+.bulk-bar{display:none;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;background:var(--ink);color:#fff;border-radius:12px;padding:10px 14px;margin-bottom:10px;position:sticky;top:8px;z-index:20;box-shadow:var(--shadow-lg)}
+.bulk-bar.show{display:flex}
+.bulk-bar-count{font-size:12.5px;font-weight:700;flex-shrink:0}
+.bulk-bar-actions{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.bulk-bar .adm-btn-sm{background:rgba(255,255,255,.1);border-color:rgba(255,255,255,.2);color:#fff}
+.bulk-bar .adm-input{background:rgba(255,255,255,.1);border-color:rgba(255,255,255,.2);color:#fff}
+@media(max-width:640px){
+  .bulk-bar{position:fixed;left:10px;right:10px;bottom:10px;top:auto;margin-bottom:0}
+}
 @media(max-width:768px){.adm-grid{grid-template-columns:1fr}}
 </style></head><body>
 <div id="toast-host"></div>
