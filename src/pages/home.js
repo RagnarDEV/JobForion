@@ -20,6 +20,7 @@ import { getCardStyles } from '../lib/job-card-styles.js';
 import { getAdSlotsConfig } from '../lib/ad-slots.js';
 import { getFooterPages, getMenuPages } from '../lib/pages-cms.js';
 import { getNavButtons } from '../lib/nav-buttons.js';
+import { getEnabledHomepageSections } from '../lib/homepage-sections.js';
 import { iconSparkle, iconFlame, iconPin, iconMapPin, iconBookmark, iconLink, iconArrowRight, iconBadgeCheck, iconClock, iconGlobe, iconBuilding, iconSearch, iconCheck, iconInfo, iconAlertTriangle } from '../assets/icons.js';
 
 // Same icon markup used by the server-rendered cards (job-card.js) is
@@ -48,6 +49,13 @@ export async function renderMainHTML(env, base) {
   const footerPages = await getFooterPages(env);
   const menuPages = await getMenuPages(env);
   const navButtons = await getNavButtons(env);
+  // Homepage Sections Builder (Admin Dashboard V2, Phase 4) — which
+  // blocks render and in what order, per /admin/homepage. Falls back to
+  // every section enabled in its default order (see
+  // lib/homepage-sections.js) if the table is empty/unreachable, so a
+  // fresh install or a transient D1 hiccup renders the homepage exactly
+  // as it always has — never a blank or broken page.
+  const enabledSections = await getEnabledHomepageSections(env);
   // Hero customization (see /admin/settings → "Hero & Branding") — falls
   // back to HERO_FONT_OPTIONS[0] (Space Grotesk, the site's existing
   // default) for any unrecognized/stale value, so a bad save can never
@@ -90,6 +98,67 @@ export async function renderMainHTML(env, base) {
 
   const siteName = escapeHtml(settings.site_name);
   const siteDescription = settings.site_description || `${settings.site_name} is a curated remote job board with ${totalJobsCount ? totalJobsCount.toLocaleString() + '+' : ''} verified positions in development, design, marketing, data and more. Updated every few hours.`;
+
+  // ── Homepage Sections (Admin Dashboard V2, Phase 4) ─────────────────
+  // Each section is built as a standalone HTML string here, then
+  // assembled below in whatever order/subset `enabledSections` says.
+  // `hero` and `job_listing` are `required: true` in
+  // lib/homepage-sections.js and therefore always present — everything
+  // else only renders if an admin has switched it on.
+  const sectionHtml = {
+    hero: `
+    <div class="hero">
+      <div class="hero-inner">
+        <h1 class="hero-title">${escapeHtml(settings.hero_title_line1)} <span class="hl">${escapeHtml(settings.hero_title_line2)}</span></h1>
+        <p class="hero-sub">${escapeHtml(settings.hero_subtitle)}</p>
+        <div class="search-row">
+          <div class="search-wrap">
+            <span class="search-icon">${iconSearch({ size: 16 })}</span>
+            <input type="text" class="search-input" id="searchInput" placeholder="${escapeHtml(settings.hero_search_placeholder)}" oninput="debounceSearch(this.value)">
+          </div>
+          <button class="search-btn" onclick="document.getElementById('searchInput').focus()">${escapeHtml(settings.hero_search_button_text)}</button>
+        </div>
+      </div>
+    </div>`,
+
+    featured_companies: topCompanies.length ? `
+    <div class="fc-strip">
+      <div class="fc-inner">
+        <div class="fc-label">Featured Remote Employers</div>
+        <div class="fc-logos">${topCompanies.slice(0, 6).map(c => `<a href="/companies/${slugify(c.name)}">${escapeHtml(c.name)}</a>`).join('')}</div>
+      </div>
+    </div>` : '',
+
+    categories_grid: categories.length ? `
+    <div class="content-wrap" style="padding-bottom:0">
+      <div class="cg-title">Browse by Category</div>
+      <div class="cg-grid">
+        ${categories.slice(0, 12).map(c => `<a href="/categories/${c.key}" class="cg-item" style="--cat-color:${c.color}"><span class="cg-emoji">${c.emoji || ''}</span><span class="cg-label">${escapeHtml(c.label)}</span></a>`).join('')}
+      </div>
+    </div>` : '',
+
+    job_listing: `
+    <div class="content-wrap">
+      <div class="results-hdr">
+        <div class="results-count" id="resultsCount" style="display:none"><strong>${initialTotal.toLocaleString()}</strong> jobs found</div>
+      </div>
+      ${adSlot('homepage-results-top', '', adConfig, adsEnabled)}
+      <div class="jobs-list" id="jobsList">${ssrJobsHtml}</div>
+      <div class="pagination" id="pagination"></div>
+    </div>`,
+
+    cta_banner: `
+    <div class="content-wrap">
+      <div class="cta-banner">
+        <div>
+          <div class="cta-title">Hiring remotely?</div>
+          <div class="cta-sub">Reach thousands of qualified candidates \u2014 post your job in minutes.</div>
+        </div>
+        <button class="cta-btn" onclick="openPostJobModal()">+ Post a Job</button>
+      </div>
+    </div>`,
+  };
+  const homepageSectionsHtml = enabledSections.map(s => sectionHtml[s.key] || '').join('');
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -152,6 +221,25 @@ ${SHARED_CSS}
 
 /* ── CONTENT ── */
 .content-wrap{max-width:1180px;margin:0 auto;padding:24px}
+
+/* ── Categories Grid (Homepage Sections Builder, Phase 4) ── */
+.cg-title{font-family:'Plus Jakarta Sans',sans-serif;font-size:15px;font-weight:800;color:var(--ink);margin-bottom:12px}
+.cg-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;margin-bottom:24px}
+.cg-item{display:flex;align-items:center;gap:9px;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px 14px;text-decoration:none;transition:all .2s}
+.cg-item:hover{border-color:var(--cat-color,var(--brand));transform:translateY(-1px);box-shadow:var(--shadow)}
+.cg-emoji{font-size:17px;flex-shrink:0}
+.cg-label{font-size:12.5px;font-weight:700;color:var(--ink)}
+
+/* ── Post-a-Job CTA banner (Homepage Sections Builder, Phase 4) ── */
+.cta-banner{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;background:linear-gradient(135deg,#1830C4 0%,#3556FF 60%,#6C3FE0 100%);border-radius:16px;padding:24px 28px;margin-bottom:24px}
+.cta-title{font-family:'Plus Jakarta Sans',sans-serif;font-size:19px;font-weight:800;color:#fff;margin-bottom:4px}
+.cta-sub{font-size:13px;color:rgba(255,255,255,.82)}
+.cta-btn{background:var(--coral);color:#fff;border:none;border-radius:24px;padding:12px 24px;font-size:13.5px;font-weight:700;cursor:pointer;white-space:nowrap;font-family:inherit;transition:all .2s;box-shadow:0 4px 14px rgba(255,92,122,.35)}
+.cta-btn:hover{transform:translateY(-1px);box-shadow:0 6px 20px rgba(255,92,122,.45)}
+@media(max-width:640px){
+  .cta-banner{padding:20px}
+  .cta-btn{width:100%;text-align:center}
+}
 .results-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;gap:10px;flex-wrap:wrap}
 .results-count{font-size:14px;color:var(--ink3)}
 .results-count strong{color:var(--ink);font-weight:700}
@@ -248,35 +336,7 @@ ${mobileHeaderHtml(settings, menuPages, navButtons)}
 <main>
   <!-- JOBS VIEW -->
   <div id="vJobs">
-    <div class="hero">
-      <div class="hero-inner">
-        <h1 class="hero-title">${escapeHtml(settings.hero_title_line1)} <span class="hl">${escapeHtml(settings.hero_title_line2)}</span></h1>
-        <p class="hero-sub">${escapeHtml(settings.hero_subtitle)}</p>
-        <div class="search-row">
-          <div class="search-wrap">
-            <span class="search-icon">${iconSearch({ size: 16 })}</span>
-            <input type="text" class="search-input" id="searchInput" placeholder="${escapeHtml(settings.hero_search_placeholder)}" oninput="debounceSearch(this.value)">
-          </div>
-          <button class="search-btn" onclick="document.getElementById('searchInput').focus()">${escapeHtml(settings.hero_search_button_text)}</button>
-        </div>
-      </div>
-    </div>
-
-    <div class="fc-strip">
-      <div class="fc-inner">
-        <div class="fc-label">Featured Remote Employers</div>
-        <div class="fc-logos">${topCompanies.slice(0, 6).map(c => `<a href="/companies/${slugify(c.name)}">${escapeHtml(c.name)}</a>`).join('')}</div>
-      </div>
-    </div>
-
-    <div class="content-wrap">
-      <div class="results-hdr">
-        <div class="results-count" id="resultsCount" style="display:none"><strong>${initialTotal.toLocaleString()}</strong> jobs found</div>
-      </div>
-      ${adSlot('homepage-results-top', '', adConfig, adsEnabled)}
-      <div class="jobs-list" id="jobsList">${ssrJobsHtml}</div>
-      <div class="pagination" id="pagination"></div>
-    </div>
+    ${homepageSectionsHtml}
   </div>
 
   <!-- SAVED -->
