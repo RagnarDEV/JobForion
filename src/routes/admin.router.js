@@ -26,6 +26,8 @@ import { renderAdsContent } from '../pages/admin/ads.js';
 import { renderSourcesContent } from '../pages/admin/sources.js';
 import { renderSystemContent } from '../pages/admin/system.js';
 import { renderSecurityContent } from '../pages/admin/security.js';
+import { renderHomepageBuilderContent } from '../pages/admin/homepage.js';
+import { setHomepageSectionEnabled, moveHomepageSection } from '../lib/homepage-sections.js';
 import { adminShell } from '../pages/admin/shell.js';
 import { JOB_TYPE_META } from '../config/constants.js';
 import { setSettings, getSettings, SETTINGS_KEYS, CHECKBOX_SETTINGS_KEYS } from '../lib/settings.js';
@@ -214,6 +216,44 @@ export async function handleAdminRoute(url, request, env, base) {
       if (!ok) return new Response(renderAdminLogin(false), { headers: { "Content-Type": "text/html; charset=utf-8" } });
       const content = await renderSourcesContent(env);
       return new Response(adminShell('sources', content), { headers: { "Content-Type": "text/html; charset=utf-8" } });
+    } catch (e) { return errorPage(e); }
+  }
+
+  // ── Homepage Sections Builder (see pages/admin/homepage.js) ────────
+  if (url.pathname === '/admin/homepage' && request.method === 'GET') {
+    try {
+      const ok = await verifyAdminCookie(env, request.headers.get('Cookie'));
+      if (!ok) return new Response(renderAdminLogin(false), { headers: { "Content-Type": "text/html; charset=utf-8" } });
+      const content = await renderHomepageBuilderContent(env);
+      return new Response(adminShell('homepage', content), { headers: { "Content-Type": "text/html; charset=utf-8" } });
+    } catch (e) { return errorPage(e); }
+  }
+
+  if (url.pathname === '/admin/homepage/toggle' && request.method === 'POST') {
+    try {
+      const ok = await verifyAdminCookie(env, request.headers.get('Cookie'));
+      if (!ok) return new Response('Unauthorized', { status: 401 });
+      const form = await request.formData();
+      const key = (form.get('key') || '').toString();
+      const enabled = form.get('enabled') === '1';
+      await setHomepageSectionEnabled(env, key, enabled);
+      await logActivity(env, 'homepage_section_toggled', `${key} → ${enabled ? 'enabled' : 'disabled'}`);
+      return new Response(null, { status: 302, headers: { 'Location': `/admin/homepage?flash=${encodeURIComponent('Homepage updated')}` } });
+    } catch (e) { return errorPage(e); }
+  }
+
+  if (url.pathname === '/admin/homepage/move' && request.method === 'POST') {
+    try {
+      const ok = await verifyAdminCookie(env, request.headers.get('Cookie'));
+      if (!ok) return new Response('Unauthorized', { status: 401 });
+      const form = await request.formData();
+      const key = (form.get('key') || '').toString();
+      const direction = (form.get('direction') || '').toString();
+      if (direction === 'up' || direction === 'down') {
+        await moveHomepageSection(env, key, direction);
+        await logActivity(env, 'homepage_section_moved', `${key} → ${direction}`);
+      }
+      return new Response(null, { status: 302, headers: { 'Location': '/admin/homepage' } });
     } catch (e) { return errorPage(e); }
   }
 
