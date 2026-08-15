@@ -160,8 +160,8 @@ export default {
   async scheduled(event, env, ctx) {
     // Two cron patterns share this one handler (Cloudflare Workers only
     // supports a single scheduled() export) — event.cron tells us which
-    // one fired. See wrangler.toml: "0 */2 * * *" for sync, "0 3 * * *"
-    // for the daily cleanup.
+    // one fired. See wrangler.toml: "0 */6 * * *" for sync (every 6
+    // hours), "0 3 * * *" for the daily cleanup.
     if (event.cron === '0 3 * * *') {
       ctx.waitUntil(cleanupStaleJobs(env));
     } else {
