@@ -8,6 +8,7 @@ import { JOB_TYPE_SORT_SQL } from '../config/constants.js';
 import { resolveRawNames } from '../lib/directory-overrides.js';
 import { getSettings } from '../lib/settings.js';
 import { logActivity } from '../lib/activity-log.js';
+import { verifyAdminCookie } from '../auth/admin-auth.js';
 
 export async function handleApiRoute(url, request, env) {
   if (url.pathname === '/api/subscribe' && request.method === 'POST') {
@@ -63,6 +64,22 @@ export async function handleApiRoute(url, request, env) {
   }
 
   if (url.pathname === '/api/jobs') {
+    // SECURITY / STABILITY: this is the single most D1-expensive public
+    // route (multiple LIKE conditions + a COUNT(*) run twice per
+    // request) and, until now, the one public data endpoint with no
+    // rate limit at all — every write endpoint (subscribe, post-job,
+    // admin login) already had one. The limit is generous (well above
+    // normal pagination/filter-clicking speed) because this also backs
+    // legitimate in-page search-as-you-type; it exists to blunt
+    // scraping/DoS, not to throttle real visitors.
+    const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
+    const rl = await checkRateLimit(env, `api-jobs:${ip}`, { maxRequests: 60, windowMinutes: 1 });
+    if (!rl.allowed) {
+      return new Response(JSON.stringify({ jobs: [], total: 0, page: 1, error: 'Too many requests. Please slow down.' }), {
+        status: 429,
+        headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*", "Retry-After": String((rl.retryAfterMinutes || 1) * 60) },
+      });
+    }
     const page = parseInt(url.searchParams.get("page") || "1");
     const limit = 20, offset = (page - 1) * limit;
     const category = url.searchParams.get("category") || "";
@@ -135,6 +152,15 @@ export async function handleApiRoute(url, request, env) {
   }
 
   if (url.pathname === '/api/debug') {
+    // SECURITY: this leaked a live row count to anyone, unauthenticated
+    // — harmless on its own, but there's no legitimate reason for it to
+    // be public, and "public endpoints that reveal internal state" are
+    // exactly what a security review flags on a production site. Gated
+    // behind the same admin cookie as everything under /admin instead
+    // of deleting it outright, since it's still a genuinely convenient
+    // one-line health check for whoever IS logged in.
+    const ok = await verifyAdminCookie(env, request.headers.get('Cookie'));
+    if (!ok) return new Response('Not found', { status: 404 });
     const { results } = await env.DB.prepare("SELECT COUNT(*) as count FROM jobs").all();
     return new Response(JSON.stringify({ jobs_in_db: results[0]?.count || 0 }), { headers: { "Content-Type": "application/json" } });
   }
