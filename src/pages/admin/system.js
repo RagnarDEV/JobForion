@@ -35,6 +35,11 @@ export async function renderSystemContent(env) {
     }
   }));
 
+  const { results: salaryRemainingRows } = await q(
+    "SELECT COUNT(*) c FROM jobs WHERE salary IS NOT NULL AND salary != '' AND salary_min_usd IS NULL"
+  );
+  const salaryRemaining = salaryRemainingRows?.[0]?.c || 0;
+
   return `
   <div class="adm-wrap">
     <div class="adm-hdr">
@@ -71,6 +76,20 @@ export async function renderSystemContent(env) {
             <div style="font-size:16px;font-weight:800;color:var(--ink)">${tableCounts[t] === null ? '—' : tableCounts[t].toLocaleString()}</div>
           </div>`).join('')}
         </div>
+      </div>
+      <div class="adm-card" style="grid-column:span 2">
+        <div class="adm-card-title">Salary Data Backfill <span style="font-weight:400;color:var(--ink3);font-size:12px">— normalizes free-text salaries (e.g. "$90k - $130k") into sortable/filterable USD numbers</span></div>
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
+          <div style="font-size:12.5px;color:var(--ink2)">
+            ${salaryRemaining > 0
+              ? `<b style="color:var(--ink)">${salaryRemaining.toLocaleString()}</b> job${salaryRemaining === 1 ? '' : 's'} with a salary still need processing`
+              : `<span style="color:var(--green);font-weight:700">✓ All parseable salaries are up to date</span>`}
+          </div>
+          <form method="POST" action="/admin/system/backfill-salary">
+            <button class="adm-btn adm-btn-primary" type="submit" ${salaryRemaining === 0 ? 'disabled' : ''}>Run Batch (300 jobs)</button>
+          </form>
+        </div>
+        ${salaryRemaining > 300 ? `<div style="font-size:10.5px;color:var(--ink3);margin-top:8px">Processes 300 at a time to stay well inside Cloudflare's subrequest budget — click again to continue the remaining ${(salaryRemaining - 300).toLocaleString()}.</div>` : ''}
       </div>
     </div>
 
