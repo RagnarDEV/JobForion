@@ -47,6 +47,7 @@ export const ACTION_LABELS = {
   cleanup_run: 'Cleanup executed',
   sync_run: 'Job sync triggered',
   cache_purged: 'Cache purged',
+  salary_backfill_run: 'Salary data backfill run',
   homepage_section_toggled: 'Homepage section enabled/disabled',
   homepage_section_moved: 'Homepage section reordered',
 };
