@@ -89,5 +89,18 @@ export async function cleanupStaleJobs(env) {
     }
   } catch (e) {}
 
+  // Rate-limit bookkeeping cleanup — piggybacks on this same daily cron
+  // rather than getting its own schedule, since it's cheap and the two
+  // jobs are already "things that tidy up D1 once a day". Every row in
+  // rate_limits (see lib/rate-limit.js) becomes irrelevant once its
+  // window has fully elapsed; the longest window used anywhere today is
+  // 60 minutes (subscribe/post-job/admin-login), so anything with a
+  // window_start older than 48 hours is unambiguously stale no matter
+  // which endpoint created it. Without this, the table grows by one row
+  // per distinct IP forever and never shrinks.
+  try {
+    await env.DB.prepare("DELETE FROM rate_limits WHERE window_start < datetime('now','-48 hours')").run();
+  } catch (e) {}
+
   return { deleted: totalDeleted, breakdown };
 }
