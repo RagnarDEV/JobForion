@@ -29,8 +29,8 @@ export const JOB_CARD_CSS = `
 .verified-ico{font-size:11px}
 .job-meta-row{display:flex;flex-wrap:wrap;gap:5px;align-items:center}
 .tag-loc{background:var(--surface2);color:var(--ink2);border:1px solid var(--border2)}
-.card-right{display:flex;align-items:center;justify-content:flex-end;margin-top:9px;padding-top:9px;border-top:1px solid rgba(18,22,43,.06)}
-.card-time-corner{position:absolute;top:10px;right:12px;display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:600;color:var(--ink3);background:rgba(255,255,255,.75);padding:3px 8px;border-radius:20px;z-index:2}
+.card-right{display:flex;align-items:center;justify-content:flex-end;gap:8px;margin-top:9px;padding-top:9px;border-top:1px solid rgba(18,22,43,.06)}
+.card-time-corner{display:inline-flex;align-items:center;gap:4px;font-size:10.5px;font-weight:600;color:var(--ink3)}
 .salary-badge{font-family:var(--font-mono);font-size:11px;font-weight:700;color:var(--salary);background:rgba(15,174,121,.08);border:1px solid rgba(15,174,121,.18);padding:4px 11px;border-radius:8px;white-space:nowrap}
 .act-btn{width:30px;height:30px;border-radius:8px;background:rgba(255,255,255,.6);border:1px solid var(--border2);color:var(--ink3);display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all .2s;position:relative;z-index:1}
 .act-btn:hover{background:var(--brand-soft);color:var(--brand);transform:scale(1.08)}
