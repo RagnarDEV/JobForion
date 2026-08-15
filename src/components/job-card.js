@@ -228,7 +228,6 @@ export function jobCardSSR(job, idx, categoryMap = CATEGORY_META, categoryOrder 
   const cardStyleAttr = buildCardStyleAttr(jtStyle) + (freeTint ? `;background:${freeTint}` : '');
   const locationFlag = job.location ? countryFlag(job.location.split(',').pop().trim()) : '';
   return `<a href="/job/${job.id}" class="job-card${jobTypeCardClass(job.job_type)}" style="--cat-color:${meta.color};${cardStyleAttr};animation:fadeInUp .3s ease ${Math.min(idx, 6) * .04}s both">
-    ${timeAgo ? `<span class="card-time-corner">${iconClock({ size: 11 })} ${timeAgo}</span>` : ''}
     <div class="card-inner" style="padding:${jtStyle.card_padding}px 16px">
       <div class="card-row1">
         ${logoImgHtml(job.company, `${jtStyle.logo_size}px`, 'co-logo', logoOverride)}
@@ -250,7 +249,10 @@ export function jobCardSSR(job, idx, categoryMap = CATEGORY_META, categoryOrder 
           ${jobType === 'Sponsored' && job.job_type_note ? `<div class="jt-note">${escapeHtml(job.job_type_note)}</div>` : ''}
         </div>
       </div>
-      ${job.salary ? '<div class="card-right"><div class="salary-badge">' + escapeHtml(job.salary) + '</div></div>' : ''}
+      ${(timeAgo || job.salary) ? `<div class="card-right">
+        ${timeAgo ? `<span class="card-time-corner">${iconClock({ size: 11 })} ${timeAgo}</span>` : ''}
+        ${job.salary ? '<div class="salary-badge">' + escapeHtml(job.salary) + '</div>' : ''}
+      </div>` : ''}
     </div>
   </a>`;
 }
