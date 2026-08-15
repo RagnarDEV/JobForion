@@ -12,7 +12,7 @@
 
 import { makeAdminCookie, verifyAdminCookie, timingSafeEqualStr } from '../auth/admin-auth.js';
 import { renderAdminLogin, renderAdminDashboard } from '../pages/admin.js';
-import { insertApiSource } from '../db/sync.js';
+import { insertApiSource, backfillSalaryUsd } from '../db/sync.js';
 import { cleanupStaleJobs } from '../db/cleanup.js';
 import { renderJobsListContent, renderJobEditContent, renderDuplicatesContent } from '../pages/admin/jobs.js';
 import { renderCompaniesListContent } from '../pages/admin/companies.js';
@@ -285,6 +285,19 @@ export async function handleAdminRoute(url, request, env, base) {
       await Promise.all(paths.map(p => cache.delete(new Request(`${base}${p}`, { method: 'GET' })).catch(() => {})));
       await logActivity(env, 'cache_purged', paths.join(', '));
       return new Response(null, { status: 302, headers: { 'Location': `/admin/system?flash=${encodeURIComponent('Cache purged')}` } });
+    } catch (e) { return errorPage(e); }
+  }
+
+  if (url.pathname === '/admin/system/backfill-salary' && request.method === 'POST') {
+    try {
+      const ok = await verifyAdminCookie(env, request.headers.get('Cookie'));
+      if (!ok) return new Response('Unauthorized', { status: 401 });
+      const result = await backfillSalaryUsd(env);
+      await logActivity(env, 'salary_backfill_run', `${result.processed} processed, ${result.remaining} remaining`);
+      const msg = result.remaining > 0
+        ? `Processed ${result.processed} — ${result.remaining} remaining, click again to continue`
+        : `Processed ${result.processed} — all salaries are now up to date`;
+      return new Response(null, { status: 302, headers: { 'Location': `/admin/system?flash=${encodeURIComponent(msg)}` } });
     } catch (e) { return errorPage(e); }
   }
 
