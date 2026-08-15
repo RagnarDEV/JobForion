@@ -267,10 +267,9 @@ ${SHARED_CSS}
 .job-co-card{font-size:11.5px;color:var(--ink2);font-weight:600;margin-bottom:7px;display:flex;align-items:center;gap:5px}
 .verified-ico{font-size:11px}
 .job-meta-row{display:flex;flex-wrap:wrap;gap:5px;align-items:center}
-.card-right{display:flex;align-items:center;justify-content:flex-end;margin-top:9px;padding-top:9px;border-top:1px solid rgba(18,22,43,.06)}
-.card-time-corner{position:absolute;top:12px;right:14px;display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:600;color:var(--ink3);background:rgba(255,255,255,.85);padding:3px 8px;border-radius:20px;z-index:2}
+.card-right{display:flex;align-items:center;justify-content:flex-end;gap:8px;margin-top:9px;padding-top:9px;border-top:1px solid rgba(18,22,43,.06)}
+.card-time-corner{display:inline-flex;align-items:center;gap:4px;font-size:10.5px;font-weight:600;color:var(--ink3)}
 .salary-badge{font-family:var(--font-mono);font-size:11px;font-weight:700;color:var(--salary);background:rgba(15,174,121,.08);border:1px solid rgba(15,174,121,.18);padding:4px 11px;border-radius:8px;white-space:nowrap}
-.card-time-corner{position:absolute;top:10px;right:12px;display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:600;color:var(--ink3);background:rgba(255,255,255,.75);padding:3px 8px;border-radius:20px;z-index:1}
 .act-btn{width:30px;height:30px;border-radius:8px;background:rgba(255,255,255,.6);border:1px solid var(--border2);color:var(--ink3);display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all .2s;position:relative;z-index:1}
 .act-btn:hover{background:var(--brand-soft);color:var(--brand);transform:scale(1.08)}
 .act-btn.saved{background:rgba(245,166,35,.12);border-color:var(--amber);color:var(--amber)}
@@ -514,7 +513,6 @@ function renderJobsList(){
     const jts=jtStyleFor(j.job_type);
     const locFlag=j.location?clientCountryFlag(j.location.split(',').pop().trim()):'';
     return\`<a href="/job/\${j.id}" class="job-card\${jobTypeCardClass(j.job_type)}" style="--cat-color:\${meta.color};\${jtCardStyleAttr(j.job_type,bg)};animation:fadeInUp .3s ease \${Math.min(idx,6)*.04}s both">
-      \${timeAgo?'<span class="card-time-corner">'+ICONS.clock+' '+timeAgo+'</span>':''}
       <div class="card-inner" style="padding:\${jts.card_padding}px 16px">
         <div class="card-row1">
           \${logoHtml(j.company,jts.logo_size+'px')}
@@ -537,7 +535,7 @@ function renderJobsList(){
             \${normalizeJobType(j.job_type)==='Sponsored'&&j.job_type_note?'<div class="jt-note">'+esc(j.job_type_note)+'</div>':''}
           </div>
         </div>
-        \${j.salary?'<div class="card-right"><div class="salary-badge">'+esc(j.salary)+'</div></div>':''}
+        \${(timeAgo||j.salary)?'<div class="card-right">'+(timeAgo?'<span class="card-time-corner">'+ICONS.clock+' '+timeAgo+'</span>':'')+(j.salary?'<div class="salary-badge">'+esc(j.salary)+'</div>':'')+'</div>':''}
       </div>
     </a>\`;
   }).join('');
