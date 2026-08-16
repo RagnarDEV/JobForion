@@ -22,7 +22,7 @@ import { getFooterPages, getMenuPages } from '../lib/pages-cms.js';
 import { getNavButtons } from '../lib/nav-buttons.js';
 import { getEnabledHomepageSections } from '../lib/homepage-sections.js';
 import { categoryIconSvg } from '../lib/category-icons.js';
-import { iconSparkle, iconFlame, iconPin, iconMapPin, iconBookmark, iconLink, iconArrowRight, iconBadgeCheck, iconClock, iconGlobe, iconBuilding, iconSearch, iconCheck, iconInfo, iconAlertTriangle, iconFilter, iconChevronDown } from '../assets/icons.js';
+import { iconSparkle, iconFlame, iconPin, iconMapPin, iconBookmark, iconLink, iconArrowRight, iconBadgeCheck, iconClock, iconGlobe, iconBuilding, iconSearch, iconCheck, iconInfo, iconAlertTriangle, iconFilter, iconChevronDown, iconSliders, iconLayoutGrid, iconX } from '../assets/icons.js';
 
 // Same icon markup used by the server-rendered cards (job-card.js) is
 // reused for client-rendered cards (search/filter/pagination results) by
@@ -112,31 +112,33 @@ export async function renderMainHTML(env, base) {
       <div class="hero-inner">
         <h1 class="hero-title">${escapeHtml(settings.hero_title_line1)} <span class="hl">${escapeHtml(settings.hero_title_line2)}</span></h1>
         <p class="hero-sub">${escapeHtml(settings.hero_subtitle)}</p>
-        <div class="search-row">
-          <div class="search-wrap">
-            <span class="search-icon">${iconSearch({ size: 16 })}</span>
-            <input type="text" class="search-input" id="searchInput" placeholder="${escapeHtml(settings.hero_search_placeholder)}" oninput="debounceSearch(this.value)">
+
+        <div class="search-card">
+          <div class="sc-row">
+            <span class="sc-icon">${iconSearch({ size: 17 })}</span>
+            <input type="text" class="sc-input" id="searchInput" placeholder="${escapeHtml(settings.hero_search_placeholder)}" oninput="debounceSearch(this.value)">
+            <button class="sc-slider-btn" id="filtersToggleBtn" onclick="toggleFiltersPanel()" aria-label="More filters" title="More filters">
+              ${iconSliders({ size: 16 })}
+              <span class="filters-count-badge" id="filtersCountBadge" style="display:none">0</span>
+            </button>
           </div>
-          <button class="search-btn" onclick="document.getElementById('searchInput').focus()">${escapeHtml(settings.hero_search_button_text)}</button>
+          <div class="sc-row sc-row-select">
+            <span class="sc-icon">${iconLayoutGrid({ size: 16 })}</span>
+            <select class="sc-select" id="fCategory" onchange="onFilterChange()">
+              <option value="">All Categories</option>
+              ${categories.map(c => `<option value="${c.key}">${escapeHtml(c.label)}</option>`).join('')}
+            </select>
+            <span class="sc-chevron">${iconChevronDown({ size: 15 })}</span>
+          </div>
+          <button class="sc-search-btn" onclick="onFilterChange()">${escapeHtml(settings.hero_search_button_text)}</button>
         </div>
+
         <div class="filters-toggle-row">
-          <button class="filters-toggle-btn" id="filtersToggleBtn" onclick="toggleFiltersPanel()">
-            ${iconFilter({ size: 13 })} Filters
-            <span class="filters-count-badge" id="filtersCountBadge" style="display:none">0</span>
-            <span class="filters-chevron" id="filtersChevron">${iconChevronDown({ size: 13 })}</span>
-          </button>
-          <button class="filters-clear-btn" id="filtersClearBtn" onclick="clearFilters()" style="display:none">Clear all</button>
+          <button class="filters-clear-btn" id="filtersClearBtn" onclick="clearFilters()" style="display:none">${iconX({ size: 11 })} Clear all filters</button>
         </div>
         <div class="filters-panel" id="filtersPanel">
           <div class="filters-panel-inner">
             <div class="filters-grid">
-              <label class="filter-field">
-                <span>Category</span>
-                <select id="fCategory" onchange="onFilterChange()">
-                  <option value="">All categories</option>
-                  ${categories.map(c => `<option value="${c.key}">${escapeHtml(c.label)}</option>`).join('')}
-                </select>
-              </label>
               <label class="filter-field">
                 <span>Remote Type</span>
                 <select id="fRemote" onchange="onFilterChange()">
@@ -264,41 +266,41 @@ ${SHARED_CSS}
 .hero-title .hl{position:relative;display:inline-block}
 .hero-title .hl::after{content:'';position:absolute;left:0;right:0;bottom:2px;height:5px;background:var(--coral);border-radius:3px;opacity:.85;z-index:-1}
 .hero-sub{color:rgba(255,255,255,.85);font-size:16px;margin-bottom:28px;line-height:1.65;max-width:540px}
-.search-row{display:flex;gap:0;max-width:640px;margin-bottom:26px;background:#fff;border-radius:18px;padding:6px;box-shadow:0 14px 34px -10px rgba(24,48,196,.22);border:1px solid rgba(255,255,255,.7);transition:box-shadow .25s ease}
-.search-row:focus-within{box-shadow:0 18px 42px -8px rgba(24,48,196,.3)}
-.search-wrap{position:relative;flex:1}
-.search-icon{position:absolute;left:16px;top:50%;transform:translateY(-50%);color:var(--ink3);pointer-events:none;font-size:15px}
-.search-input{width:100%;background:transparent;border:none;padding:13px 12px 13px 42px;color:var(--ink);font-size:15px;font-family:inherit;outline:none}
-.search-input::placeholder{color:var(--ink3)}
-.search-btn{background:${settings.hero_search_button_color};color:#fff;border:none;border-radius:13px;padding:0 28px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;transition:all .2s;white-space:nowrap}
-.search-btn:hover{filter:brightness(1.08);box-shadow:0 6px 16px rgba(0,0,0,.22)}
-
-/* ── FILTERS — attached to the hero search box ── */
-.filters-toggle-row{display:flex;align-items:center;gap:14px;margin-top:12px;max-width:640px}
-.filters-toggle-btn{display:inline-flex;align-items:center;gap:7px;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.28);color:#fff;padding:9px 16px;border-radius:24px;font-size:13px;font-weight:700;cursor:pointer;transition:all .2s;font-family:inherit}
-.filters-toggle-btn:hover{background:rgba(255,255,255,.22)}
-.filters-toggle-btn.active{background:#fff;color:var(--brand);border-color:#fff}
-.filters-count-badge{background:var(--coral);color:#fff;font-size:10px;font-weight:800;padding:1px 7px;border-radius:20px;line-height:1.6;min-width:16px;text-align:center}
-.filters-toggle-btn.active .filters-count-badge{background:var(--brand);color:#fff}
-.filters-chevron{display:inline-flex;transition:transform .25s ease}
-.filters-toggle-btn.active .filters-chevron{transform:rotate(180deg)}
-.filters-clear-btn{background:none;border:none;color:rgba(255,255,255,.75);font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit;padding:0;text-decoration:underline;text-underline-offset:2px}
+/* ── UNIFIED SEARCH CARD (search + category + button stacked as one card) ── */
+.search-card{max-width:560px;background:#fff;border-radius:22px;padding:10px;box-shadow:0 16px 38px -10px rgba(24,48,196,.24);border:1px solid rgba(255,255,255,.7);margin-bottom:14px}
+.sc-row{display:flex;align-items:center;gap:10px;background:var(--surface2);border-radius:14px;padding:13px 16px;margin-bottom:8px;transition:box-shadow .2s ease}
+.sc-row:focus-within{box-shadow:0 0 0 2px var(--brand-soft) inset}
+.sc-icon{color:var(--ink3);flex-shrink:0;display:inline-flex}
+.sc-input{flex:1;min-width:0;background:transparent;border:none;padding:0;color:var(--ink);font-size:15px;font-family:inherit;outline:none}
+.sc-input::placeholder{color:var(--ink3)}
+.sc-slider-btn{position:relative;flex-shrink:0;width:32px;height:32px;border-radius:9px;border:none;background:var(--surface);color:var(--ink3);display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all .2s}
+.sc-slider-btn:hover{background:var(--brand-soft);color:var(--brand)}
+.sc-slider-btn.active{background:var(--brand);color:#fff}
+.sc-row-select{cursor:pointer}
+.sc-select{flex:1;min-width:0;background:transparent;border:none;padding:0;color:var(--ink);font-size:15px;font-weight:600;font-family:inherit;outline:none;appearance:none;-webkit-appearance:none;cursor:pointer}
+.sc-chevron{color:var(--ink3);flex-shrink:0;display:inline-flex;pointer-events:none}
+.sc-search-btn{width:100%;background:${settings.hero_search_button_color};color:#fff;border:none;border-radius:14px;padding:15px;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;transition:all .2s;margin-bottom:0}
+.sc-search-btn:hover{filter:brightness(1.08);box-shadow:0 8px 20px -4px rgba(0,0,0,.28)}
+.filters-count-badge{position:absolute;top:-3px;right:-3px;background:var(--coral);color:#fff;font-size:9px;font-weight:800;padding:1px 5px;border-radius:20px;line-height:1.5;min-width:14px;text-align:center;border:2px solid #fff}
+.filters-toggle-row{max-width:560px;display:flex;justify-content:flex-end;margin-top:-4px;margin-bottom:4px;min-height:20px}
+.filters-clear-btn{display:inline-flex;align-items:center;gap:4px;background:none;border:none;color:rgba(255,255,255,.8);font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;padding:2px 4px}
 .filters-clear-btn:hover{color:#fff}
-.filters-panel{max-height:0;overflow:hidden;opacity:0;transition:max-height .32s ease,opacity .25s ease,margin-top .32s ease;max-width:820px}
-.filters-panel.open{max-height:420px;opacity:1;margin-top:14px}
-.filters-panel-inner{background:#fff;border-radius:16px;padding:18px 20px;box-shadow:0 14px 34px -10px rgba(24,48,196,.22)}
-.filters-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px}
+.filters-panel{max-width:560px;max-height:0;overflow:hidden;opacity:0;transition:max-height .32s ease,opacity .25s ease,margin-top .32s ease}
+.filters-panel.open{max-height:360px;opacity:1;margin-top:2px;margin-bottom:14px}
+.filters-panel-inner{background:#fff;border-radius:16px;padding:16px 18px;box-shadow:0 14px 34px -10px rgba(24,48,196,.22)}
+.filters-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px}
 .filter-field{display:flex;flex-direction:column;gap:6px}
 .filter-field span{font-size:10px;font-weight:700;color:var(--ink3);text-transform:uppercase;letter-spacing:.5px}
 .filter-field select,.filter-field input{background:var(--surface2);border:1.5px solid var(--border2);border-radius:9px;padding:9px 11px;font-size:13px;color:var(--ink);font-family:inherit;outline:none;transition:border-color .2s;width:100%}
 .filter-field select:focus,.filter-field input:focus{border-color:var(--brand)}
 @media(max-width:640px){
+  .search-card{max-width:100%}
+  .filters-toggle-row,.filters-panel{max-width:100%}
   .filters-panel-inner{padding:14px 16px}
   .filters-grid{grid-template-columns:1fr 1fr;gap:10px}
 }
 @media(max-width:400px){
   .filters-grid{grid-template-columns:1fr}
-  .filters-toggle-row{gap:10px}
 }
 .hero-stats{display:flex;gap:30px;flex-wrap:wrap}
 .hero-stat{display:flex;flex-direction:column}
@@ -404,8 +406,8 @@ ${SHARED_CSS}
   .hero{min-height:calc(100vh - 130px);min-height:calc(100svh - 130px);display:flex;flex-direction:column;justify-content:center;padding:40px 20px}
   .hero-title{font-size:42px;letter-spacing:-.9px;line-height:1.14;text-align:center}
   .hero-sub{font-size:15.5px;font-weight:600;color:rgba(255,255,255,.94);line-height:1.6;text-align:center;margin-bottom:30px}
-  .search-row{flex-direction:column;padding:8px;gap:8px}
-  .search-btn{padding:12px}
+  .search-card{padding:8px;margin-left:auto;margin-right:auto}
+  .sc-row{padding:12px 14px}
   .hero-stats{gap:18px}
   .hero-stat-num{font-size:17px}
   .fc-logos{gap:28px}
