@@ -40,7 +40,7 @@ export async function renderBlogIndex(base, env) {
   const content = `
 <div class="page">
   <div class="breadcrumb"><a href="/">${siteName}</a><span>›</span><span>Blog</span></div>
-  <h1 style="font-family:'Space Grotesk',sans-serif;font-size:28px;font-weight:700;margin-bottom:8px;color:var(--ink)">📝 Career Blog</h1>
+  <h1 style="font-family:'Plus Jakarta Sans',sans-serif;font-size:28px;font-weight:700;margin-bottom:8px;color:var(--ink)">📝 Career Blog</h1>
   <p style="color:var(--ink2);font-size:14px;margin-bottom:24px">Insights and career advice for remote job seekers.</p>
   ${adSlot('blog-index-top', '', adConfig, adsEnabled)}
   <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px;margin-top:20px">

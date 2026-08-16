@@ -28,14 +28,14 @@ export function renderMaintenancePage(siteName, message) {
 <meta name="robots" content="noindex, follow">
 ${ICON_HEAD}
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@700;800&family=Plus+Jakarta+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@700;800&family=Plus+Jakarta+Sans:wght@400;600;700&display=swap" rel="stylesheet">
 <style>
 ${SHARED_CSS}
-body{display:flex;align-items:center;justify-content:center;min-height:100vh;padding:24px;background:linear-gradient(135deg,#1830C4 0%,#3556FF 55%,#6C3FE0 100%)}
+body{display:flex;align-items:center;justify-content:center;min-height:100vh;padding:24px;background:linear-gradient(135deg,#2563EB 0%,#1D4ED8 55%,#1E3A8A 100%)}
 .mnt-box{background:var(--surface);border-radius:22px;padding:44px 34px;max-width:460px;width:100%;text-align:center;box-shadow:0 24px 60px rgba(11,18,32,.35)}
 .mnt-icon{width:64px;height:64px;border-radius:16px;margin:0 auto 20px;display:flex;align-items:center;justify-content:center;background:var(--brand-soft)}
 .mnt-icon svg{width:30px;height:30px;color:var(--brand)}
-.mnt-brand{font-family:'Space Grotesk',sans-serif;font-size:20px;font-weight:800;color:var(--ink);margin-bottom:6px;display:flex;align-items:center;justify-content:center;gap:8px}
+.mnt-brand{font-family:'Plus Jakarta Sans',sans-serif;font-size:20px;font-weight:800;color:var(--ink);margin-bottom:6px;display:flex;align-items:center;justify-content:center;gap:8px}
 .mnt-brand img{width:26px;height:26px;border-radius:7px}
 .mnt-title{font-size:15px;font-weight:700;color:var(--ink2);margin-bottom:16px;letter-spacing:.3px;text-transform:uppercase}
 .mnt-msg{font-size:14.5px;color:var(--ink2);line-height:1.75}

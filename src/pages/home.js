@@ -58,11 +58,11 @@ export async function renderMainHTML(env, base) {
   // as it always has — never a blank or broken page.
   const enabledSections = await getEnabledHomepageSections(env);
   // Hero customization (see /admin/settings → "Hero & Branding") — falls
-  // back to HERO_FONT_OPTIONS[0] (Space Grotesk, the site's existing
-  // default) for any unrecognized/stale value, so a bad save can never
+  // back to HERO_FONT_OPTIONS[0] (Plus Jakarta Sans, the brand's display
+  // font) for any unrecognized/stale value, so a bad save can never
   // leave the heading with no font applied at all.
   const heroFont = HERO_FONT_OPTIONS.find(f => f.name === settings.hero_heading_font) || HERO_FONT_OPTIONS[0];
-  const heroFontGoogleParam = heroFont.name === 'Space Grotesk' ? '' : `&family=${heroFont.googleParam}`;
+  const heroFontGoogleParam = heroFont.name === 'Plus Jakarta Sans' ? '' : `&family=${heroFont.googleParam}`;
   let initialJobs = [], initialTotal = 0, totalJobsCount = 0, companiesCount = 0;
   try {
     const { results } = await env.DB.prepare(`SELECT * FROM jobs ORDER BY ${JOB_TYPE_SORT_SQL} ASC, featured DESC, id DESC LIMIT 20`).all();
@@ -135,7 +135,7 @@ export async function renderMainHTML(env, base) {
       <div class="cg-title">Browse by Category</div>
       <div class="cg-grid">
         ${categories.slice(0, 12).map(c => {
-          const swatch = /^#[0-9a-fA-F]{6}$/.test(c.color || '') ? c.color : '#3556FF';
+          const swatch = /^#[0-9a-fA-F]{6}$/.test(c.color || '') ? c.color : '#2563EB';
           return `<a href="/categories/${c.key}" class="cg-item" style="--cat-color:${swatch}"><span class="cg-icon" style="background:${swatch}1a;color:${swatch}">${categoryIconSvg(c.key, { size: 18 })}</span><span class="cg-label">${escapeHtml(c.label)}</span></a>`;
         }).join('')}
       </div>
@@ -220,7 +220,7 @@ ${SHARED_CSS}
 .fc-inner{max-width:1180px;margin:0 auto}
 .fc-label{font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--ink3);margin-bottom:16px;text-align:center}
 .fc-logos{display:flex;align-items:center;justify-content:center;gap:48px;flex-wrap:wrap}
-.fc-logos a{font-family:'Space Grotesk',sans-serif;font-size:25px;font-weight:700;color:var(--ink3);opacity:.65;transition:all .25s;text-decoration:none}
+.fc-logos a{font-family:'Plus Jakarta Sans',sans-serif;font-size:25px;font-weight:700;color:var(--ink3);opacity:.65;transition:all .25s;text-decoration:none}
 .fc-logos a:hover{opacity:1;color:var(--brand)}
 
 /* ── CONTENT ── */
@@ -235,7 +235,7 @@ ${SHARED_CSS}
 .cg-label{font-size:12.5px;font-weight:700;color:var(--ink)}
 
 /* ── Post-a-Job CTA banner (Homepage Sections Builder, Phase 4) ── */
-.cta-banner{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;background:linear-gradient(135deg,#1830C4 0%,#3556FF 60%,#6C3FE0 100%);border-radius:16px;padding:24px 28px;margin-bottom:24px}
+.cta-banner{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;background:linear-gradient(135deg,#2563EB 0%,#1D4ED8 60%,#1E3A8A 100%);border-radius:16px;padding:24px 28px;margin-bottom:24px}
 .cta-title{font-family:'Plus Jakarta Sans',sans-serif;font-size:19px;font-weight:800;color:#fff;margin-bottom:4px}
 .cta-sub{font-size:13px;color:rgba(255,255,255,.82)}
 .cta-btn{background:var(--coral);color:#fff;border:none;border-radius:24px;padding:12px 24px;font-size:13.5px;font-weight:700;cursor:pointer;white-space:nowrap;font-family:inherit;transition:all .2s;box-shadow:0 4px 14px rgba(255,92,122,.35)}
@@ -427,7 +427,7 @@ function logoHtml(co,sz='54px'){
     <img src="https://www.google.com/s2/favicons?domain=\${domain}&sz=64" alt="\${co}"
       style="width:100%;height:100%;object-fit:contain;padding:6px;display:block"
       onerror="this.onerror=null;this.src='https://icons.duckduckgo.com/ip3/\${domain}.ico';this.onerror=function(){this.style.display='none';this.nextElementSibling.style.display='flex'}">
-    <span style="display:none;width:100%;height:100%;align-items:center;justify-content:center;font-size:\${fs};font-weight:800;color:#3556FF">\${ini}</span>
+    <span style="display:none;width:100%;height:100%;align-items:center;justify-content:center;font-size:\${fs};font-weight:800;color:#2563EB">\${ini}</span>
   </div>\`;
 }
 function remoteTag(t){
@@ -464,7 +464,7 @@ function showToast(msg,type='success'){
   const bar=document.getElementById('toastBar');
   document.getElementById('toastMsg').textContent=msg;
   icon.innerHTML=type==='success'?ICONS.check:ICONS.info;
-  icon.style.color=type==='success'?'#0FAE79':'#3556FF';
+  icon.style.color=type==='success'?'#059669':'#2563EB';
   el.className='toast show';
   if(bar){bar.style.animation='none';bar.offsetHeight;bar.style.animation='toast-bar 3s linear forwards';}
   clearTimeout(toastTimer);
