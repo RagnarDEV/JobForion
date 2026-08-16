@@ -4,18 +4,23 @@
 export const SHARED_CSS = `
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
-  --bg:#F6F7FB;--bg2:#F0F2F8;--surface:#FFFFFF;--surface2:#FAFBFD;
-  --border:#E6E9F0;--border2:#D8DEEA;
-  --ink:#12162B;--ink2:#525A72;--ink3:#8890A4;
-  --brand:#3556FF;--brand2:#7C3AED;--brand-soft:#EEF1FF;
-  --navy:#0B1220;--navy2:#141D34;--navy-border:#22304F;--navy-ink2:#9AA6C4;
-  --green:#0FAE79;--amber:#F5A623;--coral:#FF5C7A;--cyan:#0EA5C4;--pink:#D6489B;
-  --pastel-blue:#E9F1FF;--pastel-yellow:#FFF6DC;--pastel-pink:#FDEBF4;--pastel-green:#E8F9F1;
-  --salary:#0FAE79;
+  /* ══ JobForion Brand Identity v1.0 — design tokens ══
+     Same variable NAMES as before on purpose: every component/page in
+     this codebase reads colors through these custom properties, never
+     hardcoded hex, so remapping VALUES here re-skins the entire site
+     with zero risk to behavior, layout, or any feature. */
+  --bg:#F1F5F9;--bg2:#EEF2F7;--surface:#FFFFFF;--surface2:#F8FAFC;
+  --border:#E2E8F0;--border2:#CBD5E1;
+  --ink:#0F172A;--ink2:#334155;--ink3:#64748B;
+  --brand:#2563EB;--brand2:#1D4ED8;--brand-soft:#EFF6FF;
+  --navy:#0F172A;--navy2:#1E293B;--navy-border:#334155;--navy-ink2:#94A3B8;
+  --green:#059669;--amber:#F59E0B;--coral:#FF5C7A;--cyan:#38BDF8;--pink:#D6489B;
+  --pastel-blue:#EFF6FF;--pastel-yellow:#FFFBEB;--pastel-pink:#FDEBF4;--pastel-green:#ECFDF5;
+  --salary:#059669;
   --font-mono:'JetBrains Mono',ui-monospace,'SF Mono',Menlo,monospace;
-  --r:14px;--shadow:0 2px 10px rgba(18,22,43,.05);--shadow-lg:0 16px 40px rgba(18,22,43,.12);
-  --shadow-card:0 1px 2px rgba(18,22,43,.04),0 8px 24px -4px rgba(18,22,43,.08);
-  --shadow-card-hover:0 4px 12px rgba(18,22,43,.06),0 20px 40px -8px rgba(53,86,255,.16);
+  --r:14px;--shadow:0 2px 10px rgba(15,23,42,.05);--shadow-lg:0 16px 40px rgba(15,23,42,.12);
+  --shadow-card:0 1px 2px rgba(15,23,42,.04),0 8px 24px -4px rgba(15,23,42,.08);
+  --shadow-card-hover:0 4px 12px rgba(15,23,42,.06),0 20px 40px -8px rgba(37,99,235,.16);
 }
 html{scroll-behavior:smooth}
 body{font-family:'Plus Jakarta Sans',-apple-system,BlinkMacSystemFont,sans-serif;background:var(--bg);color:var(--ink);min-height:100vh;line-height:1.6;-webkit-font-smoothing:antialiased}
@@ -55,7 +60,7 @@ button{font-family:inherit}
 .mob-menu a,.mob-menu button{display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:12px 14px;border-radius:9px;color:var(--ink);font-size:14px;font-weight:600;border:none;background:none;cursor:pointer;font-family:inherit}
 .mob-menu a:active,.mob-menu button:active{background:var(--surface2)}
 .mob-menu .mob-menu-post-btn{margin-top:6px;justify-content:center;background:var(--brand);color:#fff;border-radius:11px;font-weight:700;font-size:15px;padding:13px 14px;box-shadow:0 4px 14px rgba(53,86,255,.3)}
-.mob-menu .mob-menu-post-btn:active{background:#2842e0}
+.mob-menu .mob-menu-post-btn:active{background:#1D4ED8}
 @media(max-width:860px){.mob-hdr{display:flex}.nav{display:none !important}}
 
 /* ── FOOTER (dark navy, multi-column, site-wide) ── */
@@ -132,7 +137,7 @@ button{font-family:inherit}
 .pj-input:focus,.pj-select:focus,.pj-textarea:focus{border-color:var(--brand);box-shadow:0 0 0 3px var(--brand-soft)}
 .pj-textarea{resize:vertical;min-height:80px}
 .pj-submit{width:100%;background:var(--brand);color:#fff;padding:13px;border-radius:10px;font-size:14.5px;font-weight:700;border:none;cursor:pointer;margin-top:6px;transition:all .2s}
-.pj-submit:hover{background:#2842e0}
+.pj-submit:hover{background:#1D4ED8}
 .pj-submit:disabled{opacity:.6;cursor:default}
 .pj-success{text-align:center;padding:20px 0}
 .pj-success .ico{font-size:44px;margin-bottom:10px}
