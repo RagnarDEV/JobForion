@@ -87,6 +87,8 @@ export const iconTrash2 = (opts) => svg(`<path d="M3 6h18"/><path d="M19 6v14a2 
 export const iconHome = (opts) => svg(`<path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>`, opts);
 export const iconArrowUp = (opts) => svg(`<path d="m5 12 7-7 7 7"/><path d="M12 19V5"/>`, opts);
 export const iconArrowDown = (opts) => svg(`<path d="M12 5v14"/><path d="m19 12-7 7-7-7"/>`, opts);
+export const iconSliders = (opts) => svg(`<line x1="4" x2="4" y1="21" y2="14"/><line x1="4" x2="4" y1="10" y2="3"/><line x1="12" x2="12" y1="21" y2="12"/><line x1="12" x2="12" y1="8" y2="3"/><line x1="20" x2="20" y1="21" y2="16"/><line x1="20" x2="20" y1="12" y2="3"/><line x1="2" x2="6" y1="14" y2="14"/><line x1="10" x2="14" y1="8" y2="8"/><line x1="18" x2="22" y1="16" y2="16"/>`, opts);
+export const iconLayoutGrid = (opts) => svg(`<rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/>`, opts);
 export const iconCode = (opts) => svg(`<polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/>`, opts);
 export const iconBarChart3 = (opts) => svg(`<path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/>`, opts);
 export const iconHeadphones = (opts) => svg(`<path d="M3 14h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H3v-7a9 9 0 0 1 18 0v7h-3a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3"/>`, opts);
