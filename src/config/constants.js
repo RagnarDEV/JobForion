@@ -2,11 +2,11 @@
 // Site-wide constants: category taxonomy, featured companies, canonical base URL.
 
 export const CATEGORY_META = {
-  developer: { label: 'Development',       emoji: '💻', color: '#3556FF' },
+  developer: { label: 'Development',       emoji: '💻', color: '#2563EB' },
   designer:  { label: 'Design',             emoji: '🎨', color: '#D6489B' },
-  marketing: { label: 'Marketing',          emoji: '📣', color: '#F5A623' },
-  data:      { label: 'Data & AI',          emoji: '📊', color: '#0EA5C4' },
-  devops:    { label: 'DevOps',             emoji: '⚙️', color: '#0FAE79' },
+  marketing: { label: 'Marketing',          emoji: '📣', color: '#F59E0B' },
+  data:      { label: 'Data & AI',          emoji: '📊', color: '#38BDF8' },
+  devops:    { label: 'DevOps',             emoji: '⚙️', color: '#059669' },
   writer:    { label: 'Writing',            emoji: '✍️', color: '#7C3AED' },
   sales:     { label: 'Sales',              emoji: '💼', color: '#F97316' },
   support:   { label: 'Customer Support',   emoji: '🎧', color: '#14B8A6' },
@@ -36,7 +36,7 @@ export const BASE_URL = 'https://jobforion.com';
 // fetch the new file immediately instead of waiting out the cache.
 // Bump this (date-based is simplest) any time the logo/icons change.
 // ════════════════════════════════════════════════════════════════
-export const ASSET_VERSION = '20260804';
+export const ASSET_VERSION = '20260815';
 
 // ════════════════════════════════════════════════════════════════
 // JOB TYPE TIERS — Free / Featured / Premium / Sponsored
