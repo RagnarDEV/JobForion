@@ -29,15 +29,15 @@ export const CARD_STYLE_JOB_TYPES = ['Free', 'Featured', 'Premium', 'Sponsored']
 export const DEFAULT_CARD_STYLES = {
   Free: {
     bg_type: 'solid', bg_color1: '#FFFFFF', bg_color2: '#FFFFFF', gradient_angle: 135,
-    border_style: 'solid', border_color: '#E6E9F0', border_width: 1,
+    border_style: 'solid', border_color: '#E2E8F0', border_width: 1,
     logo_size: 54, card_padding: 14, shadow: 'none',
-    badge_bg_color: '#EEF1FF', badge_text_color: '#3556FF',
+    badge_bg_color: '#EEF1FF', badge_text_color: '#2563EB',
   },
   Featured: {
     bg_type: 'solid', bg_color1: '#FFFFFF', bg_color2: '#FFFFFF', gradient_angle: 135,
-    border_style: 'solid', border_color: '#3556FF', border_width: 1,
+    border_style: 'solid', border_color: '#2563EB', border_width: 1,
     logo_size: 54, card_padding: 14, shadow: 'soft',
-    badge_bg_color: '#EEF1FF', badge_text_color: '#3556FF',
+    badge_bg_color: '#EEF1FF', badge_text_color: '#2563EB',
   },
   Premium: {
     bg_type: 'gradient', bg_color1: '#FFFDF7', bg_color2: '#FBEDC7', gradient_angle: 135,
@@ -47,7 +47,7 @@ export const DEFAULT_CARD_STYLES = {
   },
   Sponsored: {
     bg_type: 'gradient', bg_color1: '#F4FDF9', bg_color2: '#D9F3E7', gradient_angle: 180,
-    border_style: 'solid', border_color: '#0FAE79', border_width: 2,
+    border_style: 'solid', border_color: '#059669', border_width: 2,
     logo_size: 62, card_padding: 16, shadow: 'strong',
     badge_bg_color: '#D9F3E7', badge_text_color: '#0B7A50',
   },

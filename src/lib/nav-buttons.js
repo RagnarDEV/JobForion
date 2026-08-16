@@ -39,7 +39,7 @@ export async function createNavButton(env, { label, url, icon, color }) {
   const nextOrder = (results?.[0]?.m ?? -1) + 1;
   await env.DB.prepare(
     `INSERT INTO nav_buttons (label, url, icon, color, active, sort_order) VALUES (?, ?, ?, ?, 1, ?)`
-  ).bind(cleanLabel, cleanUrl, String(icon || '🔗').trim().slice(0, 8), String(color || '#3556FF').trim().slice(0, 20), nextOrder).run();
+  ).bind(cleanLabel, cleanUrl, String(icon || '🔗').trim().slice(0, 8), String(color || '#2563EB').trim().slice(0, 20), nextOrder).run();
 }
 
 export async function updateNavButton(env, id, { label, url, icon, color, active }) {
@@ -49,7 +49,7 @@ export async function updateNavButton(env, id, { label, url, icon, color, active
   if (!cleanUrl) throw new Error('Button destination (URL or path) is required.');
   await env.DB.prepare(
     `UPDATE nav_buttons SET label = ?, url = ?, icon = ?, color = ?, active = ? WHERE id = ?`
-  ).bind(cleanLabel, cleanUrl, String(icon || '🔗').trim().slice(0, 8), String(color || '#3556FF').trim().slice(0, 20), active ? 1 : 0, id).run();
+  ).bind(cleanLabel, cleanUrl, String(icon || '🔗').trim().slice(0, 8), String(color || '#2563EB').trim().slice(0, 20), active ? 1 : 0, id).run();
 }
 
 export async function deleteNavButton(env, id) {

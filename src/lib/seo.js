@@ -28,7 +28,7 @@ export function buildMeta({
   type = "website",
   keywords,
   author = "JobForion",
-  themeColor = "#3556FF",
+  themeColor = "#2563EB",
 } = {}) {
   const safeTitle = safe(title, "[MISSING TITLE — fix call site]");
   const safeDesc = safe(description, "[MISSING DESCRIPTION — fix call site]");

@@ -91,7 +91,7 @@ export async function createCategory(env, { key, label, emoji, color }) {
   const cleanLabel = String(label || '').trim().slice(0, 60);
   if (!cleanLabel) throw new Error('Label is required.');
   const cleanEmoji = String(emoji || '🏷️').trim().slice(0, 8);
-  const cleanColor = /^#[0-9a-fA-F]{6}$/.test(color || '') ? color : '#3556FF';
+  const cleanColor = /^#[0-9a-fA-F]{6}$/.test(color || '') ? color : '#2563EB';
 
   const { results } = await env.DB.prepare('SELECT COALESCE(MAX(sort_order), -1) AS m FROM categories').all();
   const nextOrder = (results?.[0]?.m ?? -1) + 1;
@@ -107,7 +107,7 @@ export async function updateCategory(env, key, { label, emoji, color, active }) 
   const cleanLabel = String(label || '').trim().slice(0, 60);
   if (!cleanLabel) throw new Error('Label is required.');
   const cleanEmoji = String(emoji || '🏷️').trim().slice(0, 8);
-  const cleanColor = /^#[0-9a-fA-F]{6}$/.test(color || '') ? color : '#3556FF';
+  const cleanColor = /^#[0-9a-fA-F]{6}$/.test(color || '') ? color : '#2563EB';
   await env.DB.prepare(
     `UPDATE categories SET label = ?, emoji = ?, color = ?, active = ? WHERE key = ?`
   ).bind(cleanLabel, cleanEmoji, cleanColor, active ? 1 : 0, key).run();

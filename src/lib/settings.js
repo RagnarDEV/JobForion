@@ -56,16 +56,16 @@ export const SETTINGS_DEFAULTS = {
   hero_title_line1: 'Find your next',
   hero_title_line2: 'remote job',
   hero_subtitle: 'Browse curated remote positions from top companies worldwide. Filter by category, country, skill, or company — or post your own opening in minutes.',
-  hero_gradient_start: '#1830C4',
-  hero_gradient_mid: '#3556FF',
-  hero_gradient_end: '#6C3FE0',
+  hero_gradient_start: '#2563EB',
+  hero_gradient_mid: '#1D4ED8',
+  hero_gradient_end: '#1E3A8A',
   hero_search_placeholder: 'Job title, skill, or company...',
   hero_search_button_text: 'Search',
   hero_search_button_color: '#FF5C7A',
   // One of the curated options in HERO_FONT_OPTIONS below — anything else
   // silently falls back to the first option, so a bad/stale value can
   // never break the Google Fonts <link> or leave the heading unstyled.
-  hero_heading_font: 'Space Grotesk',
+  hero_heading_font: 'Plus Jakarta Sans',
 
   // ── Feature Flags (Admin Dashboard V2 — Phase 1 + 2 + 3) ───────────
   // Same '1'/'0' convention as ads_enabled/maintenance_mode above. As of
@@ -93,6 +93,7 @@ export const SETTINGS_DEFAULTS = {
 // no visible error. Each entry is exactly what's needed to build both the
 // Google Fonts URL and the CSS font-family declaration.
 export const HERO_FONT_OPTIONS = [
+  { name: 'Plus Jakarta Sans', googleParam: 'Plus+Jakarta+Sans:wght@700;800' },
   { name: 'Space Grotesk', googleParam: 'Space+Grotesk:wght@700;800' },
   { name: 'Poppins', googleParam: 'Poppins:wght@700;800' },
   { name: 'Inter', googleParam: 'Inter:wght@700;800' },
