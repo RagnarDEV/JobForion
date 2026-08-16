@@ -22,7 +22,7 @@ import { getFooterPages, getMenuPages } from '../lib/pages-cms.js';
 import { getNavButtons } from '../lib/nav-buttons.js';
 import { getEnabledHomepageSections } from '../lib/homepage-sections.js';
 import { categoryIconSvg } from '../lib/category-icons.js';
-import { iconSparkle, iconFlame, iconPin, iconMapPin, iconBookmark, iconLink, iconArrowRight, iconBadgeCheck, iconClock, iconGlobe, iconBuilding, iconSearch, iconCheck, iconInfo, iconAlertTriangle } from '../assets/icons.js';
+import { iconSparkle, iconFlame, iconPin, iconMapPin, iconBookmark, iconLink, iconArrowRight, iconBadgeCheck, iconClock, iconGlobe, iconBuilding, iconSearch, iconCheck, iconInfo, iconAlertTriangle, iconFilter, iconChevronDown } from '../assets/icons.js';
 
 // Same icon markup used by the server-rendered cards (job-card.js) is
 // reused for client-rendered cards (search/filter/pagination results) by
@@ -119,6 +119,68 @@ export async function renderMainHTML(env, base) {
           </div>
           <button class="search-btn" onclick="document.getElementById('searchInput').focus()">${escapeHtml(settings.hero_search_button_text)}</button>
         </div>
+        <div class="filters-toggle-row">
+          <button class="filters-toggle-btn" id="filtersToggleBtn" onclick="toggleFiltersPanel()">
+            ${iconFilter({ size: 13 })} Filters
+            <span class="filters-count-badge" id="filtersCountBadge" style="display:none">0</span>
+            <span class="filters-chevron" id="filtersChevron">${iconChevronDown({ size: 13 })}</span>
+          </button>
+          <button class="filters-clear-btn" id="filtersClearBtn" onclick="clearFilters()" style="display:none">Clear all</button>
+        </div>
+        <div class="filters-panel" id="filtersPanel">
+          <div class="filters-panel-inner">
+            <div class="filters-grid">
+              <label class="filter-field">
+                <span>Category</span>
+                <select id="fCategory" onchange="onFilterChange()">
+                  <option value="">All categories</option>
+                  ${categories.map(c => `<option value="${c.key}">${escapeHtml(c.label)}</option>`).join('')}
+                </select>
+              </label>
+              <label class="filter-field">
+                <span>Remote Type</span>
+                <select id="fRemote" onchange="onFilterChange()">
+                  <option value="">Any</option>
+                  <option value="fully_remote">Fully Remote</option>
+                  <option value="hybrid">Hybrid</option>
+                  <option value="on_site">On-site</option>
+                </select>
+              </label>
+              <label class="filter-field">
+                <span>Employment</span>
+                <select id="fEmploy" onchange="onFilterChange()">
+                  <option value="">Any</option>
+                  <option value="full_time">Full-time</option>
+                  <option value="part_time">Part-time</option>
+                  <option value="contract">Contract</option>
+                </select>
+              </label>
+              <label class="filter-field">
+                <span>Seniority</span>
+                <select id="fSeniority" onchange="onFilterChange()">
+                  <option value="">Any</option>
+                  <option value="Junior">Junior</option>
+                  <option value="Mid">Mid-level</option>
+                  <option value="Senior">Senior</option>
+                  <option value="Lead">Lead</option>
+                </select>
+              </label>
+              <label class="filter-field">
+                <span>Min Salary (USD/yr)</span>
+                <input type="number" id="fSalaryMin" placeholder="e.g. 80000" min="0" step="5000" oninput="debounceFilterChange()">
+              </label>
+              <label class="filter-field">
+                <span>Posted Within</span>
+                <select id="fDays" onchange="onFilterChange()">
+                  <option value="">Any time</option>
+                  <option value="1">Last 24 hours</option>
+                  <option value="7">Last 7 days</option>
+                  <option value="30">Last 30 days</option>
+                </select>
+              </label>
+            </div>
+          </div>
+        </div>
       </div>
     </div>`,
 
@@ -210,6 +272,34 @@ ${SHARED_CSS}
 .search-input::placeholder{color:var(--ink3)}
 .search-btn{background:${settings.hero_search_button_color};color:#fff;border:none;border-radius:13px;padding:0 28px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;transition:all .2s;white-space:nowrap}
 .search-btn:hover{filter:brightness(1.08);box-shadow:0 6px 16px rgba(0,0,0,.22)}
+
+/* ── FILTERS — attached to the hero search box ── */
+.filters-toggle-row{display:flex;align-items:center;gap:14px;margin-top:12px;max-width:640px}
+.filters-toggle-btn{display:inline-flex;align-items:center;gap:7px;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.28);color:#fff;padding:9px 16px;border-radius:24px;font-size:13px;font-weight:700;cursor:pointer;transition:all .2s;font-family:inherit}
+.filters-toggle-btn:hover{background:rgba(255,255,255,.22)}
+.filters-toggle-btn.active{background:#fff;color:var(--brand);border-color:#fff}
+.filters-count-badge{background:var(--coral);color:#fff;font-size:10px;font-weight:800;padding:1px 7px;border-radius:20px;line-height:1.6;min-width:16px;text-align:center}
+.filters-toggle-btn.active .filters-count-badge{background:var(--brand);color:#fff}
+.filters-chevron{display:inline-flex;transition:transform .25s ease}
+.filters-toggle-btn.active .filters-chevron{transform:rotate(180deg)}
+.filters-clear-btn{background:none;border:none;color:rgba(255,255,255,.75);font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit;padding:0;text-decoration:underline;text-underline-offset:2px}
+.filters-clear-btn:hover{color:#fff}
+.filters-panel{max-height:0;overflow:hidden;opacity:0;transition:max-height .32s ease,opacity .25s ease,margin-top .32s ease;max-width:820px}
+.filters-panel.open{max-height:420px;opacity:1;margin-top:14px}
+.filters-panel-inner{background:#fff;border-radius:16px;padding:18px 20px;box-shadow:0 14px 34px -10px rgba(24,48,196,.22)}
+.filters-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px}
+.filter-field{display:flex;flex-direction:column;gap:6px}
+.filter-field span{font-size:10px;font-weight:700;color:var(--ink3);text-transform:uppercase;letter-spacing:.5px}
+.filter-field select,.filter-field input{background:var(--surface2);border:1.5px solid var(--border2);border-radius:9px;padding:9px 11px;font-size:13px;color:var(--ink);font-family:inherit;outline:none;transition:border-color .2s;width:100%}
+.filter-field select:focus,.filter-field input:focus{border-color:var(--brand)}
+@media(max-width:640px){
+  .filters-panel-inner{padding:14px 16px}
+  .filters-grid{grid-template-columns:1fr 1fr;gap:10px}
+}
+@media(max-width:400px){
+  .filters-grid{grid-template-columns:1fr}
+  .filters-toggle-row{gap:10px}
+}
 .hero-stats{display:flex;gap:30px;flex-wrap:wrap}
 .hero-stat{display:flex;flex-direction:column}
 .hero-stat-num{font-family:'Plus Jakarta Sans',sans-serif;font-size:22px;font-weight:700;color:#fff;line-height:1.2}
@@ -618,6 +708,46 @@ function renderSaved(){
 function clearAllSaved(){savedIds=[];localStorage.removeItem('jn_saved');renderSaved();showToast('All cleared','info');}
 
 function debounceSearch(v){clearTimeout(srchT);srchT=setTimeout(()=>{srch=v;pg=1;loadJobs();},400);}
+
+// ── Filters panel (attached to the hero search box) ──────────────
+function toggleFiltersPanel(){
+  document.getElementById('filtersPanel').classList.toggle('open');
+  document.getElementById('filtersToggleBtn').classList.toggle('active');
+}
+function updateFiltersBadge(){
+  const count=(cat?1:0)+Object.values(adv).filter(v=>v).length;
+  const badge=document.getElementById('filtersCountBadge');
+  const clearBtn=document.getElementById('filtersClearBtn');
+  if(count>0){badge.style.display='inline-block';badge.textContent=count;clearBtn.style.display='inline';}
+  else{badge.style.display='none';clearBtn.style.display='none';}
+}
+function onFilterChange(){
+  cat=document.getElementById('fCategory').value;
+  adv.remote=document.getElementById('fRemote').value;
+  adv.employ=document.getElementById('fEmploy').value;
+  adv.seniority=document.getElementById('fSeniority').value;
+  adv.days=document.getElementById('fDays').value;
+  pg=1;
+  updateFiltersBadge();
+  loadJobs();
+}
+let filterDebT;
+function debounceFilterChange(){
+  clearTimeout(filterDebT);
+  filterDebT=setTimeout(()=>{
+    adv.salaryMin=document.getElementById('fSalaryMin').value;
+    pg=1;
+    updateFiltersBadge();
+    loadJobs();
+  },500);
+}
+function clearFilters(){
+  cat='';adv={};
+  ['fCategory','fRemote','fEmploy','fSeniority','fDays','fSalaryMin'].forEach(id=>{document.getElementById(id).value='';});
+  pg=1;
+  updateFiltersBadge();
+  loadJobs();
+}
 function goPage(p){pg=p;loadJobs();window.scrollTo({top:0,behavior:'smooth'});}
 
 function renderPagination(){
