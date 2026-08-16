@@ -36,7 +36,7 @@ export const BASE_URL = 'https://jobforion.com';
 // fetch the new file immediately instead of waiting out the cache.
 // Bump this (date-based is simplest) any time the logo/icons change.
 // ════════════════════════════════════════════════════════════════
-export const ASSET_VERSION = '20260815';
+export const ASSET_VERSION = '20260816';
 
 // ════════════════════════════════════════════════════════════════
 // JOB TYPE TIERS — Free / Featured / Premium / Sponsored
