@@ -330,7 +330,7 @@ export async function ensureTable(env) {
       label TEXT NOT NULL,
       url TEXT NOT NULL,
       icon TEXT DEFAULT '🔗',
-      color TEXT DEFAULT '#3556FF',
+      color TEXT DEFAULT '#2563EB',
       active INTEGER DEFAULT 1,
       sort_order INTEGER DEFAULT 0,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
