@@ -25,7 +25,7 @@ async function categoryJobCounts(env, keys) {
 }
 
 function categoryCard(cat, idx, total, jobCount) {
-  const swatch = /^#[0-9a-fA-F]{6}$/.test(cat.color || '') ? cat.color : '#3556FF';
+  const swatch = /^#[0-9a-fA-F]{6}$/.test(cat.color || '') ? cat.color : '#2563EB';
   return `<div class="cat-card">
     <div class="cat-card-icon" style="background:${swatch}1a;color:${swatch}">${escapeHtml(cat.emoji || '🏷️')}</div>
     <form method="POST" action="/admin/categories/update" class="cat-card-form">
@@ -66,7 +66,7 @@ export async function renderCategoriesContent(env) {
         <input class="adm-input" name="key" placeholder="key (e.g. security)" pattern="[a-z][a-z0-9]{1,19}" title="2–20 lowercase letters/numbers, starting with a letter" required style="width:160px">
         <input class="adm-input" name="label" placeholder="Label (e.g. Security)" required style="flex:1;min-width:140px">
         <input class="adm-input" name="emoji" placeholder="🔒" maxlength="8" style="width:56px;text-align:center">
-        <input class="adm-input" type="color" name="color" value="#3556FF" style="width:42px;padding:3px;height:36px">
+        <input class="adm-input" type="color" name="color" value="#2563EB" style="width:42px;padding:3px;height:36px">
         <button class="adm-btn adm-btn-primary" type="submit">+ Add Category</button>
       </form>
       <div style="font-size:11px;color:var(--ink3);margin-top:8px">The key is matched (case-insensitive) against job titles to classify jobs automatically — keep it a single relevant word, e.g. <code>security</code>, <code>legal</code>, <code>mobile</code>.</div>

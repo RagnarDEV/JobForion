@@ -23,7 +23,7 @@ function previewCardHtml(type, style) {
   const meta = JOB_TYPE_META[type];
   const cardAttr = buildCardStyleAttr(style);
   const badgeAttr = buildBadgeStyleAttr(style);
-  return `<a class="job-card" style="--cat-color:#3556FF;${cardAttr};pointer-events:none;text-decoration:none;display:block">
+  return `<a class="job-card" style="--cat-color:#2563EB;${cardAttr};pointer-events:none;text-decoration:none;display:block">
     <div class="card-inner" style="padding:${style.card_padding}px 16px">
       <div class="card-row1">
         <div class="co-logo" style="width:${style.logo_size}px;height:${style.logo_size}px;display:flex;align-items:center;justify-content:center;font-weight:800;color:var(--brand);background:var(--brand-soft);border-radius:12px;flex-shrink:0">JF</div>

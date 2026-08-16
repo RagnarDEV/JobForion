@@ -68,7 +68,7 @@ const DARK_THEME_CSS = `
 const SHELL_CSS = `
 .adm-shell{display:flex;min-height:100vh}
 .adm-sidebar{width:210px;flex-shrink:0;background:var(--surface);border-right:1px solid var(--border);padding:18px 12px;position:sticky;top:0;height:100vh;overflow-y:auto}
-.adm-logo{display:flex;align-items:center;gap:8px;padding:6px 8px 18px;font-family:'Space Grotesk',sans-serif;font-weight:800;font-size:16px;color:var(--ink)}
+.adm-logo{display:flex;align-items:center;gap:8px;padding:6px 8px 18px;font-family:'Plus Jakarta Sans',sans-serif;font-weight:800;font-size:16px;color:var(--ink)}
 .adm-logo img{width:26px;height:26px;border-radius:7px}
 .adm-nav-link{display:flex;align-items:center;gap:9px;padding:9px 10px;border-radius:9px;font-size:13px;font-weight:600;color:var(--ink2);text-decoration:none;margin-bottom:2px}
 .adm-nav-link:hover{background:var(--surface2)}
@@ -162,11 +162,11 @@ export function adminShell(activeId, content) {
 <html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Admin — JobForion</title><meta name="robots" content="noindex, nofollow">${ICON_HEAD}
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>${SHARED_CSS}${DARK_THEME_CSS}${SHELL_CSS}${PROVIDER_COMPANIES_CSS}
 .adm-wrap{max-width:1180px;margin:0 auto;padding:24px 20px 60px}
 .adm-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:22px;flex-wrap:wrap;gap:12px}
-.adm-title{font-family:'Space Grotesk',sans-serif;font-size:24px;font-weight:700;color:var(--ink)}
+.adm-title{font-family:'Plus Jakarta Sans',sans-serif;font-size:24px;font-weight:700;color:var(--ink)}
 .adm-sub{font-size:13px;color:var(--ink3)}
 .adm-btn{padding:9px 16px;border-radius:9px;border:1px solid var(--border2);background:var(--surface);color:var(--ink2);font-size:13px;font-weight:700;font-family:inherit;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center}
 .adm-btn-primary{background:var(--brand);border-color:var(--brand);color:#fff}

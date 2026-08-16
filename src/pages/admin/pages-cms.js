@@ -65,7 +65,7 @@ export async function renderPagesListContent(env) {
         <label style="display:block;width:70px"><span style="font-size:10px;font-weight:700;color:var(--ink3);text-transform:uppercase;display:block;margin-bottom:4px">Icon</span>
           <input class="adm-input" style="width:100%;text-align:center" name="icon" placeholder="📢" maxlength="8"></label>
         <label style="display:block;width:60px"><span style="font-size:10px;font-weight:700;color:var(--ink3);text-transform:uppercase;display:block;margin-bottom:4px">Color</span>
-          <input class="adm-input" type="color" style="width:100%;height:38px;padding:2px" name="color" value="#3556FF"></label>
+          <input class="adm-input" type="color" style="width:100%;height:38px;padding:2px" name="color" value="#2563EB"></label>
         <button class="adm-btn adm-btn-primary" type="submit">+ Add Button</button>
       </form>
       ${navButtons.length ? navButtons.map(b => `
