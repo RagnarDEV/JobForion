@@ -187,7 +187,7 @@ export function timeAgoServer(dateStr) {
   if (h < 24) return h + 'h ago';
   return d + 'd ago';
 }
-const FALLBACK_CATEGORY_META = { label: 'General', emoji: '🏷️', color: '#3556FF' };
+const FALLBACK_CATEGORY_META = { label: 'General', emoji: '🏷️', color: '#2563EB' };
 
 // `categoryMap`/`categoryOrder` are optional — default to the static
 // CATEGORY_META/CATEGORY_ORDER import, so any caller not yet migrated to
