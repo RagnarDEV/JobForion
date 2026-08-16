@@ -6,8 +6,8 @@ export function manifestJson(base) {
     description: "Curated remote job board updated hourly.",
     start_url: "/",
     display: "standalone",
-    background_color: "#F6F7FB",
-    theme_color: "#3556FF",
+    background_color: "#F1F5F9",
+    theme_color: "#2563EB",
     icons: [
       { src: "/favicon-32.png", sizes: "32x32", type: "image/png" },
       { src: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" },
