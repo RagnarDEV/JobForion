@@ -171,6 +171,20 @@ export async function ensureTable(env) {
   // it stays reusable if future tiers want the same treatment.
   await ensureColumn(env, 'jobs', 'job_type_note', 'TEXT');
 
+  // BUG FIX (found during audit): db/sync.js has written to
+  // jobs.salary_min_usd / jobs.salary_max_usd since lib/salary.js was
+  // introduced (see the INSERT/UPDATE statements in db/sync.js, and the
+  // backfill query in the same file), and pages/admin/jobs.js +
+  // pages/admin/system.js both already SELECT the column — but no
+  // migration ever actually created it. Every job sync and salary
+  // backfill run was silently failing with "D1_ERROR: table jobs has no
+  // column named salary_min_usd" until this line existed. Safe to add
+  // retroactively: existing rows simply backfill NULL, which
+  // db/sync.js's salary-backfill pass (see backfillSalaryUsd) already
+  // handles by design.
+  await ensureColumn(env, 'jobs', 'salary_min_usd', 'INTEGER');
+  await ensureColumn(env, 'jobs', 'salary_max_usd', 'INTEGER');
+
   // Daily cleanup run history — mirrors sync_logs's shape so the future
   // stats dashboard can reuse the same rendering pattern for both.
   await env.DB.prepare(`
@@ -368,6 +382,60 @@ export async function ensureTable(env) {
       ).bind(p.id, slugify(p.title), p.title, p.excerpt, p.body, p.cat, p.readTime, p.date)
     ));
   }
+
+  // ── Blog Automation (Data-Driven Blog System, no AI) ───────────────
+  // Extends the blog_posts table above with everything
+  // src/lib/blog-automation/* needs, additively — every column here is
+  // nullable/defaulted, so the existing manual Blog CMS (lib/blog-cms.js,
+  // routes/admin/content.router.js) keeps working completely unchanged
+  // for every post that isn't auto-generated (auto_generated defaults to
+  // 0 for every pre-existing and every manually-created row).
+  await ensureColumn(env, 'blog_posts', 'created_at', 'DATETIME');
+  await ensureColumn(env, 'blog_posts', 'seo_title', 'TEXT');
+  await ensureColumn(env, 'blog_posts', 'seo_description', 'TEXT');
+  await ensureColumn(env, 'blog_posts', 'canonical_url', 'TEXT');
+  // auto_generated: 0 for every hand-written post (manual Blog CMS) and
+  // every seeded legacy post above; 1 only for posts created by
+  // lib/blog-cms.js's createAutoPost() (see generator.js).
+  await ensureColumn(env, 'blog_posts', 'auto_generated', 'INTEGER DEFAULT 0');
+  // auto_expire: whether THIS post is subject to the 45-day (configurable)
+  // lifecycle. Independent of auto_generated so an admin can "pin" a
+  // specific auto-generated article as permanent from /admin/blog without
+  // it losing its auto_generated=1 provenance flag.
+  await ensureColumn(env, 'blog_posts', 'auto_expire', 'INTEGER DEFAULT 0');
+  // expires_at: computed as published_at + lifetime_days at PUBLISH time
+  // (see createAutoPost in lib/blog-cms.js) — recomputed if a scheduled
+  // post is later actually published, never derived from created_at.
+  await ensureColumn(env, 'blog_posts', 'expires_at', 'DATETIME');
+  // source_type: which template generated this post (category / skill /
+  // country / company / salary / trends / weekly) — see
+  // lib/blog-automation/templates/index.js. NULL for manual posts.
+  await ensureColumn(env, 'blog_posts', 'source_type', 'TEXT');
+  // source_data: small JSON snapshot of the exact data the article was
+  // built from (topic key, job count at generation time) — kept for
+  // transparency/debugging, never re-parsed by any render path.
+  await ensureColumn(env, 'blog_posts', 'source_data', 'TEXT');
+  // topic_key: stable identifier for WHAT this post is about (e.g.
+  // "category:developer", "salary:2026-W34") — the single field
+  // lib/blog-automation/duplicate-check.js checks to stop the same topic
+  // being regenerated inside the configured cooldown window.
+  await ensureColumn(env, 'blog_posts', 'topic_key', 'TEXT');
+
+  // Generation pipeline log — every step from "generation started" through
+  // "article published"/"article expired"/"generation failed" (see
+  // lib/blog-automation/logger.js). Append-only; powers the stats cards
+  // and activity feed on /admin/blog-automation. Never read by any
+  // business logic other than that admin page and the 410-vs-404 slug
+  // check in routes/pages.router.js, so it's safe to grow indefinitely
+  // (a future cron could prune rows older than N months if desired).
+  await env.DB.prepare(`
+    CREATE TABLE IF NOT EXISTS blog_automation_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      event TEXT NOT NULL,
+      meta TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `).run();
 
   // ── Job Card Style Manager ────────────────────────────────────
   // Backs lib/job-card-styles.js. Per-tier (Free/Featured/Premium/
