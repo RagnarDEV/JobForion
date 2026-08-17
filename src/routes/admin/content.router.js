@@ -200,6 +200,11 @@ export async function handleAdminContentRoute(url, request, env, base) {
       if (!ok) return new Response('Unauthorized', { status: 401 });
       const form = await request.formData();
       const id = parseInt((form.get('id') || '0').toString(), 10);
+      // The "Auto-delete this article" checkbox only ever renders for
+      // auto_generated posts (see pages/admin/blog-cms.js's postForm) —
+      // look the post up first so a manual post's update never
+      // accidentally toggles a field it never had a control for.
+      const existing = await getPostById(env, id, { includeUnpublished: true });
       await updatePost(env, id, {
         title: (form.get('title') || '').toString(),
         excerpt: (form.get('excerpt') || '').toString(),
@@ -210,6 +215,7 @@ export async function handleAdminContentRoute(url, request, env, base) {
         status: (form.get('status') || '').toString(),
         scheduled_at: (form.get('scheduled_at') || '').toString(),
         read_time: (form.get('read_time') || '').toString(),
+        auto_expire: existing?.auto_generated ? !!form.get('auto_expire') : undefined,
       });
       await logActivity(env, 'blog_updated', (form.get('title') || '').toString());
       return new Response(null, { status: 302, headers: { 'Location': `/admin/blog/edit?id=${id}&flash=${encodeURIComponent('Saved')}` } });
