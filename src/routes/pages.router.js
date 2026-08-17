@@ -6,7 +6,7 @@ import { renderJobPage } from '../pages/job-page.js';
 import { renderBlogIndex, renderArticlePage } from '../pages/blog.js';
 import { renderStaticPage } from '../pages/static-pages.js';
 import { renderMainHTML } from '../pages/home.js';
-import { getPostById, getPostBySlug } from '../lib/blog-cms.js';
+import { getPostById, getPostBySlug, wasAutoPostSlug } from '../lib/blog-cms.js';
 import { getPageBySlug, RESERVED_SLUGS } from '../lib/pages-cms.js';
 import { baseLayout } from '../layout/base-layout.js';
 import { BASE_URL } from '../config/constants.js';
@@ -53,6 +53,38 @@ async function renderJobGonePage(env, base, requestedId) {
   );
 }
 
+// Blog Automation (src/lib/blog-automation/expiration.js) hard-deletes
+// auto-generated articles once they pass their lifetime — same
+// mechanical situation as an expired job (renderJobGonePage above): the
+// row is gone, but the URL was real and got indexed/shared. Rather than
+// a generic 404, check the append-only generation log (wasAutoPostSlug)
+// to tell "this slug WAS a real published article, now expired" (410
+// Gone — permanent, stop recrawling) apart from "this slug never existed"
+// (404 Not Found).
+async function renderBlogGonePage(env, base, slug) {
+  const wasReal = await wasAutoPostSlug(env, slug);
+  const status = wasReal ? 410 : 404;
+  const headline = wasReal ? 'This article has expired' : 'Article not found';
+  const body = wasReal
+    ? 'This was an automatically generated article built from live job-market data. Since that data ages, older auto-generated articles are periodically retired to keep listings accurate.'
+    : "We couldn't find an article at this address. It may have been mistyped, or the link may be out of date.";
+
+  const settings = await getSettings(env);
+  const categories = await getCategoryData(env);
+  const content = `
+<div class="page-sm" style="text-align:center;padding-top:60px">
+  <div style="font-size:56px;margin-bottom:8px;opacity:.35">${wasReal ? '⏳' : '🔍'}</div>
+  <h1 style="font-family:'Plus Jakarta Sans',sans-serif;font-size:24px;font-weight:800;color:var(--ink);margin-bottom:10px">${headline}</h1>
+  <p style="color:var(--ink2);font-size:14px;line-height:1.7;max-width:420px;margin:0 auto 28px">${body}</p>
+  <a href="/blog" style="display:inline-flex;align-items:center;gap:8px;background:var(--brand);color:#fff;padding:12px 26px;border-radius:11px;font-size:14px;font-weight:700;text-decoration:none">Browse the Blog</a>
+</div>`;
+
+  return new Response(
+    baseLayout(`${headline} — ${settings.site_name}`, body, `${base}/blog/${slug}`, '', content, '', 'noindex, nofollow', settings, categories),
+    { status, headers: { "Content-Type": "text/html; charset=utf-8" } }
+  );
+}
+
 export async function handlePagesRoute(url, request, env, base) {
   const jobMatch = url.pathname.match(/^\/job\/(\d+)$/);
   if (jobMatch) {
@@ -81,7 +113,7 @@ export async function handlePagesRoute(url, request, env, base) {
     const post = /^\d+$/.test(idOrSlug)
       ? await getPostById(env, parseInt(idOrSlug, 10))
       : await getPostBySlug(env, idOrSlug);
-    if (!post) return new Response('Not found', { status: 404 });
+    if (!post) return renderBlogGonePage(env, base, idOrSlug);
     return new Response(await renderArticlePage(post, base, env), { headers: { "Content-Type": "text/html; charset=utf-8" } });
   }
 
