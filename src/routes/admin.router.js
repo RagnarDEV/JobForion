@@ -27,6 +27,7 @@ import { handleAdminCompaniesRoute } from './admin/companies.router.js';
 import { handleAdminSourcesRoute } from './admin/sources.router.js';
 import { handleAdminTaxonomyRoute } from './admin/taxonomy.router.js';
 import { handleAdminContentRoute } from './admin/content.router.js';
+import { handleAdminBlogAutomationRoute } from './admin/blog-automation.router.js';
 import { handleAdminWebsiteRoute } from './admin/website.router.js';
 import { handleAdminMonetizationRoute } from './admin/monetization.router.js';
 import { handleAdminSystemRoute } from './admin/system.router.js';
@@ -44,6 +45,7 @@ const ADMIN_SUB_ROUTERS = [
   handleAdminSourcesRoute,
   handleAdminTaxonomyRoute,
   handleAdminContentRoute,
+  handleAdminBlogAutomationRoute,
   handleAdminWebsiteRoute,
   handleAdminMonetizationRoute,
   handleAdminSystemRoute,
