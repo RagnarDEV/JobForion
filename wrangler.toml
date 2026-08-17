@@ -17,9 +17,19 @@ database_id = "58e366ac-f5d4-4da5-b23f-0aa2e4208866"
 # is simply ignored and safe to remove.
 
 # ── Scheduled tasks ──
-# "0 */6 * * *"  -> syncJobs()        every 6 hours (processes a bounded,
-#                                      rotating batch of companies each run
-#                                      — see src/db/sync.js / sync_config)
-# "0 3 * * *"    -> cleanupStaleJobs() once daily at 03:00 UTC
+# "0 */6 * * *"  -> syncJobs()                every 6 hours (processes a bounded,
+#                                              rotating batch of companies each run
+#                                              — see src/db/sync.js / sync_config)
+# "0 3 * * *"    -> cleanupStaleJobs()         once daily at 03:00 UTC
+#                   + runBlogExpirationCleanup() piggybacks on the same cron —
+#                     deletes auto-generated blog articles past their lifetime
+#                     (see src/lib/blog-automation/expiration.js)
+# "0 9 * * *"    -> runBlogGeneration()        once daily at 09:00 UTC — Blog
+#                   Automation's own generation function then decides, from
+#                   D1-stored settings, whether today is actually a scheduled
+#                   publishing day and whether this week's article cap is
+#                   already reached (see src/lib/blog-automation/generator.js
+#                   and /admin/blog-automation). Firing daily does NOT mean an
+#                   article is published every day.
 [triggers]
-crons = ["0 */6 * * *", "0 3 * * *"]
+crons = ["0 */6 * * *", "0 3 * * *", "0 9 * * *"]
