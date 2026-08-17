@@ -86,6 +86,43 @@ export const SETTINGS_DEFAULTS = {
   feature_country_pages: '1',
   feature_skill_pages: '1',
   feature_featured_jobs: '1',
+
+  // ── Blog Automation (Data-Driven Blog System — no AI) ──────────────
+  // Read by src/lib/blog-automation/* and written from
+  // /admin/blog-automation (see routes/admin/blog-automation.router.js).
+  // Every value here is a plain string (same '1'/'0' convention as the
+  // feature flags above) so it round-trips through D1's site_settings
+  // key/value table and HTML form fields with zero parsing surprises.
+
+  // General
+  blog_auto_enabled: '1',
+  blog_auto_articles_per_week: '4',
+  blog_auto_publish: '1',           // '1' = publish immediately, '0' = save as draft for manual review
+  blog_auto_lifetime_days: '45',
+  blog_auto_delete: '1',            // global auto-expiration kill switch
+  blog_auto_min_jobs: '3',          // minimum jobs a topic needs before it's eligible at all
+
+  // Schedule — days are JS getUTCDay() values, comma-separated
+  // (0=Sun,1=Mon,2=Tue,3=Wed,4=Thu,5=Fri,6=Sat). Default: Sun/Tue/Thu/Sat.
+  blog_auto_schedule_days: '0,2,4,6',
+  blog_auto_schedule_hour: '9',     // UTC hour the daily generation cron checks against (informational — the cron itself is fixed in wrangler.toml)
+  blog_auto_timezone_label: 'UTC',  // display-only label shown in the admin UI
+
+  // Topics — one toggle per template in src/lib/blog-automation/templates/
+  blog_auto_topics_category: '1',
+  blog_auto_topics_skill: '1',
+  blog_auto_topics_country: '1',
+  blog_auto_topics_company: '1',
+  blog_auto_topics_salary: '1',
+  blog_auto_topics_trends: '1',
+  blog_auto_topics_weekly: '1',
+
+  // Content
+  blog_auto_min_content_length: '600',   // words
+  blog_auto_max_content_length: '2200',  // words
+  blog_auto_jobs_per_article: '8',
+  blog_auto_companies_per_article: '6',
+  blog_auto_duplicate_cooldown_days: '21',
 };
 
 // Curated so the admin picker is a safe dropdown, never free text — a
@@ -123,6 +160,25 @@ export const CHECKBOX_SETTINGS_KEYS = [
   'feature_country_pages',
   'feature_skill_pages',
   'feature_featured_jobs',
+  'blog_auto_enabled',
+  'blog_auto_publish',
+  'blog_auto_delete',
+  'blog_auto_topics_category',
+  'blog_auto_topics_skill',
+  'blog_auto_topics_country',
+  'blog_auto_topics_company',
+  'blog_auto_topics_salary',
+  'blog_auto_topics_trends',
+  'blog_auto_topics_weekly',
+];
+
+// Weekday options for the Blog Automation schedule form — value matches
+// JS Date#getUTCDay() so isTodayScheduledDay() in generator.js can compare
+// directly with zero translation.
+export const WEEKDAY_OPTIONS = [
+  { value: 0, label: 'Sunday' }, { value: 1, label: 'Monday' }, { value: 2, label: 'Tuesday' },
+  { value: 3, label: 'Wednesday' }, { value: 4, label: 'Thursday' }, { value: 5, label: 'Friday' },
+  { value: 6, label: 'Saturday' },
 ];
 
 const TTL_MS = 60000;
