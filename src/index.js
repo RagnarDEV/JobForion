@@ -19,6 +19,8 @@ import { cleanupStaleJobs } from './db/cleanup.js';
 import { BASE_URL } from './config/constants.js';
 import { getSettings } from './lib/settings.js';
 import { renderMaintenancePage } from './pages/maintenance.js';
+import { runBlogGeneration } from './lib/blog-automation/generator.js';
+import { runBlogExpirationCleanup } from './lib/blog-automation/expiration.js';
 
 import { handleAssetsRoute, ASSET_PATHS } from './routes/assets.router.js';
 import { handleFeedRoute } from './routes/feed.router.js';
@@ -158,12 +160,23 @@ export default {
   },
 
   async scheduled(event, env, ctx) {
-    // Two cron patterns share this one handler (Cloudflare Workers only
+    // Three cron patterns share this one handler (Cloudflare Workers only
     // supports a single scheduled() export) — event.cron tells us which
-    // one fired. See wrangler.toml: "0 */6 * * *" for sync (every 6
-    // hours), "0 3 * * *" for the daily cleanup.
+    // one fired. See wrangler.toml:
+    //   "0 */6 * * *"  → job sync (every 6 hours)
+    //   "0 3 * * *"    → daily job cleanup + blog expiration cleanup
+    //   "0 9 * * *"    → daily blog generation check (Blog Automation —
+    //                    see src/lib/blog-automation/generator.js; the
+    //                    function itself decides, from D1 settings,
+    //                    whether today is actually a scheduled publishing
+    //                    day and whether the weekly cap is already hit,
+    //                    so this cron firing daily does NOT mean an
+    //                    article is generated every single day)
     if (event.cron === '0 3 * * *') {
       ctx.waitUntil(cleanupStaleJobs(env));
+      ctx.waitUntil(runBlogExpirationCleanup(env));
+    } else if (event.cron === '0 9 * * *') {
+      ctx.waitUntil(runBlogGeneration(env, { ctx }));
     } else {
       ctx.waitUntil(syncJobs(env));
     }
