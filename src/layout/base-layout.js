@@ -8,6 +8,7 @@ import { footerHtml } from '../components/footer.js';
 import { postJobModalHtml } from '../components/post-job-modal.js';
 import { SHARED_CSS } from '../styles/shared-css.js';
 import { JOB_CARD_CSS } from '../styles/job-card-css.js';
+import { ACCOUNTS_CSS } from '../styles/accounts-css.js';
 import { ICON_HEAD } from '../assets/favicon.js';
 import { BASE_URL } from '../config/constants.js';
 import { escapeHtml } from '../lib/entities.js';
@@ -36,7 +37,7 @@ import { SETTINGS_DEFAULTS } from '../lib/settings.js';
 // showing up in the footer's "Company" column alongside Privacy/Terms/
 // Disclaimer, all from the same dynamic source. Omit it and the footer
 // falls back to the original hardcoded 3 links.
-export function baseLayout(title, description, canonical, ogImage, content, extraHead = '', robots = 'index, follow', settings = null, categories = null, footerPages = null, menuPages = null, navButtons = null) {
+export function baseLayout(title, description, canonical, ogImage, content, extraHead = '', robots = 'index, follow', settings = null, categories = null, footerPages = null, menuPages = null, navButtons = null, user = null) {
   const safeTitle = escapeHtml(title);
   const safeDescription = escapeHtml(description);
   const siteName = escapeHtml(settings?.site_name || SETTINGS_DEFAULTS.site_name);
@@ -67,6 +68,7 @@ ${extraHead}
 <style>
 ${SHARED_CSS}
 ${JOB_CARD_CSS}
+${ACCOUNTS_CSS}
 .page{max-width:860px;margin:0 auto;padding:36px 20px 72px}
 .page-sm{max-width:680px;margin:0 auto;padding:36px 20px 72px}
 .breadcrumb{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--ink3);margin-bottom:28px;flex-wrap:wrap}
@@ -134,8 +136,8 @@ ${JOB_CARD_CSS}
 </style>
 </head>
 <body>
-${navHtml(settings, menuPages || [], navButtons || [])}
-${mobileHeaderHtml(settings, menuPages || [], navButtons || [])}
+${navHtml(settings, menuPages || [], navButtons || [], user)}
+${mobileHeaderHtml(settings, menuPages || [], navButtons || [], user)}
 ${content}
 ${footerHtml(BASE_URL, settings, footerPages)}
 ${postJobModalHtml(categories?.order, categories?.map)}
