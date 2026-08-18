@@ -24,6 +24,7 @@
 import { handleAdminAuthRoute } from './admin/auth.router.js';
 import { handleAdminJobsRoute } from './admin/jobs.router.js';
 import { handleAdminCompaniesRoute } from './admin/companies.router.js';
+import { handleAdminAccountsRoute } from './admin/accounts.router.js';
 import { handleAdminSourcesRoute } from './admin/sources.router.js';
 import { handleAdminTaxonomyRoute } from './admin/taxonomy.router.js';
 import { handleAdminContentRoute } from './admin/content.router.js';
@@ -42,6 +43,7 @@ const ADMIN_SUB_ROUTERS = [
   handleAdminAuthRoute,
   handleAdminJobsRoute,
   handleAdminCompaniesRoute,
+  handleAdminAccountsRoute,
   handleAdminSourcesRoute,
   handleAdminTaxonomyRoute,
   handleAdminContentRoute,
