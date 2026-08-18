@@ -9,8 +9,47 @@ import { resolveRawNames } from '../lib/directory-overrides.js';
 import { getSettings } from '../lib/settings.js';
 import { logActivity } from '../lib/activity-log.js';
 import { verifyAdminCookie } from '../auth/admin-auth.js';
+import { getSessionUser } from '../lib/accounts/session.js';
+import { saveJob, unsaveJob } from '../lib/saved-jobs.js';
+import { recordApplication } from '../lib/applications.js';
 
 export async function handleApiRoute(url, request, env) {
+  // ── Account-aware saved-jobs toggle ─────────────────────────────
+  // Complements the existing localStorage-based "Saved" button (still
+  // used by anonymous visitors — see pages/home.js's client script,
+  // completely unchanged) — when a session cookie is present, saves are
+  // ALSO persisted server-side so they survive across devices. No
+  // existing behavior is removed; this is additive.
+  if (url.pathname === '/api/user/saved-jobs' && request.method === 'POST') {
+    const session = await getSessionUser(env, request);
+    if (!session) return new Response(JSON.stringify({ success: false, error: 'Not signed in' }), { status: 401, headers: { "Content-Type": "application/json" } });
+    try {
+      const { job_id, action } = await request.json();
+      const jobId = parseInt(job_id, 10);
+      if (!jobId) return new Response(JSON.stringify({ success: false, error: 'job_id required' }), { status: 400, headers: { "Content-Type": "application/json" } });
+      if (action === 'unsave') await unsaveJob(env, session.user.id, jobId);
+      else await saveJob(env, session.user.id, jobId);
+      return new Response(JSON.stringify({ success: true, saved: action !== 'unsave' }), { headers: { "Content-Type": "application/json" } });
+    } catch (e) { return new Response(JSON.stringify({ success: false, error: 'Invalid request' }), { status: 400, headers: { "Content-Type": "application/json" } }); }
+  }
+
+  if (url.pathname === '/api/user/applications' && request.method === 'POST') {
+    const session = await getSessionUser(env, request);
+    if (!session) return new Response(JSON.stringify({ success: false, error: 'Not signed in' }), { status: 401, headers: { "Content-Type": "application/json" } });
+    try {
+      const { job_id, status, application_type } = await request.json();
+      const jobId = parseInt(job_id, 10);
+      if (!jobId) return new Response(JSON.stringify({ success: false, error: 'job_id required' }), { status: 400, headers: { "Content-Type": "application/json" } });
+      await recordApplication(env, session.user.id, jobId, { status: status || 'applied', application_type: application_type || 'external' });
+      return new Response(JSON.stringify({ success: true }), { headers: { "Content-Type": "application/json" } });
+    } catch (e) { return new Response(JSON.stringify({ success: false, error: 'Invalid request' }), { status: 400, headers: { "Content-Type": "application/json" } }); }
+  }
+
+  if (url.pathname === '/api/auth/session' && request.method === 'GET') {
+    const session = await getSessionUser(env, request);
+    return new Response(JSON.stringify({ user: session ? { id: session.user.id, email: session.user.email, email_verified: session.user.email_verified } : null }), { headers: { "Content-Type": "application/json" } });
+  }
+
   if (url.pathname === '/api/subscribe' && request.method === 'POST') {
     try {
       // Feature Flag: Job Alerts — see lib/settings.js. Turning this off
