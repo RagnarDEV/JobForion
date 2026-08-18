@@ -12,7 +12,7 @@ import { SHARED_CSS } from '../../styles/shared-css.js';
 import {
   iconLayoutDashboard, iconBriefcase, iconBuilding, iconPlug, iconTag, iconGlobe,
   iconFileText, iconEdit3, iconPalette, iconSettingsGear, iconMegaphone,
-  iconServer, iconShieldCheck, iconLogOut, iconHome, iconSparkle,
+  iconServer, iconShieldCheck, iconLogOut, iconHome, iconSparkle, iconUser, iconUsers,
 } from '../../assets/icons.js';
 
 // ── Admin Dashboard V2 sidebar IA ──────────────────────────────────
@@ -29,6 +29,10 @@ const NAV_GROUPS = [
     { id: 'jobs', label: 'Jobs', icon: iconBriefcase, href: '/admin/jobs' },
     { id: 'companies', label: 'Companies', icon: iconBuilding, href: '/admin/companies' },
     { id: 'sources', label: 'Job Sources', icon: iconPlug, href: '/admin/sources' },
+  ]},
+  { title: 'Accounts', items: [
+    { id: 'users', label: 'Users', icon: iconUser, href: '/admin/accounts/users' },
+    { id: 'company-accounts', label: 'Company Accounts', icon: iconUsers, href: '/admin/accounts/companies' },
   ]},
   { title: 'Taxonomy & Directory', items: [
     { id: 'categories', label: 'Categories', icon: iconTag, href: '/admin/categories' },
