@@ -11,7 +11,7 @@ import { escapeHtml } from '../lib/entities.js';
 import { getSettings } from '../lib/settings.js';
 import { getCategories } from '../lib/categories.js';
 
-export async function renderStaticPage(slug, base, env) {
+export async function renderStaticPage(slug, base, env, user = null) {
   const page = await getPageBySlug(env, slug);
   if (!page) return null;
   const settings = await getSettings(env);
@@ -26,7 +26,7 @@ export async function renderStaticPage(slug, base, env) {
   <div class="static-body">${page.body}</div>
   <div style="margin-top:32px"><a href="/" class="back-link" style="margin-bottom:0">← Back to Jobs</a></div>
 </div>`;
-  return baseLayout(`${page.title} — ${settings.site_name}`, page.meta_description || page.title, `${base}/${slug}`, '', content, '', 'index, follow', settings, categories, footerPages);
+  return baseLayout(`${page.title} — ${settings.site_name}`, page.meta_description || page.title, `${base}/${slug}`, '', content, '', 'index, follow', settings, categories, footerPages, null, null, user);
 }
 
 // ══════════════════════════════════════════════════════════════════

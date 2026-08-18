@@ -74,7 +74,7 @@ function companySnapshotHtml(job, snapshot, siteName) {
   </div>`;
 }
 
-export async function renderJobPage(job, related, base, env) {
+export async function renderJobPage(job, related, base, env, user = null) {
   let skills = [];
   try { skills = JSON.parse(job.skills || '[]'); } catch (e) {}
   const isNew = job.created_at && Date.now() - new Date(job.created_at).getTime() < 86400000;
@@ -205,5 +205,5 @@ export async function renderJobPage(job, related, base, env) {
   refreshBtn();
 })();
 </script>`;
-  return baseLayout(`${job.title} at ${job.company} — ${settings.site_name}`, desc, canonical, '', content, `<script type="application/ld+json">${schema}</script><script type="application/ld+json">${breadcrumbSchema}</script>`, 'index, follow', settings, { order: categoryOrder, map: categoryMap }, footerPages, menuPages, navButtons);
+  return baseLayout(`${job.title} at ${job.company} — ${settings.site_name}`, desc, canonical, '', content, `<script type="application/ld+json">${schema}</script><script type="application/ld+json">${breadcrumbSchema}</script>`, 'index, follow', settings, { order: categoryOrder, map: categoryMap }, footerPages, menuPages, navButtons, user);
 }

@@ -29,7 +29,7 @@ async function loadCategoryData(env) {
 // admin-form-submitted text so they're escaped here (defense in depth;
 // only `post.body` is intentionally raw HTML — see the security note
 // in components/rich-editor.js for why that's still safe).
-export async function renderBlogIndex(base, env) {
+export async function renderBlogIndex(base, env, user = null) {
   const settings = env ? await getSettings(env) : SETTINGS_DEFAULTS;
   const categories = await loadCategoryData(env);
   const posts = env ? await getPosts(env) : [];
@@ -56,10 +56,10 @@ export async function renderBlogIndex(base, env) {
 </div>`;
   return baseLayout(`Career Blog — ${settings.site_name}`, 'Career insights for remote job seekers.', `${base}/blog`, '', content,
     `<script type="application/ld+json">${JSON.stringify({ "@context": "https://schema.org", "@type": "Blog", "name": `${settings.site_name} Career Blog`, "url": `${base}/blog` })}</script>`,
-    'index, follow', settings, categories, footerPages);
+    'index, follow', settings, categories, footerPages, null, null, user);
 }
 
-export async function renderArticlePage(post, base, env) {
+export async function renderArticlePage(post, base, env, user = null) {
   const settings = env ? await getSettings(env) : SETTINGS_DEFAULTS;
   const categories = await loadCategoryData(env);
   const adConfig = env ? await getAdSlotsConfig(env) : DEFAULT_AD_CONFIG;
@@ -82,5 +82,5 @@ export async function renderArticlePage(post, base, env) {
     <a href="/" style="display:inline-flex;align-items:center;gap:7px;background:var(--ink);color:#fff;padding:9px 18px;border-radius:10px;font-size:13px;font-weight:700;text-decoration:none">Browse Remote Jobs →</a>
   </div>
 </div>`;
-  return baseLayout(`${post.title} — ${settings.site_name} Blog`, post.excerpt, canonical, '', content, `<script type="application/ld+json">${schema}</script>`, 'index, follow', settings, categories);
+  return baseLayout(`${post.title} — ${settings.site_name} Blog`, post.excerpt, canonical, '', content, `<script type="application/ld+json">${schema}</script>`, 'index, follow', settings, categories, null, null, null, user);
 }
