@@ -12,6 +12,7 @@ import { baseLayout } from '../layout/base-layout.js';
 import { BASE_URL } from '../config/constants.js';
 import { getSettings } from '../lib/settings.js';
 import { getCategoryData } from '../lib/categories.js';
+import { getSessionUser } from '../lib/accounts/session.js';
 
 // A deleted/expired job's row is hard-removed from D1 (see
 // db/cleanup.js), so at request time there's no way to tell "this id
@@ -86,6 +87,9 @@ async function renderBlogGonePage(env, base, slug) {
 }
 
 export async function handlePagesRoute(url, request, env, base) {
+  const session = await getSessionUser(env, request);
+  const user = session?.user || null;
+
   const jobMatch = url.pathname.match(/^\/job\/(\d+)$/);
   if (jobMatch) {
     const { results } = await env.DB.prepare("SELECT * FROM jobs WHERE id = ?").bind(jobMatch[1]).all();
@@ -99,10 +103,10 @@ export async function handlePagesRoute(url, request, env, base) {
     // degrade to a short/empty description by design rather than costing
     // a second request per job (see each provider's own comments).
     const { results: related } = await env.DB.prepare("SELECT * FROM jobs WHERE id != ? ORDER BY RANDOM() LIMIT 4").bind(jobMatch[1]).all();
-    return new Response(await renderJobPage(job, related, base, env), { headers: { "Content-Type": "text/html; charset=utf-8" } });
+    return new Response(await renderJobPage(job, related, base, env, user), { headers: { "Content-Type": "text/html; charset=utf-8" } });
   }
 
-  if (url.pathname === '/blog') return new Response(await renderBlogIndex(base, env), { headers: { "Content-Type": "text/html; charset=utf-8" } });
+  if (url.pathname === '/blog') return new Response(await renderBlogIndex(base, env, user), { headers: { "Content-Type": "text/html; charset=utf-8" } });
 
   const blogMatch = url.pathname.match(/^\/blog\/([a-z0-9-]+)$/);
   if (blogMatch) {
@@ -114,11 +118,11 @@ export async function handlePagesRoute(url, request, env, base) {
       ? await getPostById(env, parseInt(idOrSlug, 10))
       : await getPostBySlug(env, idOrSlug);
     if (!post) return renderBlogGonePage(env, base, idOrSlug);
-    return new Response(await renderArticlePage(post, base, env), { headers: { "Content-Type": "text/html; charset=utf-8" } });
+    return new Response(await renderArticlePage(post, base, env, user), { headers: { "Content-Type": "text/html; charset=utf-8" } });
   }
 
   if (url.pathname === '/') {
-    const html = await renderMainHTML(env, base);
+    const html = await renderMainHTML(env, base, user);
     return new Response(html, { headers: { "Content-Type": "text/html; charset=utf-8" } });
   }
 
@@ -131,7 +135,7 @@ export async function handlePagesRoute(url, request, env, base) {
   // etc. never even reach here.
   const pageMatch = url.pathname.match(/^\/([a-z][a-z0-9-]{1,49})$/);
   if (pageMatch && !RESERVED_SLUGS.has(pageMatch[1])) {
-    const html = await renderStaticPage(pageMatch[1], base, env);
+    const html = await renderStaticPage(pageMatch[1], base, env, user);
     if (html) return new Response(html, { headers: { "Content-Type": "text/html; charset=utf-8" } });
   }
 
