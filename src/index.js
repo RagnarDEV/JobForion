@@ -12,7 +12,7 @@
 // this composes safely — see src/routes/*.router.js for details.
 // ════════════════════════════════════════════════════════════════
 
-import { ensureTable } from './db/schema.js';
+import { ensureTable, ensureAccountTables } from './db/schema.js';
 import { recordVisit } from './db/analytics.js';
 import { syncJobs } from './db/sync.js';
 import { cleanupStaleJobs } from './db/cleanup.js';
@@ -25,6 +25,9 @@ import { runBlogExpirationCleanup } from './lib/blog-automation/expiration.js';
 import { handleAssetsRoute, ASSET_PATHS } from './routes/assets.router.js';
 import { handleFeedRoute } from './routes/feed.router.js';
 import { handleAdminRoute } from './routes/admin.router.js';
+import { handleAuthRoute } from './routes/auth.router.js';
+import { handleUserRoute } from './routes/user.router.js';
+import { handleCompanyRoute } from './routes/company.router.js';
 import { handleSeoPagesRoute } from './routes/seo-pages.router.js';
 import { handlePagesRoute } from './routes/pages.router.js';
 import { handleApiRoute } from './routes/api.router.js';
@@ -98,6 +101,7 @@ export default {
 
     const base = `${url.protocol}//${url.host}`;
     await ensureTable(env);
+    await ensureAccountTables(env);
 
     // ── static brand assets (favicons, manifest, robots.txt) ──
     const assetResponse = handleAssetsRoute(url, base);
@@ -143,6 +147,17 @@ export default {
     // ── /admin/* ──
     const adminResponse = await handleAdminRoute(url, request, env, base);
     if (adminResponse) return withSecurityHeaders(adminResponse);
+
+    // ── Accounts: auth (/login /register /logout /forgot-password
+    // /reset-password /verify-email), /user/*, /company/* ──────────
+    const authResponse = await handleAuthRoute(url, request, env, base);
+    if (authResponse) return withSecurityHeaders(authResponse);
+
+    const userResponse = await handleUserRoute(url, request, env, base);
+    if (userResponse) return withSecurityHeaders(userResponse);
+
+    const companyResponse = await handleCompanyRoute(url, request, env, base);
+    if (companyResponse) return withSecurityHeaders(companyResponse);
 
     // ── core content: job / blog / static / home ──
     const pageResponse = await handlePagesRoute(url, request, env, base);
