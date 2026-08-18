@@ -38,7 +38,7 @@ const CLIENT_ICONS = {
   searchLg: iconSearch({ size: 32 }),
 };
 
-export async function renderMainHTML(env, base) {
+export async function renderMainHTML(env, base, user = null) {
   await ensureTable(env);
   const settings = await getSettings(env);
   const categories = await getCategories(env);
@@ -425,8 +425,8 @@ ${SHARED_CSS}
 </style>
 </head>
 <body>
-${navHtml(settings, menuPages, navButtons)}
-${mobileHeaderHtml(settings, menuPages, navButtons)}
+${navHtml(settings, menuPages, navButtons, user)}
+${mobileHeaderHtml(settings, menuPages, navButtons, user)}
 
 <main>
   <!-- JOBS VIEW -->
