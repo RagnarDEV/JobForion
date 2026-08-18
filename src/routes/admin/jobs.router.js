@@ -26,10 +26,20 @@ export async function handleAdminJobsRoute(url, request, env, base) {
         const p = results[0];
         if (p) {
           try {
+            // Employer Submitted Jobs (plan §16) — every job approved
+            // through this Post-a-Job pipeline is source_type='employer',
+            // distinct from provider-synced jobs (source_type defaults to
+            // 'provider' for every Greenhouse/Lever/Ashby/etc. row — see
+            // ensureAccountTables() in db/schema.js). company_id and
+            // submitted_by_user_id are only set when the posting actually
+            // came from the new authenticated /company/post-job flow
+            // (routes/company.router.js) — the original anonymous public
+            // "Post a Job" modal still works exactly as before and simply
+            // leaves both NULL, which is a perfectly valid employer job.
             await env.DB.prepare(
-              `INSERT OR IGNORE INTO jobs (title,company,location,url,description,salary,remote_type,skills,seniority,employment_type,job_handle,source,status,updated_at,expires_at)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,'manual','active',CURRENT_TIMESTAMP,datetime('now','+45 days'))`
-            ).bind(p.title, p.company, p.location || 'Remote', p.url, p.description || '', p.salary || '', p.remote_type || 'fully_remote', '[]', '', p.employment_type || 'full_time', '').run();
+              `INSERT OR IGNORE INTO jobs (title,company,location,url,description,salary,remote_type,skills,seniority,employment_type,job_handle,source,source_type,company_id,submitted_by_user_id,status,updated_at,expires_at)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,'manual','employer',?,?,'active',CURRENT_TIMESTAMP,datetime('now','+45 days'))`
+            ).bind(p.title, p.company, p.location || 'Remote', p.url, p.description || '', p.salary || '', p.remote_type || 'fully_remote', '[]', '', p.employment_type || 'full_time', '', p.company_id || null, p.user_id || null).run();
             await env.DB.prepare("UPDATE job_postings SET status='approved' WHERE id = ?").bind(id).run();
           } catch (e) { /* keep posting pending rather than crash the whole request */ }
         }
