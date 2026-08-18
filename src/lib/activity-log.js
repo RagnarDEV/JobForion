@@ -50,6 +50,30 @@ export const ACTION_LABELS = {
   salary_backfill_run: 'Salary data backfill run',
   homepage_section_toggled: 'Homepage section enabled/disabled',
   homepage_section_moved: 'Homepage section reordered',
+
+  // ── Accounts & Companies (Identity system) ─────────────────────
+  user_registered: 'User registered',
+  user_login_success: 'User signed in',
+  user_login_failed: 'User failed sign-in',
+  user_login_rate_limited: 'User sign-in blocked (rate limit)',
+  user_logout: 'User signed out',
+  user_password_changed: 'User changed password',
+  user_password_reset_requested: 'User requested password reset',
+  user_password_reset_completed: 'User completed password reset',
+  user_email_verified: 'User verified email',
+  user_account_deleted: 'User deleted their account',
+  user_suspended: 'User suspended (admin)',
+  user_restored: 'User restored (admin)',
+  email_not_sent_no_provider: 'Email not sent — no provider configured',
+  email_send_failed: 'Email send failed',
+  company_created: 'Company created',
+  company_profile_updated: 'Company profile updated',
+  company_member_added: 'Company member added',
+  company_member_removed: 'Company member removed',
+  company_verified: 'Company verified (admin)',
+  company_rejected: 'Company rejected (admin)',
+  company_suspended: 'Company suspended (admin)',
+  employer_job_submitted: 'Employer job submitted for review',
 };
 
 // action: short machine-readable key, e.g. 'login_failed', 'job_deleted'.
