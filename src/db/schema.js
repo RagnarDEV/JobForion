@@ -482,3 +482,258 @@ export async function ensureTable(env) {
 
   schemaEnsured = true;
 }
+
+// ════════════════════════════════════════════════════════════════
+// ACCOUNTS & IDENTITY SYSTEM (Users, Sessions, Companies, Memberships)
+// ════════════════════════════════════════════════════════════════
+// Deliberately a SEPARATE function from ensureTable(), called
+// independently from index.js right after it. Two reasons:
+//   1. Isolation — a mistake in a brand-new, larger subsystem can't take
+//      down table creation for the existing job board (ensureTable's
+//      early-return isolate cache means ensureTable() itself is called
+//      on every request; keeping account tables here means a bug here
+//      is easy to reason about/roll back without touching the proven
+//      code path above).
+//   2. It matches the file's own established pattern — job lifecycle
+//      (Phase: Job Lifecycle Management), Blog Automation, Job Card
+//      Style Manager, and Ad Slot Manager are all additive column/table
+//      blocks layered onto the same ensureTable() function; the account
+//      system is simply large enough (11 tables) to warrant its own
+//      named function for readability, while still using the exact same
+//      ensureColumn()/CREATE TABLE IF NOT EXISTS idioms as everything
+//      above — so it reads as "more of the same", not a parallel system.
+//
+// NOTHING here ever touches admin_activity_log's cousin, the Admin
+// Dashboard's own auth (auth/admin-auth.js's single ADMIN_PASSWORD
+// secret + jn_admin cookie) — that system is completely untouched and
+// stays the only way into /admin. This block is exclusively for public
+// user accounts (job seekers) and company accounts (employers).
+let accountSchemaEnsured = false;
+
+export async function ensureAccountTables(env) {
+  if (accountSchemaEnsured) return;
+
+  // ── users ───────────────────────────────────────────────────────
+  // Identity only — no profile fields here (see user_profiles below).
+  // password_hash is PBKDF2-SHA256, salt+iterations encoded inline in
+  // the stored string (see lib/accounts/password.js) — never a plain
+  // password, never reversible.
+  await env.DB.prepare(`
+    CREATE TABLE IF NOT EXISTS users (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      email TEXT UNIQUE NOT NULL,
+      password_hash TEXT NOT NULL,
+      email_verified INTEGER DEFAULT 0,
+      status TEXT DEFAULT 'pending_verification',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      last_login_at DATETIME
+    )
+  `).run();
+  await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)`).run();
+
+  // ── user_profiles ───────────────────────────────────────────────
+  // 1:1 with users, split out deliberately (see plan §5) so the hot,
+  // frequently-read identity row (users) never carries the heavier
+  // optional profile payload. skills/experience/education/languages are
+  // stored as JSON arrays (same convention as jobs.skills) — structured
+  // enough for future AI job-matching (plan §31) without a rigid
+  // multi-table skill taxonomy today.
+  await env.DB.prepare(`
+    CREATE TABLE IF NOT EXISTS user_profiles (
+      user_id INTEGER PRIMARY KEY REFERENCES users(id),
+      full_name TEXT,
+      avatar_url TEXT,
+      country TEXT,
+      city TEXT,
+      job_title TEXT,
+      bio TEXT,
+      skills TEXT DEFAULT '[]',
+      experience TEXT DEFAULT '[]',
+      education TEXT DEFAULT '[]',
+      languages TEXT DEFAULT '[]',
+      linkedin_url TEXT,
+      portfolio_url TEXT,
+      resume_url TEXT,
+      job_preferences TEXT DEFAULT '{}',
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `).run();
+
+  // ── user_sessions ───────────────────────────────────────────────
+  // id = SHA-256 hash of the random bearer token that actually lives in
+  // the HttpOnly cookie (see lib/accounts/session.js) — the raw token is
+  // NEVER stored, so a read of this table (backup leak, SQLi) cannot be
+  // turned into a valid session by itself.
+  await env.DB.prepare(`
+    CREATE TABLE IF NOT EXISTS user_sessions (
+      id TEXT PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id),
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      expires_at DATETIME NOT NULL,
+      last_seen_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      user_agent TEXT,
+      ip_hash TEXT
+    )
+  `).run();
+  await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON user_sessions(user_id)`).run();
+
+  // ── email_verifications / password_resets ──────────────────────
+  // Same shape, same reasoning: token_hash only (SHA-256 of the random
+  // token emailed to the user), single-use (used_at), time-limited.
+  await env.DB.prepare(`
+    CREATE TABLE IF NOT EXISTS email_verifications (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL REFERENCES users(id),
+      token_hash TEXT NOT NULL,
+      expires_at DATETIME NOT NULL,
+      used_at DATETIME,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `).run();
+  await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_email_verif_user ON email_verifications(user_id)`).run();
+
+  await env.DB.prepare(`
+    CREATE TABLE IF NOT EXISTS password_resets (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL REFERENCES users(id),
+      token_hash TEXT NOT NULL,
+      expires_at DATETIME NOT NULL,
+      used_at DATETIME,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `).run();
+  await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_pw_resets_user ON password_resets(user_id)`).run();
+
+  // ── saved_jobs ──────────────────────────────────────────────────
+  await env.DB.prepare(`
+    CREATE TABLE IF NOT EXISTS saved_jobs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL REFERENCES users(id),
+      job_id INTEGER NOT NULL REFERENCES jobs(id),
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(user_id, job_id)
+    )
+  `).run();
+  await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_saved_jobs_user ON saved_jobs(user_id)`).run();
+  await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_saved_jobs_job ON saved_jobs(job_id)`).run();
+
+  // ── job_alerts ──────────────────────────────────────────────────
+  // Account-bound version of the existing anonymous `subscribers` table
+  // (email + keywords only, still used as-is for non-account visitors —
+  // see lib/entities.js / api.router.js's /api/subscribe, left
+  // completely untouched). This is the richer, dashboard-managed version.
+  await env.DB.prepare(`
+    CREATE TABLE IF NOT EXISTS job_alerts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL REFERENCES users(id),
+      keywords TEXT,
+      category TEXT,
+      skills TEXT,
+      country TEXT,
+      remote_type TEXT,
+      employment_type TEXT,
+      salary_min INTEGER,
+      frequency TEXT DEFAULT 'daily',
+      active INTEGER DEFAULT 1,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `).run();
+  await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_job_alerts_user ON job_alerts(user_id)`).run();
+
+  // ── applications ────────────────────────────────────────────────
+  // application_type distinguishes a job whose provider/employer accepts
+  // applying THROUGH JobForion ('internal' — reserved for future use,
+  // see plan §18) from the overwhelming majority today, where "applying"
+  // means JobForion recorded the click-through to the employer's own
+  // site ('external'). No code currently assumes 'internal' has a real
+  // in-app application form — this column just keeps the two concepts
+  // from being conflated once one exists.
+  await env.DB.prepare(`
+    CREATE TABLE IF NOT EXISTS applications (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL REFERENCES users(id),
+      job_id INTEGER NOT NULL REFERENCES jobs(id),
+      status TEXT DEFAULT 'saved',
+      application_type TEXT DEFAULT 'external',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(user_id, job_id)
+    )
+  `).run();
+  await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_applications_user ON applications(user_id)`).run();
+  await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_applications_job ON applications(job_id)`).run();
+
+  // ── companies ───────────────────────────────────────────────────
+  // Previously "companies" were just the free-text `jobs.company` column
+  // (see the note on hidden_companies above) — this is the first real
+  // Company entity. Provider-synced jobs are NOT required to have a row
+  // here (see jobs.company_id below, nullable) so Greenhouse/Lever/etc.
+  // integrations are entirely unaffected; a companies row only exists
+  // once a real user account claims/creates that company.
+  await env.DB.prepare(`
+    CREATE TABLE IF NOT EXISTS companies (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      slug TEXT UNIQUE NOT NULL,
+      name TEXT NOT NULL,
+      logo_url TEXT,
+      website TEXT,
+      description TEXT,
+      industry TEXT,
+      country TEXT,
+      city TEXT,
+      company_size TEXT,
+      linkedin_url TEXT,
+      status TEXT DEFAULT 'pending',
+      verified INTEGER DEFAULT 0,
+      created_by_user_id INTEGER REFERENCES users(id),
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `).run();
+  await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_companies_slug ON companies(slug)`).run();
+
+  // ── company_members ─────────────────────────────────────────────
+  // The users ↔ companies join table with a role, exactly as the plan
+  // requires (§13) — permissions are resolved by looking up THIS table
+  // per-request (see lib/accounts/permissions.js), never by a single
+  // global `users.role` column, so one user can hold different roles at
+  // different companies and remain a Job Seeker everywhere at the same
+  // time.
+  await env.DB.prepare(`
+    CREATE TABLE IF NOT EXISTS company_members (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      company_id INTEGER NOT NULL REFERENCES companies(id),
+      user_id INTEGER NOT NULL REFERENCES users(id),
+      role TEXT DEFAULT 'member',
+      status TEXT DEFAULT 'active',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(company_id, user_id)
+    )
+  `).run();
+  await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_company_members_user ON company_members(user_id)`).run();
+  await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_company_members_company ON company_members(company_id)`).run();
+
+  // ── Link jobs → companies (additive, nullable) ─────────────────
+  // company_id is nullable and source_type defaults to 'provider' so
+  // EVERY existing job (all 9 ATS providers) is completely unaffected —
+  // this migration adds zero constraints on the ~all rows that predate
+  // it. Only newly-approved employer submissions (see
+  // routes/admin.router.js's postings/approve handler) ever set
+  // company_id + source_type='employer'.
+  await ensureColumn(env, 'jobs', 'company_id', 'INTEGER REFERENCES companies(id)');
+  await ensureColumn(env, 'jobs', 'source_type', "TEXT DEFAULT 'provider'");
+  await ensureColumn(env, 'jobs', 'submitted_by_user_id', 'INTEGER REFERENCES users(id)');
+  await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_jobs_company_id ON jobs(company_id)`).run();
+
+  // ── Link job_postings → an authenticated company submission ────
+  // Also additive/nullable — the existing anonymous "Post a Job" modal
+  // (components/post-job-modal.js, /api/post-job) keeps working exactly
+  // as before and simply leaves these NULL. Only the new authenticated
+  // /company/post-job flow sets them (see routes/company.router.js).
+  await ensureColumn(env, 'job_postings', 'user_id', 'INTEGER REFERENCES users(id)');
+  await ensureColumn(env, 'job_postings', 'company_id', 'INTEGER REFERENCES companies(id)');
+
+  accountSchemaEnsured = true;
+}
