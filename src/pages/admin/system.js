@@ -55,9 +55,11 @@ export async function renderSystemContent(env) {
         <div class="adm-card-title">Cron Jobs <span style="font-weight:400;color:var(--ink3);font-size:12px">— configured in wrangler.toml</span></div>
         <div class="adm-row"><span class="adm-row-label">Job Sync</span><span class="adm-row-val">Every 6 hours</span></div>
         <div class="adm-row"><span class="adm-row-label">Cleanup (stale jobs)</span><span class="adm-row-val">Daily · 03:00 UTC</span></div>
+        <div class="adm-row"><span class="adm-row-label">Job Alerts Dispatch</span><span class="adm-row-val">Daily · 08:00 UTC</span></div>
         <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
           <form method="POST" action="/api/sync" onsubmit="return confirm('Run job sync now?')"><button class="adm-btn adm-btn-primary" type="submit">↻ Sync Now</button></form>
           <form method="POST" action="/admin/cleanup" onsubmit="return confirm('Run cleanup now? This permanently deletes expired/stale jobs.')"><button class="adm-btn" type="submit" style="color:var(--coral);border-color:var(--coral)">🧹 Cleanup Now</button></form>
+          <form method="POST" action="/admin/system/run-job-alerts" onsubmit="return confirm('Send job alert digests now to every due alert?')"><button class="adm-btn" type="submit">📧 Send Job Alerts Now</button></form>
         </div>
       </div>
       <div class="adm-card">
