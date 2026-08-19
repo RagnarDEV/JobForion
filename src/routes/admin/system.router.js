@@ -9,6 +9,7 @@ import { renderSystemContent } from '../../pages/admin/system.js';
 import { adminShell } from '../../pages/admin/shell.js';
 import { backfillSalaryUsd } from '../../db/sync.js';
 import { cleanupStaleJobs } from '../../db/cleanup.js';
+import { runJobAlertsDispatch } from '../../lib/job-alerts-dispatcher.js';
 import { logActivity } from '../../lib/activity-log.js';
 import { errorPage } from './error-page.js';
 
@@ -52,6 +53,19 @@ export async function handleAdminSystemRoute(url, request, env, base) {
       const msg = result.remaining > 0
         ? `Processed ${result.processed} — ${result.remaining} remaining, click again to continue`
         : `Processed ${result.processed} — all salaries are now up to date`;
+      return new Response(null, { status: 302, headers: { 'Location': `/admin/system?flash=${encodeURIComponent(msg)}` } });
+    } catch (e) { return errorPage(e); }
+  }
+
+  // ── Job Alerts (see lib/job-alerts-dispatcher.js) ───────────────────
+  if (url.pathname === '/admin/system/run-job-alerts' && request.method === 'POST') {
+    try {
+      const ok = await verifyAdminCookie(env, request.headers.get('Cookie'));
+      if (!ok) return new Response('Unauthorized', { status: 401 });
+      const result = await runJobAlertsDispatch(env);
+      const msg = result.error
+        ? 'Job alerts dispatch failed — check Recent Activity for details'
+        : `Sent ${result.sent} digest(s) — ${result.skipped} not due/no matches, ${result.failed} failed, out of ${result.totalAlerts} active alert(s)`;
       return new Response(null, { status: 302, headers: { 'Location': `/admin/system?flash=${encodeURIComponent(msg)}` } });
     } catch (e) { return errorPage(e); }
   }
