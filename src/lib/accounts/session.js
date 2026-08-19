@@ -77,7 +77,7 @@ export async function getSessionUser(env, request) {
   try {
     const { results } = await env.DB.prepare(
       `SELECT s.id as session_id, s.expires_at, s.last_seen_at,
-              u.id, u.email, u.email_verified, u.status, u.created_at
+              u.id, u.email, u.email_verified, u.status, u.created_at, u.email_notifications_enabled
        FROM user_sessions s JOIN users u ON u.id = s.user_id
        WHERE s.id = ? AND s.expires_at > datetime('now') LIMIT 1`
     ).bind(id).all();
@@ -95,7 +95,7 @@ export async function getSessionUser(env, request) {
     }
 
     return {
-      user: { id: row.id, email: row.email, email_verified: !!row.email_verified, status: row.status, created_at: row.created_at },
+      user: { id: row.id, email: row.email, email_verified: !!row.email_verified, status: row.status, created_at: row.created_at, email_notifications_enabled: row.email_notifications_enabled !== 0 },
       sessionId: id,
     };
   } catch (e) {
