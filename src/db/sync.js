@@ -9,7 +9,8 @@ import { ensureTable } from './schema.js';
 import { logSync } from './analytics.js';
 import { PROVIDERS } from '../providers/index.js';
 import { getSettings } from '../lib/settings.js';
-import { parseSalary } from '../lib/salary.js';
+import { parseSalary, extractSalaryFromDescription } from '../lib/salary.js';
+import { extractSkillsFromText } from '../lib/skill-extraction.js';
 
 // QUERIES only applies to a future keyword-search provider (ignoresQuery ===
 // false) — every provider currently registered is a per-company/tenant ATS
@@ -229,8 +230,32 @@ function createErrorLog() {
 // half of that fix).
 const DB_BATCH_SIZE = 100;
 
+// ROOT-CAUSE FIX for empty salary/skills on job cards (see the header
+// comments in lib/salary.js's extractSalaryFromDescription() and
+// lib/skill-extraction.js's extractSkillsFromText() for the full
+// explanation): 8 of 9 ATS providers never return a structured salary or
+// skills field at all — src/providers/*.js hardcodes `salary: ''` and
+// `skills: []` because the raw API genuinely has nothing there. This
+// mines the SAME free-text description every provider already fetches,
+// as a fallback ONLY when the provider itself didn't supply the field —
+// a provider that DOES give real structured data (e.g. Recruitee's
+// `tags` for skills) is never overridden by a guess.
+function enrichJobFromDescription(j) {
+  if (j.salary && j.skills && j.skills.length) return j; // provider already gave us both — nothing to mine
+  const enriched = { ...j };
+  if (!enriched.salary) {
+    const extracted = extractSalaryFromDescription(enriched.description);
+    if (extracted) enriched.salary = extracted;
+  }
+  if (!enriched.skills || !enriched.skills.length) {
+    const extractedSkills = extractSkillsFromText(enriched.description);
+    if (extractedSkills.length) enriched.skills = extractedSkills;
+  }
+  return enriched;
+}
+
 async function saveJobs(env, jobs, counters, errorLog, providerId) {
-  const validJobs = (jobs || []).filter((j) => j && j.url);
+  const validJobs = (jobs || []).filter((j) => j && j.url).map(enrichJobFromDescription);
   counters.skipped += (jobs || []).length - validJobs.length;
   let batchesUsed = 0; // returned so the caller's subrequest budget stays accurate
 
