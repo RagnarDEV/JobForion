@@ -1,0 +1,47 @@
+name = "jobforion"
+main = "src/index.js"
+compatibility_date = "2026-06-25"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "jobforion_db"
+database_id = "58e366ac-f5d4-4da5-b23f-0aa2e4208866"
+
+# ── Secrets (set these via `wrangler secret put <name>`, do NOT put them here) ──
+# ADMIN_PASSWORD      -> password to access /admin dashboard
+# CSRF_SECRET         -> pepper for the account/company forms' CSRF tokens
+#                        (lib/accounts/csrf.js) — falls back to an insecure
+#                        dev default if unset, so set this before production traffic.
+# BREVO_API_KEY       -> Brevo transactional email API key (lib/accounts/email.js)
+# EMAIL_FROM_ADDRESS  -> sender address, must be verified in Brevo
+# EMAIL_FROM_NAME     -> sender display name
+#
+# NOTE: API_KEY is no longer used. Every job provider (Greenhouse, Lever,
+# Ashby, SmartRecruiters, Workable, Teamtailor, Recruitee, Workday, iCIMS)
+# is keyless — companies are added by public career-site slug only, from
+# /admin. If an API_KEY secret still exists from a previous deployment it
+# is simply ignored and safe to remove.
+
+# ── Scheduled tasks ──
+# "0 */6 * * *"  -> syncJobs()                every 6 hours (processes a bounded,
+#                                              rotating batch of companies each run
+#                                              — see src/db/sync.js / sync_config)
+# "0 3 * * *"    -> cleanupStaleJobs()         once daily at 03:00 UTC
+#                   + runBlogExpirationCleanup() piggybacks on the same cron —
+#                     deletes auto-generated blog articles past their lifetime
+#                     (see src/lib/blog-automation/expiration.js)
+# "0 8 * * *"    -> runJobAlertsDispatch()     once daily at 08:00 UTC — matches
+#                   each active job_alerts row against newly-added jobs and
+#                   emails a digest (see src/lib/job-alerts-dispatcher.js).
+#                   Each alert's own frequency/last_notified_at decides whether
+#                   it's actually due, so this firing daily does NOT mean every
+#                   alert is emailed every day.
+# "0 9 * * *"    -> runBlogGeneration()        once daily at 09:00 UTC — Blog
+#                   Automation's own generation function then decides, from
+#                   D1-stored settings, whether today is actually a scheduled
+#                   publishing day and whether this week's article cap is
+#                   already reached (see src/lib/blog-automation/generator.js
+#                   and /admin/blog-automation). Firing daily does NOT mean an
+#                   article is published every day.
+[triggers]
+crons = ["0 */6 * * *", "0 3 * * *", "0 8 * * *", "0 9 * * *"]
