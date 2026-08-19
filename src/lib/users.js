@@ -9,7 +9,7 @@
 
 import { hashPassword, verifyPassword } from './accounts/password.js';
 
-const SAFE_USER_COLUMNS = 'id, email, email_verified, status, created_at, updated_at, last_login_at';
+const SAFE_USER_COLUMNS = 'id, email, email_verified, status, created_at, updated_at, last_login_at, email_notifications_enabled';
 
 export async function findUserByEmail(env, email, { includeHash = false } = {}) {
   const cols = includeHash ? `${SAFE_USER_COLUMNS}, password_hash` : SAFE_USER_COLUMNS;
@@ -65,6 +65,11 @@ export async function updateUserPassword(env, userId, newPassword) {
 export async function updateUserEmail(env, userId, newEmail) {
   await env.DB.prepare(`UPDATE users SET email = ?, email_verified = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?`)
     .bind(String(newEmail || '').trim().toLowerCase(), userId).run();
+}
+
+export async function setEmailNotificationsEnabled(env, userId, enabled) {
+  await env.DB.prepare(`UPDATE users SET email_notifications_enabled = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`)
+    .bind(enabled ? 1 : 0, userId).run();
 }
 
 // Soft delete (plan §4 — "don't delete sensitive data directly if soft

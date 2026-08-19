@@ -58,6 +58,7 @@ export const ACTION_LABELS = {
   user_login_rate_limited: 'User sign-in blocked (rate limit)',
   user_logout: 'User signed out',
   user_password_changed: 'User changed password',
+  user_email_changed: 'User changed email',
   user_password_reset_requested: 'User requested password reset',
   user_password_reset_completed: 'User completed password reset',
   user_email_verified: 'User verified email',
@@ -74,6 +75,9 @@ export const ACTION_LABELS = {
   company_rejected: 'Company rejected (admin)',
   company_suspended: 'Company suspended (admin)',
   employer_job_submitted: 'Employer job submitted for review',
+  job_alerts_dispatch_completed: 'Job alerts dispatch completed',
+  job_alerts_dispatch_failed: 'Job alerts dispatch failed',
+  job_alert_dispatch_error: 'Job alert dispatch error',
 };
 
 // action: short machine-readable key, e.g. 'login_failed', 'job_deleted'.
