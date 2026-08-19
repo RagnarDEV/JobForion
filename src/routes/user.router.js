@@ -10,7 +10,7 @@ import { getSessionUser, destroyAllSessions, destroySessionById, destroySession 
 import { getCsrfToken, verifyCsrf } from '../lib/accounts/csrf.js';
 import { checkRateLimit } from '../lib/rate-limit.js';
 import { logActivity } from '../lib/activity-log.js';
-import { verifyCredentials, updateUserPassword, softDeleteUser, updateUserProfile } from '../lib/users.js';
+import { verifyCredentials, updateUserPassword, softDeleteUser, updateUserProfile, updateUserEmail, setEmailNotificationsEnabled, findUserByEmail } from '../lib/users.js';
 import { isPasswordStrongEnough } from '../lib/accounts/password.js';
 import { generateToken, sha256Hex } from '../lib/accounts/tokens.js';
 import { sendEmail, verificationEmailContent } from '../lib/accounts/email.js';
@@ -128,6 +128,56 @@ export async function handleUserRoute(url, request, env, base) {
     await destroyAllSessions(env, user.id, session.sessionId);
     await logActivity(env, 'user_password_changed', user.email, { userId: user.id });
     return new Response(await renderUserSettings(env, user, pageCtx, { csrfToken, ok: 'Password updated. Your other sessions have been logged out.' }), { headers: HTML });
+  }
+
+  if (url.pathname === '/user/settings/email' && request.method === 'POST') {
+    const { form, ok } = await requireCsrf(request);
+    if (!ok) return new Response(await renderUserSettings(env, user, pageCtx, { csrfToken, error: 'Your session expired.' }), { status: 400, headers: HTML });
+
+    const rl = await checkRateLimit(env, `auth:change_email:${user.id}`, { maxRequests: 5, windowMinutes: 60 });
+    if (!rl.allowed) return new Response(await renderUserSettings(env, user, pageCtx, { csrfToken, error: 'Too many attempts. Try again later.' }), { status: 429, headers: HTML });
+
+    const newEmail = (form.get('new_email') || '').toString().trim().toLowerCase();
+    const password = (form.get('password') || '').toString();
+    const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+    if (!EMAIL_RE.test(newEmail)) {
+      return new Response(await renderUserSettings(env, user, pageCtx, { csrfToken, error: 'Please enter a valid email address.' }), { status: 400, headers: HTML });
+    }
+    const verified = await verifyCredentials(env, user.email, password);
+    if (!verified) return new Response(await renderUserSettings(env, user, pageCtx, { csrfToken, error: 'Incorrect password.' }), { status: 401, headers: HTML });
+
+    if (newEmail === user.email) {
+      return new Response(await renderUserSettings(env, user, pageCtx, { csrfToken, error: 'That is already your current email.' }), { status: 400, headers: HTML });
+    }
+    const existing = await findUserByEmail(env, newEmail);
+    if (existing) {
+      return new Response(await renderUserSettings(env, user, pageCtx, { csrfToken, error: 'That email is already in use by another account.' }), { status: 409, headers: HTML });
+    }
+
+    await updateUserEmail(env, user.id, newEmail);
+    await logActivity(env, 'user_email_changed', user.email, { userId: user.id, newEmail });
+
+    // New address starts unverified (updateUserEmail resets
+    // email_verified=0) — send it a fresh verification link immediately
+    // rather than leaving the user to figure out they need one.
+    const token = generateToken(32);
+    const hash = await sha256Hex(token);
+    await env.DB.prepare(`INSERT INTO email_verifications (user_id, token_hash, expires_at) VALUES (?, ?, datetime('now','+24 hours'))`).bind(user.id, hash).run();
+    const { subject, text, html } = verificationEmailContent(base, token);
+    await sendEmail(env, { to: newEmail, subject, text, html });
+
+    const refreshed = { ...user, email: newEmail, email_verified: false };
+    return new Response(await renderUserSettings(env, refreshed, pageCtx, { csrfToken, ok: `Email updated to ${newEmail}. Check your inbox to verify it.` }), { headers: HTML });
+  }
+
+  if (url.pathname === '/user/settings/notifications' && request.method === 'POST') {
+    const { form, ok } = await requireCsrf(request);
+    if (!ok) return new Response(await renderUserSettings(env, user, pageCtx, { csrfToken, error: 'Your session expired.' }), { status: 400, headers: HTML });
+    const enabled = !!form.get('email_notifications_enabled');
+    await setEmailNotificationsEnabled(env, user.id, enabled);
+    const refreshed = { ...user, email_notifications_enabled: enabled };
+    return new Response(await renderUserSettings(env, refreshed, pageCtx, { csrfToken, ok: 'Notification preferences saved.' }), { headers: HTML });
   }
 
   if (url.pathname === '/user/settings/resend-verification' && request.method === 'POST') {
