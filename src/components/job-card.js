@@ -227,6 +227,14 @@ export function jobCardSSR(job, idx, categoryMap = CATEGORY_META, categoryOrder 
   const freeTint = jobType === 'Free' ? pastelForJob(job, featuredEnabled) : null;
   const cardStyleAttr = buildCardStyleAttr(jtStyle) + (freeTint ? `;background:${freeTint}` : '');
   const locationFlag = job.location ? countryFlag(job.location.split(',').pop().trim()) : '';
+  // job.skills comes straight off a raw D1 row (SELECT * FROM jobs) in
+  // every caller of this function — it's stored as a JSON string
+  // (JSON.stringify at sync time, see db/sync.js), never a parsed array,
+  // so every render path needs its own safe parse rather than assuming
+  // the shape.
+  let skillsList = [];
+  try { skillsList = JSON.parse(job.skills || '[]'); } catch (e) {}
+  const skillsTagsHtml = skillsList.slice(0, 3).map(s => `<span class="tag tag-type">${escapeHtml(s)}</span>`).join('');
   return `<a href="/job/${job.id}" class="job-card${jobTypeCardClass(job.job_type)}" style="--cat-color:${meta.color};${cardStyleAttr};animation:fadeInUp .3s ease ${Math.min(idx, 6) * .04}s both">
     <div class="card-inner" style="padding:${jtStyle.card_padding}px 16px">
       <div class="card-row1">
@@ -245,6 +253,7 @@ export function jobCardSSR(job, idx, categoryMap = CATEGORY_META, categoryOrder 
             ${job.location ? `<span class="tag tag-loc">${locationFlag} ` + escapeHtml(job.location) + '</span>' : ''}
             ${remoteTagHtml(job.remote_type)}
             ${job.employment_type ? '<span class="tag tag-type">' + escapeHtml(job.employment_type.replace(/_/g, ' ')) + '</span>' : ''}
+            ${skillsTagsHtml}
           </div>
           ${jobType === 'Sponsored' && job.job_type_note ? `<div class="jt-note">${escapeHtml(job.job_type_note)}</div>` : ''}
         </div>
