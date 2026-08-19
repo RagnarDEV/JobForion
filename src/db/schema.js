@@ -531,6 +531,13 @@ export async function ensureAccountTables(env) {
     )
   `).run();
   await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)`).run();
+  // Notification Settings (Account Settings, plan §27) — a single
+  // top-level toggle a user can flip to stop ALL transactional/job-alert
+  // emails without deleting their alerts (lib/job-alerts-dispatcher.js
+  // checks this on every dispatch run). Verification/password-reset
+  // emails are always sent regardless — those are security-critical, not
+  // a "notification" the user opted into.
+  await ensureColumn(env, 'users', 'email_notifications_enabled', 'INTEGER DEFAULT 1');
 
   // ── user_profiles ───────────────────────────────────────────────
   // 1:1 with users, split out deliberately (see plan §5) so the hot,
@@ -641,6 +648,12 @@ export async function ensureAccountTables(env) {
     )
   `).run();
   await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_job_alerts_user ON job_alerts(user_id)`).run();
+  // Tracks when each alert last actually emailed matches — the dispatcher
+  // (lib/job-alerts-dispatcher.js) uses this both to only ever email jobs
+  // posted SINCE the last send (never re-sending the same job twice) and
+  // to respect each alert's own frequency (daily/weekly) without a
+  // separate scheduling table.
+  await ensureColumn(env, 'job_alerts', 'last_notified_at', 'DATETIME');
 
   // ── applications ────────────────────────────────────────────────
   // application_type distinguishes a job whose provider/employer accepts
