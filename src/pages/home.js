@@ -665,11 +665,16 @@ async function loadJobs(){
 
 function toggleSave(id){
   const idx=savedIds.indexOf(id);
+  const nowSaved = idx < 0;
   if(idx>=0){savedIds.splice(idx,1);showToast('Removed from saved','info');}
   else{savedIds.push(id);showToast('Job saved! '+ICONS.bookmark);}
   localStorage.setItem('jn_saved',JSON.stringify(savedIds));
   const btn=document.getElementById('sb-'+id);
   if(btn)btn.classList.toggle('saved',savedIds.includes(id));
+  // Best-effort server-side persistence for signed-in visitors — see
+  // /api/user/saved-jobs (routes/api.router.js). Silently no-ops (401)
+  // for anonymous visitors, who already get the localStorage behavior above.
+  fetch('/api/user/saved-jobs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({job_id:id,action:nowSaved?'save':'unsave'})}).catch(function(){});
 }
 window.toggleSave=toggleSave;
 function shareJob(id){

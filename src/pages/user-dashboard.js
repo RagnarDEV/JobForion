@@ -183,6 +183,36 @@ export async function renderUserSettings(env, user, ctx, { csrfToken, error, ok 
       </form>
     </div>
 
+    <div class="dash-card">
+      <div class="dash-card-title">Change Email</div>
+      <form method="POST" action="/user/settings/email">
+        ${csrfField(csrfToken)}
+        <div style="font-size:12px;color:var(--ink3);margin-bottom:10px">Current: <strong style="color:var(--ink2)">${escapeHtml(user.email)}</strong></div>
+        <div class="pj-row">
+          <div class="pj-group"><label class="pj-label">New Email</label><input class="pj-input" type="email" name="new_email" required></div>
+          <div class="pj-group"><label class="pj-label">Confirm Password</label><input class="pj-input" type="password" name="password" required></div>
+        </div>
+        <button class="pj-submit" type="submit" style="max-width:200px">Update Email</button>
+      </form>
+      <p style="font-size:11px;color:var(--ink3);margin-top:8px">You'll need to verify the new address before it's fully active.</p>
+    </div>
+
+    <div class="dash-card">
+      <div class="dash-card-title">Notification Preferences</div>
+      <form method="POST" action="/user/settings/notifications">
+        ${csrfField(csrfToken)}
+        <label style="display:flex;align-items:flex-start;gap:9px;cursor:pointer;margin-bottom:12px">
+          <input type="checkbox" name="email_notifications_enabled" value="1" ${user.email_notifications_enabled !== false ? 'checked' : ''} style="width:17px;height:17px;margin-top:1px">
+          <span>
+            <span style="font-size:12.5px;font-weight:700;color:var(--ink);display:block">Job Alert Emails</span>
+            <span style="font-size:10.5px;color:var(--ink3)">Receive email digests for your Job Alerts. Turning this off pauses ALL alert emails without deleting them — manage individual alerts on the <a href="/user/job-alerts" style="color:var(--brand)">Job Alerts</a> page.</span>
+          </span>
+        </label>
+        <button class="dash-btn dash-btn-primary" type="submit">Save Preference</button>
+      </form>
+      <p style="font-size:11px;color:var(--ink3);margin-top:10px">Account security emails (email verification, password reset) are always sent regardless of this setting.</p>
+    </div>
+
     ${!user.email_verified ? `<div class="dash-card">
       <div class="dash-card-title">Email Verification</div>
       <div style="font-size:12.5px;color:var(--ink2);margin-bottom:10px">Your email (${escapeHtml(user.email)}) isn't verified yet.</div>

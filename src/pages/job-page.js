@@ -146,7 +146,7 @@ export async function renderJobPage(job, related, base, env, user = null) {
       <div class="sec-label">About the Role</div>
       <div class="desc-wrap">${cleanDesc.length > 20 ? escapeHtml(cleanDesc) : 'Full description available on the company website.'}</div>
       ${adSlot('job-detail-inline', '', adConfig, adsEnabled)}
-      <a href="${escapeHtml(job.url)}" target="_blank" rel="noopener noreferrer" class="apply-big">Apply Now ${iconArrowRight({ size: 16 })}</a>
+      <a href="${escapeHtml(job.url)}" target="_blank" rel="noopener noreferrer" class="apply-big" onclick="recordApplyClick(${job.id})">Apply Now ${iconArrowRight({ size: 16 })}</a>
     </div>
   </div>
   ${insightsHtml ? `<div class="insights-wrap">${insightsHtml}</div>` : ''}
@@ -188,9 +188,31 @@ export async function renderJobPage(job, related, base, env, user = null) {
   window.toggleJobSave = function(id){
     var arr = getSaved();
     var idx = arr.indexOf(id);
+    var nowSaved = idx < 0;
     if (idx >= 0) arr.splice(idx, 1); else arr.push(id);
     setSaved(arr);
     refreshBtn();
+    // Best-effort: also persist server-side if signed in (see
+    // /api/user/saved-jobs, routes/api.router.js). Cookies are sent
+    // automatically for this same-origin request; if the visitor isn't
+    // signed in the endpoint just returns 401 and localStorage above
+    // already covers the anonymous experience — nothing to handle here.
+    fetch('/api/user/saved-jobs', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ job_id: id, action: nowSaved ? 'save' : 'unsave' })
+    }).catch(function(){});
+  };
+  // Fire-and-forget: records an internal application event (see
+  // /api/user/applications) without delaying the outbound navigation to
+  // the employer's own apply page (no preventDefault, link still opens
+  // in a new tab immediately). Silently no-ops for signed-out visitors.
+  window.recordApplyClick = function(id){
+    fetch('/api/user/applications', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ job_id: id, status: 'applied', application_type: 'external' })
+    }).catch(function(){});
   };
   window.copyJobLink = function(){
     var btn = document.getElementById('jobCopyBtn');
