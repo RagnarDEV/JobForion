@@ -21,6 +21,7 @@ import { getSettings } from './lib/settings.js';
 import { renderMaintenancePage } from './pages/maintenance.js';
 import { runBlogGeneration } from './lib/blog-automation/generator.js';
 import { runBlogExpirationCleanup } from './lib/blog-automation/expiration.js';
+import { runJobAlertsDispatch } from './lib/job-alerts-dispatcher.js';
 
 import { handleAssetsRoute, ASSET_PATHS } from './routes/assets.router.js';
 import { handleFeedRoute } from './routes/feed.router.js';
@@ -175,11 +176,17 @@ export default {
   },
 
   async scheduled(event, env, ctx) {
-    // Three cron patterns share this one handler (Cloudflare Workers only
+    // Four cron patterns share this one handler (Cloudflare Workers only
     // supports a single scheduled() export) — event.cron tells us which
     // one fired. See wrangler.toml:
     //   "0 */6 * * *"  → job sync (every 6 hours)
     //   "0 3 * * *"    → daily job cleanup + blog expiration cleanup
+    //   "0 8 * * *"    → daily Job Alerts dispatch — see
+    //                    src/lib/job-alerts-dispatcher.js; each alert's
+    //                    own frequency (daily/weekly/instant) and
+    //                    last_notified_at decide whether it's actually
+    //                    due, so this firing daily does NOT mean every
+    //                    alert gets emailed every day.
     //   "0 9 * * *"    → daily blog generation check (Blog Automation —
     //                    see src/lib/blog-automation/generator.js; the
     //                    function itself decides, from D1 settings,
@@ -190,6 +197,8 @@ export default {
     if (event.cron === '0 3 * * *') {
       ctx.waitUntil(cleanupStaleJobs(env));
       ctx.waitUntil(runBlogExpirationCleanup(env));
+    } else if (event.cron === '0 8 * * *') {
+      ctx.waitUntil(runJobAlertsDispatch(env));
     } else if (event.cron === '0 9 * * *') {
       ctx.waitUntil(runBlogGeneration(env, { ctx }));
     } else {
