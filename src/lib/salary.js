@@ -97,3 +97,45 @@ export function parseSalary(raw) {
     annualMaxUsd: toAnnualUsd(max, currency, period),
   };
 }
+
+// ════════════════════════════════════════════════════════════════
+// extractSalaryFromDescription() — ROOT-CAUSE FIX for salary badges
+// being empty on almost every synced job. None of the 9 ATS providers
+// (see src/providers/*.js) expose a dedicated, structured salary field
+// in their public job-board APIs — every provider's map() hardcodes
+// `salary: ''`, because there is genuinely nothing to read there. When a
+// salary IS disclosed, it's written as free text somewhere inside the
+// job description ("Compensation: $90,000 - $120,000/year").
+//
+// This scans that description text for a salary-looking substring and
+// returns it as a plain string — the SAME shape parseSalary() above
+// already expects, so db/sync.js just does:
+//   j.salary = j.salary || extractSalaryFromDescription(j.description)
+// before its existing `parseSalary(j.salary)` call, with zero changes
+// needed to parseSalary() itself or anything downstream that reads
+// jobs.salary / salary_min_usd / salary_max_usd.
+//
+// Deliberately conservative: returns null (no badge shown) rather than
+// guess wrong. A currency symbol is the strongest, least ambiguous
+// signal a nearby number is actually a salary (as opposed to a
+// headcount, a founding year, or "5+ years experience") — that's tried
+// first. The secondary pattern only fires next to an explicit
+// salary/compensation/pay label, for the (less common) postings that
+// state a range in words without a currency symbol.
+// ════════════════════════════════════════════════════════════════
+const CURRENCY_RANGE_RE = /[$€£]\s?\d[\d,]*\.?\d*\s?[kK]?(?:\s*(?:-|–|—|to)\s*[$€£]?\s?\d[\d,]*\.?\d*\s?[kK]?)?/;
+const LABELED_RANGE_RE = /(?:salary|compensation|pay\s*range)[^.\n]{0,40}?(\d[\d,]*\.?\d*\s?[kK]?(?:\s*(?:-|–|—|to)\s*\d[\d,]*\.?\d*\s?[kK]?)?\s?(?:usd|eur|gbp|per\s?year|annually|\/\s?yr)?)/i;
+
+export function extractSalaryFromDescription(text) {
+  if (!text) return null;
+  const plain = String(text).replace(/<[^>]+>/g, ' ');
+  const trimPunctuation = (s) => s.trim().replace(/[.,;:]+$/, '');
+
+  const currencyMatch = plain.match(CURRENCY_RANGE_RE);
+  if (currencyMatch) return trimPunctuation(currencyMatch[0]);
+
+  const labeledMatch = plain.match(LABELED_RANGE_RE);
+  if (labeledMatch) return trimPunctuation(labeledMatch[1]);
+
+  return null;
+}
