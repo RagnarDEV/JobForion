@@ -68,7 +68,15 @@ export async function handleApiRoute(url, request, env) {
       if (!email || !keywords?.length) return new Response(JSON.stringify({ success: false, error: "Required" }), { headers: { "Content-Type": "application/json" } });
       await env.DB.prepare("INSERT OR REPLACE INTO subscribers (email,keywords) VALUES (?,?)").bind(email, JSON.stringify(keywords)).run();
       return new Response(JSON.stringify({ success: true }), { headers: { "Content-Type": "application/json" } });
-    } catch (e) { return new Response(JSON.stringify({ success: false, error: e.message }), { status: 500, headers: { "Content-Type": "application/json" } }); }
+    } catch (e) {
+      // SECURITY: never echo e.message to an anonymous caller — it can
+      // contain raw D1/SQLite error text (column names, constraint
+      // details). Log the real reason server-side only (visible in
+      // Cloudflare's Observability tab) and return a generic message,
+      // same pattern already used by /api/post-job below.
+      console.error('[/api/subscribe]', e && e.stack || e);
+      return new Response(JSON.stringify({ success: false, error: "Something went wrong. Please try again." }), { status: 500, headers: { "Content-Type": "application/json" } });
+    }
   }
 
   if (url.pathname === '/api/post-job' && request.method === 'POST') {
@@ -180,6 +188,31 @@ export async function handleApiRoute(url, request, env) {
   }
 
   if (url.pathname === '/api/sync') {
+    // SECURITY (critical): this endpoint used to be reachable by ANYONE —
+    // no admin check, no rate limit — despite triggering a full,
+    // subrequest-expensive multi-provider sync run (9 ATS providers) on
+    // every call. The scheduled() cron in index.js calls syncJobs(env)
+    // directly in-process and never goes through this HTTP route, so
+    // gating the whole endpoint behind the admin cookie breaks nothing:
+    // the only legitimate caller left is the "Sync Now" button in
+    // pages/admin/system.js / dashboard.js, which already posts from an
+    // authenticated same-origin admin page and sends the cookie
+    // automatically. Unauthenticated requests now get exactly the same
+    // 404 as /api/debug below, so as not to even confirm the route exists.
+    const ok = await verifyAdminCookie(env, request.headers.get('Cookie'));
+    if (!ok) return new Response('Not found', { status: 404 });
+
+    // Defense in depth on top of the auth gate: prevents accidental
+    // double-submits or a compromised admin session from hammering every
+    // provider's API repeatedly in a short window.
+    const rl = await checkRateLimit(env, 'admin-sync', { maxRequests: 6, windowMinutes: 15 });
+    if (!rl.allowed) {
+      if (request.method === 'POST') {
+        return new Response(null, { status: 302, headers: { 'Location': `/admin?flash=${encodeURIComponent('Sync already ran recently — please wait a few minutes.')}` } });
+      }
+      return new Response(JSON.stringify({ success: false, error: 'Too many sync requests. Please wait a few minutes.' }), { status: 429, headers: { "Content-Type": "application/json" } });
+    }
+
     try {
       const result = await syncJobs(env);
       if (request.method === 'POST') {
@@ -187,7 +220,18 @@ export async function handleApiRoute(url, request, env) {
         return new Response(null, { status: 302, headers: { 'Location': '/admin' } });
       }
       return new Response(JSON.stringify({ success: true, ...result }), { headers: { "Content-Type": "application/json" } });
-    } catch (e) { return new Response(JSON.stringify({ success: false, error: e.message }), { status: 500, headers: { "Content-Type": "application/json" } }); }
+    } catch (e) {
+      // SECURITY: same rationale as /api/subscribe above — never echo
+      // e.message to the response body, even to an authenticated admin,
+      // since it's still logged permanently to admin_activity_log via the
+      // Location redirect path today. Log the real reason server-side.
+      console.error('[/api/sync]', e && e.stack || e);
+      if (request.method === 'POST') {
+        await logActivity(env, 'sync_run', 'manual trigger', 'failed — see Worker logs');
+        return new Response(null, { status: 302, headers: { 'Location': `/admin?flash=${encodeURIComponent('Sync failed — check Worker logs for details.')}` } });
+      }
+      return new Response(JSON.stringify({ success: false, error: "Sync failed. Check Worker logs for details." }), { status: 500, headers: { "Content-Type": "application/json" } });
+    }
   }
 
   if (url.pathname === '/api/debug') {
