@@ -9,6 +9,11 @@ import { iconSparkle, iconFlame, iconPin, iconMapPin, iconBadgeCheck, iconClock,
 import { countryFlag } from '../lib/country-flags.js';
 import { DEFAULT_CARD_STYLES, buildCardStyleAttr, buildBadgeStyleAttr } from '../lib/job-card-styles.js';
 
+// Shared empty-Set default for jobCardSSR's optional verifiedCompanySet
+// param — a single frozen instance instead of allocating `new Set()` on
+// every call with no argument.
+const EMPTY_SET = new Set();
+
 export function logoImgHtml(company, size = '64px', cls = 'job-logo', overrideUrl = null) {
   const safeCompany = escapeHtml(company);
   const fs = Math.round(parseInt(size) * .34) + 'px';
@@ -209,7 +214,14 @@ const FALLBACK_CATEGORY_META = { label: 'General', emoji: '🏷️', color: '#25
 // much bigger, riskier change than hiding a badge. Every caller below
 // defaults to `true` so nothing changes for a caller that hasn't been
 // updated to pass it explicitly yet.
-export function jobCardSSR(job, idx, categoryMap = CATEGORY_META, categoryOrder = CATEGORY_ORDER, cardStyles = DEFAULT_CARD_STYLES, logoOverrides = {}, featuredEnabled = true) {
+// verifiedCompanySet: Set of lowercased company names with a real,
+// admin-verified companies row (see lib/companies.js's
+// getVerifiedCompanyNameSet, 60s-cached). Optional + defaults to an empty
+// Set purely so every existing call site keeps compiling/rendering
+// unchanged if it isn't updated to pass one — the badge just stays
+// hidden rather than the page breaking (plan §8: verified badge in job
+// listings/search results).
+export function jobCardSSR(job, idx, categoryMap = CATEGORY_META, categoryOrder = CATEGORY_ORDER, cardStyles = DEFAULT_CARD_STYLES, logoOverrides = {}, featuredEnabled = true, verifiedCompanySet = EMPTY_SET) {
   const catKey = catForTitleServer(job.title, categoryOrder);
   const meta = categoryMap[catKey] || FALLBACK_CATEGORY_META;
   const isNew = job.created_at && Date.now() - new Date(job.created_at).getTime() < 86400000;
@@ -248,7 +260,7 @@ export function jobCardSSR(job, idx, categoryMap = CATEGORY_META, categoryOrder 
             ${isHot ? `<span class="tag-hot">${iconFlame({ size: 11 })} HOT</span>` : ''}
           </div>
           <div class="job-title-card">${escapeHtml(job.title)}</div>
-          <div class="job-co-card">${escapeHtml(job.company)} <span class="verified-ico" title="Verified">${iconBadgeCheck({ size: 12 })}</span></div>
+          <div class="job-co-card">${escapeHtml(job.company)} ${verifiedCompanySet.has((job.company || '').toLowerCase()) ? `<span class="verified-ico" title="Verified Company">${iconBadgeCheck({ size: 12 })}</span>` : ''}</div>
           <div class="job-meta-row">
             ${job.location ? `<span class="tag tag-loc">${locationFlag} ` + escapeHtml(job.location) + '</span>' : ''}
             ${remoteTagHtml(job.remote_type)}
