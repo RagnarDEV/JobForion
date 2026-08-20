@@ -115,10 +115,36 @@ export async function renderCompanyOverview(env, user, company, ctx) {
 }
 
 // ── Profile ─────────────────────────────────────────────────────
-export async function renderCompanyProfilePage(user, company, ctx, { csrfToken, saved, canEdit } = {}) {
+export async function renderCompanyProfilePage(user, company, ctx, { csrfToken, saved, canEdit, uploadError } = {}) {
   const content = `
     ${companySwitcher(ctx.companies, company.id)}
     ${saved ? `<div class="auth-ok">Company profile updated.</div>` : ''}
+    ${uploadError ? `<div class="auth-err">${escapeHtml(uploadError)}</div>` : ''}
+    ${canEdit ? `
+    <div class="dash-card">
+      <div class="dash-card-title">Logo &amp; Cover Image</div>
+      <div style="display:flex;gap:20px;flex-wrap:wrap">
+        <div>
+          <div style="font-size:11px;font-weight:700;color:var(--ink3);text-transform:uppercase;margin-bottom:6px">Logo</div>
+          ${company.logo_url ? `<img src="${escapeHtml(company.logo_url)}" alt="Logo" style="width:64px;height:64px;border-radius:12px;object-fit:contain;border:1px solid var(--border);margin-bottom:8px;display:block">` : ''}
+          <form method="POST" action="/company/logo" enctype="multipart/form-data" style="display:flex;gap:6px;align-items:center">
+            ${csrfField(csrfToken)}
+            <input type="file" name="file" accept="image/png,image/jpeg,image/webp" required style="font-size:11px;max-width:180px">
+            <button class="dash-btn dash-btn-sm" type="submit">Upload</button>
+          </form>
+        </div>
+        <div>
+          <div style="font-size:11px;font-weight:700;color:var(--ink3);text-transform:uppercase;margin-bottom:6px">Cover Image</div>
+          ${company.cover_image_url ? `<img src="${escapeHtml(company.cover_image_url)}" alt="Cover" style="width:140px;height:56px;border-radius:8px;object-fit:cover;border:1px solid var(--border);margin-bottom:8px;display:block">` : ''}
+          <form method="POST" action="/company/cover" enctype="multipart/form-data" style="display:flex;gap:6px;align-items:center">
+            ${csrfField(csrfToken)}
+            <input type="file" name="file" accept="image/png,image/jpeg,image/webp" required style="font-size:11px;max-width:180px">
+            <button class="dash-btn dash-btn-sm" type="submit">Upload</button>
+          </form>
+        </div>
+      </div>
+      <p style="font-size:11px;color:var(--ink3);margin-top:10px">PNG, JPEG or WebP, up to 2MB. Alternatively, paste a hosted image URL directly into the Logo URL field in your profile form below.</p>
+    </div>` : ''}
     <form method="POST" action="/company/profile" class="dash-card">
       ${csrfField(csrfToken)}
       <div class="pj-group"><label class="pj-label">Company Name</label><input class="pj-input" name="name" value="${escapeHtml(company.name)}" ${canEdit ? '' : 'disabled'} required></div>
@@ -130,7 +156,26 @@ export async function renderCompanyProfilePage(user, company, ctx, { csrfToken, 
         <div class="pj-group"><label class="pj-label">Country</label><input class="pj-input" name="country" value="${escapeHtml(company.country || '')}" ${canEdit ? '' : 'disabled'}></div>
         <div class="pj-group"><label class="pj-label">City</label><input class="pj-input" name="city" value="${escapeHtml(company.city || '')}" ${canEdit ? '' : 'disabled'}></div>
       </div>
-      <div class="pj-group"><label class="pj-label">LinkedIn URL</label><input class="pj-input" type="url" name="linkedin_url" value="${escapeHtml(company.linkedin_url || '')}" ${canEdit ? '' : 'disabled'}></div>
+      <div class="pj-row">
+        <div class="pj-group"><label class="pj-label">Company Size</label>
+          <select class="pj-select" name="company_size" ${canEdit ? '' : 'disabled'}>
+            <option value="">Select…</option>
+            ${['1-10', '11-50', '51-200', '201-1000', '1000+'].map(s => `<option value="${s}" ${company.company_size === s ? 'selected' : ''}>${s}</option>`).join('')}
+          </select>
+        </div>
+        <div class="pj-group"><label class="pj-label">Founded Year</label><input class="pj-input" type="number" name="founded_year" min="1800" max="2100" value="${escapeHtml(company.founded_year || '')}" ${canEdit ? '' : 'disabled'}></div>
+      </div>
+      <div class="pj-group"><label class="pj-label">Headquarters</label><input class="pj-input" name="headquarters" value="${escapeHtml(company.headquarters || '')}" placeholder="e.g. San Francisco, CA, USA" ${canEdit ? '' : 'disabled'}></div>
+      <div class="pj-row">
+        <div class="pj-group"><label class="pj-label">Contact Email</label><input class="pj-input" type="email" name="contact_email" value="${escapeHtml(company.contact_email || '')}" ${canEdit ? '' : 'disabled'}></div>
+        <div class="pj-group"><label class="pj-label">Phone</label><input class="pj-input" type="tel" name="phone" value="${escapeHtml(company.phone || '')}" ${canEdit ? '' : 'disabled'}></div>
+      </div>
+      <div class="pj-group"><label class="pj-label">Logo URL <span style="font-weight:400;color:var(--ink3)">(or upload above)</span></label><input class="pj-input" type="url" name="logo_url" value="${escapeHtml(company.logo_url || '')}" ${canEdit ? '' : 'disabled'}></div>
+      <div class="pj-row">
+        <div class="pj-group"><label class="pj-label">LinkedIn URL</label><input class="pj-input" type="url" name="linkedin_url" value="${escapeHtml(company.linkedin_url || '')}" ${canEdit ? '' : 'disabled'}></div>
+        <div class="pj-group"><label class="pj-label">Twitter / X URL</label><input class="pj-input" type="url" name="twitter_url" value="${escapeHtml(company.twitter_url || '')}" ${canEdit ? '' : 'disabled'}></div>
+      </div>
+      <div class="pj-group"><label class="pj-label">Facebook URL</label><input class="pj-input" type="url" name="facebook_url" value="${escapeHtml(company.facebook_url || '')}" ${canEdit ? '' : 'disabled'}></div>
       <div class="pj-group"><label class="pj-label">Description</label><textarea class="pj-textarea" name="description" ${canEdit ? '' : 'disabled'}>${escapeHtml(company.description || '')}</textarea></div>
       ${canEdit ? `<button class="pj-submit" type="submit" style="max-width:200px">Save Changes</button>` : `<div style="font-size:12px;color:var(--ink3)">Only Company Admins can edit the profile.</div>`}
     </form>
