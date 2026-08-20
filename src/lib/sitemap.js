@@ -22,6 +22,7 @@
 import { listCompanies, listSkills, listCountries, MIN_JOBS_FOR_INDEXING } from './entities.js';
 import { getPages } from './pages-cms.js';
 import { getPosts } from './blog-cms.js';
+import { listPublicCompanies } from './companies.js';
 
 // Google's sitemap protocol caps a single file at 50,000 URLs. 20,000 per
 // job-chunk keeps meaningful headroom under that limit (a single chunk
@@ -130,9 +131,25 @@ export async function buildJobsSitemapXml(env, base, page) {
 // problem at the source, rather than only fixing it after the fact.
 export async function buildCompaniesSitemapXml(env, base) {
   const urls = [];
+  const realSlugs = new Set();
+  try {
+    // Real, account-owning companies (Stage 3) get first claim on their
+    // slug — same rationale as pages/seo-pages.js's renderCompaniesIndex:
+    // a real profile and a legacy text-directory entry can share the same
+    // slugify()'d name, and the real profile is what actually renders at
+    // that URL (see renderCompanyDetail), so only IT should be submitted
+    // to Google for that slug.
+    const realCompanies = await listPublicCompanies(env, { limit: 5000 });
+    for (const c of realCompanies) {
+      realSlugs.add(c.slug);
+      if ((c.job_count || 0) < MIN_JOBS_FOR_INDEXING) continue;
+      urls.push(urlTag(`${base}/companies/${c.slug}`, { changefreq: 'weekly', priority: c.verified ? '0.65' : '0.55', lastmod: (c.updated_at || '').slice(0, 10) || undefined }));
+    }
+  } catch (e) {}
   try {
     const companies = await listCompanies(env, { limit: 5000 });
     for (const c of companies) {
+      if (realSlugs.has(c.slug)) continue;
       if (c.count < MIN_JOBS_FOR_INDEXING) continue;
       urls.push(urlTag(`${base}/companies/${c.slug}`, { changefreq: 'weekly', priority: '0.55' }));
     }
