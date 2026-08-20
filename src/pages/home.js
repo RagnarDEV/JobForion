@@ -22,6 +22,7 @@ import { getFooterPages, getMenuPages } from '../lib/pages-cms.js';
 import { getNavButtons } from '../lib/nav-buttons.js';
 import { getEnabledHomepageSections } from '../lib/homepage-sections.js';
 import { categoryIconSvg } from '../lib/category-icons.js';
+import { getVerifiedCompanyNameSet } from '../lib/companies.js';
 import { iconSparkle, iconFlame, iconPin, iconMapPin, iconBookmark, iconLink, iconArrowRight, iconBadgeCheck, iconClock, iconGlobe, iconBuilding, iconSearch, iconCheck, iconInfo, iconAlertTriangle, iconFilter, iconChevronDown, iconSliders, iconLayoutGrid, iconX } from '../assets/icons.js';
 
 // Same icon markup used by the server-rendered cards (job-card.js) is
@@ -80,6 +81,7 @@ export async function renderMainHTML(env, base, user = null) {
   // directories live at /categories, /countries, /skills, /companies).
   let topCompanies = [];
   try { topCompanies = await listCompanies(env, { limit: 40 }); } catch (e) {}
+  const verifiedCompanySet = await getVerifiedCompanyNameSet(env);
 
   const itemListSchema = JSON.stringify({
     "@context": "https://schema.org", "@type": "ItemList",
@@ -94,7 +96,7 @@ export async function renderMainHTML(env, base, user = null) {
 
   const featuredEnabled = settings.feature_featured_jobs !== '0';
   const ssrJobsHtml = initialJobs.length
-    ? initialJobs.map((j, i) => jobCardSSR(j, i, categoryMap, categoryOrder, cardStyles, {}, featuredEnabled)).join('')
+    ? initialJobs.map((j, i) => jobCardSSR(j, i, categoryMap, categoryOrder, cardStyles, {}, featuredEnabled, verifiedCompanySet)).join('')
     : `<div class="loader-wrap"><div class="loader"></div></div>`;
 
   const siteName = escapeHtml(settings.site_name);
@@ -617,7 +619,7 @@ function renderJobsList(){
               \${hot?'<span class="tag-hot">'+ICONS.flame+' HOT</span>':''}
             </div>
             <div class="job-title-card">\${esc(j.title)}</div>
-            <div class="job-co-card">\${esc(j.company)} <span class="verified-ico">\${ICONS.badgeCheck}</span></div>
+            <div class="job-co-card">\${esc(j.company)} \${j.is_verified?'<span class="verified-ico" title="Verified Company">'+ICONS.badgeCheck+'</span>':''}</div>
             <div class="job-meta-row">
               \${j.location?'<span class="tag tag-loc">'+locFlag+' '+esc(j.location)+'</span>':''}
               \${remoteTag(j.remote_type)}

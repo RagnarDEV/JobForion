@@ -13,6 +13,7 @@ import { getAdSlotsConfig } from '../lib/ad-slots.js';
 import { getFooterPages, getMenuPages } from '../lib/pages-cms.js';
 import { getNavButtons } from '../lib/nav-buttons.js';
 import { getLogoOverrides } from '../lib/company-logos.js';
+import { getVerifiedCompanyNameSet } from '../lib/companies.js';
 
 // SECURITY: JSON.stringify() does NOT escape "<", so a malicious job title
 // like `</script><script>...` embedded in scraped/submitted data could
@@ -82,7 +83,7 @@ export async function renderJobPage(job, related, base, env, user = null) {
   const canonical = `${base}/job/${job.id}`;
   const cleanDesc = cleanDescription(job.description);
 
-  const [categories, settings, cardStyles] = await Promise.all([getCategories(env), getSettings(env), getCardStyles(env)]);
+  const [categories, settings, cardStyles, verifiedCompanySet] = await Promise.all([getCategories(env), getSettings(env), getCardStyles(env), getVerifiedCompanyNameSet(env)]);
   const adConfig = await getAdSlotsConfig(env);
   const footerPages = await getFooterPages(env);
   const menuPages = await getMenuPages(env);
@@ -123,7 +124,7 @@ export async function renderJobPage(job, related, base, env, user = null) {
     <div class="job-hero-hdr">
       <div class="job-co-row">
         ${logoImgHtml(job.company, '64px', 'job-logo', jobLogoOverride)}
-        <div style="flex:1"><div class="job-co-name"><a href="/companies/${slugify(job.company)}" style="color:inherit">${escapeHtml(job.company)}</a> <span class="verified-ico" title="Verified listing">${iconBadgeCheck({ size: 14 })}</span>${normalizeJobType(job.job_type) === 'Sponsored' ? '<span class="jt-sponsored-tag">Sponsored Company</span>' : ''}</div><div class="job-co-loc">${iconMapPin({ size: 12 })} ${escapeHtml(job.location || 'Remote')}</div>${normalizeJobType(job.job_type) === 'Sponsored' && job.job_type_note ? `<div class="jt-note" style="margin-top:4px">${escapeHtml(job.job_type_note)}</div>` : ''}</div>
+        <div style="flex:1"><div class="job-co-name"><a href="/companies/${slugify(job.company)}" style="color:inherit">${escapeHtml(job.company)}</a> ${verifiedCompanySet.has((job.company || '').toLowerCase()) ? `<span class="verified-ico" title="Verified Company">${iconBadgeCheck({ size: 14 })}</span>` : ''}${normalizeJobType(job.job_type) === 'Sponsored' ? '<span class="jt-sponsored-tag">Sponsored Company</span>' : ''}</div><div class="job-co-loc">${iconMapPin({ size: 12 })} ${escapeHtml(job.location || 'Remote')}</div>${normalizeJobType(job.job_type) === 'Sponsored' && job.job_type_note ? `<div class="jt-note" style="margin-top:4px">${escapeHtml(job.job_type_note)}</div>` : ''}</div>
         <div class="job-actions">
           <button class="job-act-btn" id="jobSaveBtn" onclick="toggleJobSave(${job.id})" title="Save job">${iconBookmark({ size: 16 })}<span class="job-act-label">Save</span></button>
           <button class="job-act-btn" id="jobCopyBtn" onclick="copyJobLink()" title="Copy link">${iconLink({ size: 16 })}<span class="job-act-label">Copy Link</span></button>
@@ -153,7 +154,7 @@ export async function renderJobPage(job, related, base, env, user = null) {
   ${related.length ? `
     <div class="related-title" style="margin-top:24px">Similar Jobs</div>
     <div class="jobs-list">
-      ${related.map((r, i) => jobCardSSR(r, i, categoryMap, categoryOrder, cardStyles, logoOverrides, settings.feature_featured_jobs !== '0')).join('')}
+      ${related.map((r, i) => jobCardSSR(r, i, categoryMap, categoryOrder, cardStyles, logoOverrides, settings.feature_featured_jobs !== '0', verifiedCompanySet)).join('')}
     </div>` : ''}
   ${adSlot('job-detail-footer', 'margin-top:24px', adConfig, adsEnabled)}
 </div>
