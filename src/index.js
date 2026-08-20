@@ -23,7 +23,7 @@ import { runBlogGeneration } from './lib/blog-automation/generator.js';
 import { runBlogExpirationCleanup } from './lib/blog-automation/expiration.js';
 import { runJobAlertsDispatch } from './lib/job-alerts-dispatcher.js';
 
-import { handleAssetsRoute, ASSET_PATHS } from './routes/assets.router.js';
+import { handleAssetsRoute, handleR2AssetRoute, ASSET_PATHS } from './routes/assets.router.js';
 import { handleFeedRoute } from './routes/feed.router.js';
 import { handleAdminRoute } from './routes/admin.router.js';
 import { handleAuthRoute } from './routes/auth.router.js';
@@ -54,8 +54,14 @@ const NON_TRACKED_STATIC_PATHS = new Set([...ASSET_PATHS, '/feed.rss']);
 // in depth against a successful injection trying to pull in attacker-
 // controlled external resources. The allow-list below is exactly the set
 // of third-party origins this site actually loads from — Google
-// Analytics, Google Fonts, Adsterra ads, and the two favicon services
-// used for company logos (job-card.js/home.js).
+// Analytics, Google Fonts, Adsterra ads, the two favicon services used
+// for company logos (job-card.js/home.js), and Cloudflare R2's default
+// public `*.r2.dev` domain (company logo/cover uploads — see
+// company.router.js + routes/assets.router.js's handleR2AssetRoute). If
+// R2_PUBLIC_BASE_URL is later pointed at a CUSTOM domain instead of the
+// default r2.dev one, that domain must be added to img-src below too, or
+// uploaded company images will render broken (silently blocked, not a
+// server error) on every page that shows them.
 const SECURITY_HEADERS = {
   'X-Content-Type-Options': 'nosniff',
   'X-Frame-Options': 'SAMEORIGIN',
@@ -67,7 +73,7 @@ const SECURITY_HEADERS = {
     "script-src 'self' 'unsafe-inline' https://www.googletagmanager.com https://www.google-analytics.com https://www.highperformanceformat.com",
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
     "font-src 'self' https://fonts.gstatic.com",
-    "img-src 'self' https://www.google.com https://icons.duckduckgo.com https://www.google-analytics.com",
+    "img-src 'self' https://www.google.com https://icons.duckduckgo.com https://www.google-analytics.com https://*.r2.dev",
     "connect-src 'self' https://www.google-analytics.com https://analytics.google.com",
     "frame-src https://www.highperformanceformat.com",
     "object-src 'none'",
@@ -108,6 +114,10 @@ export default {
     const assetResponse = handleAssetsRoute(url, base);
     if (assetResponse) return withSecurityHeaders(assetResponse);
 
+    // ── R2-backed company logo/cover images (Company System, Stage 3) ──
+    const r2Response = await handleR2AssetRoute(url, env);
+    if (r2Response) return withSecurityHeaders(r2Response);
+
     // ── maintenance mode (toggled from /admin/settings, no redeploy) ──
     // /admin/* is always exempt — otherwise a site owner who enables
     // maintenance mode could lock themselves out of the one place that
@@ -136,7 +146,7 @@ export default {
     // ── visitor analytics (best-effort, non-blocking) ──
     const trackable = ['GET'].includes(request.method) &&
       !url.pathname.startsWith('/api/') && !url.pathname.startsWith('/admin') &&
-      !url.pathname.startsWith('/sitemap') &&
+      !url.pathname.startsWith('/sitemap') && !url.pathname.startsWith('/r2-asset/') &&
       !NON_TRACKED_STATIC_PATHS.has(url.pathname);
     if (trackable && ctx?.waitUntil) ctx.waitUntil(recordVisit(env, request, url));
 
