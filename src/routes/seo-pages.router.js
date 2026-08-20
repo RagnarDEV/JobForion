@@ -35,7 +35,20 @@ export async function handleSeoPagesRoute(url, request, env, ctx, base) {
     if (settings.feature_company_pages === '0') return new Response('Not found', { status: 404 });
   }
   if (url.pathname === '/companies') {
-    return await withCache(ctx, request, CACHE_PRESETS.directory, async () => renderCompaniesIndex(env, base));
+    // withCache() keys on the full request URL (including query string),
+    // so each distinct filter combination gets its own edge-cache entry —
+    // no risk of one visitor's filtered view leaking to another's
+    // unfiltered request. Values are read-only lookups, never written
+    // back to D1, so no further sanitization is needed beyond what
+    // lib/companies.js already parameterizes internally.
+    const filters = {
+      q: url.searchParams.get('q') || '',
+      country: url.searchParams.get('country') || '',
+      industry: url.searchParams.get('industry') || '',
+      company_size: url.searchParams.get('company_size') || '',
+      verified: url.searchParams.get('verified') || '',
+    };
+    return await withCache(ctx, request, CACHE_PRESETS.directory, async () => renderCompaniesIndex(env, base, null, filters));
   }
   const companyMatch = url.pathname.match(/^\/companies\/([a-z0-9-]+)$/);
   if (companyMatch) {
