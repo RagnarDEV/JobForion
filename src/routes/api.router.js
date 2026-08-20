@@ -12,6 +12,7 @@ import { verifyAdminCookie } from '../auth/admin-auth.js';
 import { getSessionUser } from '../lib/accounts/session.js';
 import { saveJob, unsaveJob } from '../lib/saved-jobs.js';
 import { recordApplication } from '../lib/applications.js';
+import { getVerifiedCompanyNameSet } from '../lib/companies.js';
 
 export async function handleApiRoute(url, request, env) {
   // ── Account-aware saved-jobs toggle ─────────────────────────────
@@ -182,9 +183,13 @@ export async function handleApiRoute(url, request, env) {
     }
     if (company) { conditions.push("company = ?"); params.push(company); }
     const where = conditions.length ? " WHERE " + conditions.join(" AND ") : "";
-    const { results } = await env.DB.prepare(`SELECT * FROM jobs${where} ORDER BY ${JOB_TYPE_SORT_SQL} ASC, featured DESC, id DESC LIMIT ${limit} OFFSET ${offset}`).bind(...params).all();
-    const { results: cr } = await env.DB.prepare(`SELECT COUNT(*) as total FROM jobs${where}`).bind(...params).all();
-    return new Response(JSON.stringify({ jobs: results, total: cr[0]?.total || 0, page }), { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } });
+    const [{ results }, { results: cr }, verifiedCompanySet] = await Promise.all([
+      env.DB.prepare(`SELECT * FROM jobs${where} ORDER BY ${JOB_TYPE_SORT_SQL} ASC, featured DESC, id DESC LIMIT ${limit} OFFSET ${offset}`).bind(...params).all(),
+      env.DB.prepare(`SELECT COUNT(*) as total FROM jobs${where}`).bind(...params).all(),
+      getVerifiedCompanyNameSet(env), // 60s-cached, see lib/companies.js — drives the "✓ Verified" badge client-side (plan §8)
+    ]);
+    const jobsWithVerified = (results || []).map(j => ({ ...j, is_verified: verifiedCompanySet.has((j.company || '').toLowerCase()) }));
+    return new Response(JSON.stringify({ jobs: jobsWithVerified, total: cr[0]?.total || 0, page }), { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } });
   }
 
   if (url.pathname === '/api/sync') {
