@@ -707,6 +707,32 @@ export async function ensureAccountTables(env) {
   `).run();
   await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_companies_slug ON companies(slug)`).run();
 
+  // ── Company System (Stage 3) — additive profile columns ───────────
+  // Every column below is added via ensureColumn (PRAGMA-checked
+  // ALTER TABLE), never a fresh CREATE TABLE, so every company row that
+  // already exists from Stage 1 (Authentication & Accounts) keeps all its
+  // data untouched — these simply default to NULL/0 for existing rows.
+  await ensureColumn(env, 'companies', 'cover_image_url', 'TEXT');
+  await ensureColumn(env, 'companies', 'founded_year', 'INTEGER');
+  await ensureColumn(env, 'companies', 'headquarters', 'TEXT');
+  await ensureColumn(env, 'companies', 'contact_email', 'TEXT');
+  await ensureColumn(env, 'companies', 'phone', 'TEXT');
+  await ensureColumn(env, 'companies', 'twitter_url', 'TEXT');
+  await ensureColumn(env, 'companies', 'facebook_url', 'TEXT');
+  // `featured` is intentionally separate from `verified` — a company can
+  // be verified (identity confirmed) without being featured (an editorial/
+  // monetization decision an admin makes independently — plan §9).
+  await ensureColumn(env, 'companies', 'featured', 'INTEGER DEFAULT 0');
+  // Indexes for the filter/search columns the public directory and admin
+  // panel query on (plan §16). idx_companies_slug already existed; the
+  // rest are new.
+  await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_companies_user ON companies(created_by_user_id)`).run();
+  await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_companies_status ON companies(status)`).run();
+  await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_companies_verified ON companies(verified)`).run();
+  await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_companies_featured ON companies(featured)`).run();
+  await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_companies_country ON companies(country)`).run();
+  await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_companies_industry ON companies(industry)`).run();
+
   // ── company_members ─────────────────────────────────────────────
   // The users ↔ companies join table with a role, exactly as the plan
   // requires (§13) — permissions are resolved by looking up THIS table
