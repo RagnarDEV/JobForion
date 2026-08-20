@@ -84,23 +84,33 @@ export async function renderAdminUsersContent(env, params) {
 // ── Company Accounts ────────────────────────────────────────────
 export async function renderAdminCompanyAccountsContent(env, params) {
   const statusFilter = params.get('status') || '';
-  const where = statusFilter ? `WHERE c.status = ?` : '';
-  const binds = statusFilter ? [statusFilter] : [];
+  const q = (params.get('q') || '').trim();
+  const where = [];
+  const binds = [];
+  if (statusFilter) { where.push('c.status = ?'); binds.push(statusFilter); }
+  if (q) { where.push('LOWER(c.name) LIKE ?'); binds.push(`%${q.toLowerCase().slice(0, 100)}%`); }
+  const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
 
   const { results: companies } = await env.DB.prepare(
     `SELECT c.*, u.email as creator_email,
        (SELECT COUNT(*) FROM company_members WHERE company_id = c.id) as member_count,
        (SELECT COUNT(*) FROM jobs WHERE company_id = c.id) as job_count
      FROM companies c LEFT JOIN users u ON u.id = c.created_by_user_id
-     ${where} ORDER BY c.created_at DESC LIMIT 100`
+     ${whereSql} ORDER BY c.created_at DESC LIMIT 100`
   ).bind(...binds).all();
 
   const { results: pendingCountRows } = await env.DB.prepare(`SELECT COUNT(*) c FROM companies WHERE status = 'pending'`).all();
   const pendingCount = pendingCountRows?.[0]?.c || 0;
 
+  const qs = (overrides) => {
+    const p = new URLSearchParams(params);
+    Object.entries(overrides).forEach(([k, v]) => v ? p.set(k, v) : p.delete(k));
+    return p.toString();
+  };
+
   const rows = (companies || []).map(c => `<div class="pp-row">
     <div class="pp-info">
-      <div class="pp-title">${escapeHtml(c.name)} <span class="health-dot ${COMPANY_STATUS_CLASS[c.status] || 'health-off'}"></span></div>
+      <div class="pp-title">${escapeHtml(c.name)} <span class="health-dot ${COMPANY_STATUS_CLASS[c.status] || 'health-off'}"></span>${c.featured ? ' <span style="color:var(--amber);font-size:11px;font-weight:700">★ Featured</span>' : ''}</div>
       <div class="pp-meta">${escapeHtml(c.creator_email || 'Unknown')} · ${c.member_count} member${c.member_count === 1 ? '' : 's'} · ${c.job_count} job${c.job_count === 1 ? '' : 's'} · Created ${new Date(c.created_at).toLocaleDateString()}</div>
       <a href="/companies/${escapeHtml(c.slug)}" target="_blank" style="font-size:11px;color:var(--brand)">/companies/${escapeHtml(c.slug)}</a>
     </div>
@@ -108,6 +118,7 @@ export async function renderAdminCompanyAccountsContent(env, params) {
       ${c.status !== 'active' ? `<form method="POST" action="/admin/accounts/companies/verify"><input type="hidden" name="id" value="${c.id}"><button class="adm-btn-sm adm-btn-approve" type="submit">✓ Verify</button></form>` : ''}
       ${c.status === 'pending' ? `<form method="POST" action="/admin/accounts/companies/reject"><input type="hidden" name="id" value="${c.id}"><button class="adm-btn-sm" type="submit" onclick="return confirm('Reject this company?')">✕ Reject</button></form>` : ''}
       ${c.status === 'active' ? `<form method="POST" action="/admin/accounts/companies/suspend"><input type="hidden" name="id" value="${c.id}"><button class="adm-btn-sm" type="submit" onclick="return confirm('Suspend this company? Its published jobs stay live but it can\\'t post new ones or verify again without admin action.')">Suspend</button></form>` : ''}
+      ${c.status === 'active' ? `<form method="POST" action="/admin/accounts/companies/featured"><input type="hidden" name="id" value="${c.id}"><input type="hidden" name="featured" value="${c.featured ? '0' : '1'}"><button class="adm-btn-sm" type="submit" style="color:var(--amber)">${c.featured ? '☆ Unfeature' : '★ Feature'}</button></form>` : ''}
     </div>
   </div>`).join('');
 
@@ -117,16 +128,22 @@ export async function renderAdminCompanyAccountsContent(env, params) {
       <div><div class="adm-title">🏢 Company Accounts</div><div class="adm-sub">${pendingCount} awaiting verification</div></div>
     </div>
     <div class="adm-card" style="margin-bottom:14px">
+      <form method="GET" action="/admin/accounts/companies" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+        ${statusFilter ? `<input type="hidden" name="status" value="${escapeHtml(statusFilter)}">` : ''}
+        <input class="adm-input" name="q" placeholder="Search company name…" value="${escapeHtml(q)}" style="flex:1;min-width:180px">
+        <button class="adm-btn adm-btn-primary" type="submit">Search</button>
+        ${q ? `<a href="/admin/accounts/companies?${qs({ q: '' })}" class="adm-btn">Clear</a>` : ''}
+      </form>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <a href="/admin/accounts/companies" class="adm-btn ${!statusFilter ? 'adm-btn-primary' : ''}">All</a>
-        <a href="/admin/accounts/companies?status=pending" class="adm-btn ${statusFilter === 'pending' ? 'adm-btn-primary' : ''}">Pending</a>
-        <a href="/admin/accounts/companies?status=active" class="adm-btn ${statusFilter === 'active' ? 'adm-btn-primary' : ''}">Verified</a>
-        <a href="/admin/accounts/companies?status=rejected" class="adm-btn ${statusFilter === 'rejected' ? 'adm-btn-primary' : ''}">Rejected</a>
-        <a href="/admin/accounts/companies?status=suspended" class="adm-btn ${statusFilter === 'suspended' ? 'adm-btn-primary' : ''}">Suspended</a>
+        <a href="/admin/accounts/companies?${qs({ status: '' })}" class="adm-btn ${!statusFilter ? 'adm-btn-primary' : ''}">All</a>
+        <a href="/admin/accounts/companies?${qs({ status: 'pending' })}" class="adm-btn ${statusFilter === 'pending' ? 'adm-btn-primary' : ''}">Pending</a>
+        <a href="/admin/accounts/companies?${qs({ status: 'active' })}" class="adm-btn ${statusFilter === 'active' ? 'adm-btn-primary' : ''}">Verified</a>
+        <a href="/admin/accounts/companies?${qs({ status: 'rejected' })}" class="adm-btn ${statusFilter === 'rejected' ? 'adm-btn-primary' : ''}">Rejected</a>
+        <a href="/admin/accounts/companies?${qs({ status: 'suspended' })}" class="adm-btn ${statusFilter === 'suspended' ? 'adm-btn-primary' : ''}">Suspended</a>
       </div>
     </div>
     <div class="adm-card">
-      ${rows || `<div class="adm-empty">No companies found${statusFilter ? ` with status "${escapeHtml(statusFilter)}"` : ''}.</div>`}
+      ${rows || `<div class="adm-empty">No companies found${statusFilter ? ` with status "${escapeHtml(statusFilter)}"` : ''}${q ? ` matching "${escapeHtml(q)}"` : ''}.</div>`}
     </div>
   </div>`;
 }
