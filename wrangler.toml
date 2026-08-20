@@ -7,6 +7,26 @@ binding = "DB"
 database_name = "jobforion_db"
 database_id = "58e366ac-f5d4-4da5-b23f-0aa2e4208866"
 
+# ── R2 bucket (company logo/cover uploads — Company System, Stage 3) ──
+# OPTIONAL: until this is set up, the profile form's "paste a Logo URL /
+# Cover Image URL" fields work with zero extra setup (company.router.js
+# already handles both paths). Enable in-app file upload by:
+#   1. wrangler r2 bucket create jobforion-company-assets
+#   2. Uncomment the [[r2_buckets]] block below and redeploy
+#   3. (recommended) Enable the bucket's public r2.dev access in the
+#      Cloudflare dashboard (R2 → jobforion-company-assets → Settings),
+#      then: wrangler secret put R2_PUBLIC_BASE_URL
+#      (value = the https://pub-xxxxxxxx.r2.dev URL shown there)
+#      Without this secret, uploaded images still work — they're served
+#      by the Worker itself at /r2-asset/<key> (see
+#      routes/assets.router.js: handleR2AssetRoute) — just slightly
+#      slower than R2's own edge, since every request round-trips
+#      through the Worker instead of being served directly by R2/CDN.
+#
+# [[r2_buckets]]
+# binding = "COMPANY_ASSETS"
+# bucket_name = "jobforion-company-assets"
+
 # ── Secrets (set these via `wrangler secret put <name>`, do NOT put them here) ──
 # ADMIN_PASSWORD      -> password to access /admin dashboard
 # CSRF_SECRET         -> pepper for the account/company forms' CSRF tokens
@@ -15,6 +35,9 @@ database_id = "58e366ac-f5d4-4da5-b23f-0aa2e4208866"
 # BREVO_API_KEY       -> Brevo transactional email API key (lib/accounts/email.js)
 # EMAIL_FROM_ADDRESS  -> sender address, must be verified in Brevo
 # EMAIL_FROM_NAME     -> sender display name
+# R2_PUBLIC_BASE_URL  -> OPTIONAL, see R2 bucket note above. The public
+#                        https://pub-xxxx.r2.dev (or custom) domain mapped
+#                        to the COMPANY_ASSETS bucket.
 #
 # NOTE: API_KEY is no longer used. Every job provider (Greenhouse, Lever,
 # Ashby, SmartRecruiters, Workable, Teamtailor, Recruitee, Workday, iCIMS)
