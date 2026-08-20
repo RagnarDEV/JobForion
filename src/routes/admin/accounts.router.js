@@ -10,7 +10,7 @@ import { renderAdminUsersContent, renderAdminCompanyAccountsContent } from '../.
 import { adminShell } from '../../pages/admin/shell.js';
 import { logActivity } from '../../lib/activity-log.js';
 import { setUserStatus } from '../../lib/users.js';
-import { setCompanyStatus, setCompanyVerified } from '../../lib/companies.js';
+import { setCompanyStatus, setCompanyVerified, setCompanyFeatured } from '../../lib/companies.js';
 import { destroyAllSessions } from '../../lib/accounts/session.js';
 import { errorPage } from './error-page.js';
 
@@ -65,6 +65,19 @@ export async function handleAdminAccountsRoute(url, request, env, base) {
       const form = await request.formData();
       const id = parseInt((form.get('id') || '0').toString(), 10);
       if (id) { await setCompanyStatus(env, id, 'suspended'); await logActivity(env, 'company_suspended', String(id)); }
+      return new Response(null, { status: 302, headers: { 'Location': '/admin/accounts/companies' } });
+    }
+    // Featured is an editorial/monetization flag independent of
+    // verification (plan §9) — restricted to already-verified/active
+    // companies only, enforced both in the UI (accounts.js only renders
+    // this button for status==='active') and here server-side, since the
+    // UI hiding a control is never sufficient on its own (Stage 2
+    // principle carried forward).
+    if (url.pathname === '/admin/accounts/companies/featured' && request.method === 'POST') {
+      const form = await request.formData();
+      const id = parseInt((form.get('id') || '0').toString(), 10);
+      const featured = (form.get('featured') || '0').toString() === '1';
+      if (id) { await setCompanyFeatured(env, id, featured); await logActivity(env, featured ? 'company_featured' : 'company_unfeatured', String(id)); }
       return new Response(null, { status: 302, headers: { 'Location': '/admin/accounts/companies' } });
     }
   } catch (e) { return errorPage(e); }
