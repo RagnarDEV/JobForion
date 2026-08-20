@@ -8,6 +8,41 @@ import { BASE_URL } from '../config/constants.js';
 
 export const ASSET_PATHS = ['/favicon.svg', '/favicon.ico', '/favicon-32.png', '/favicon-16.png', '/apple-touch-icon.png', '/icon-512.png', '/manifest.json', '/robots.txt'];
 
+// ── R2-backed company logo/cover fallback (Company System, Stage 3) ──
+// company.router.js's /company/logo and /company/cover uploads link to
+// `${R2_PUBLIC_BASE_URL}/<key>` when that secret is configured (the
+// bucket's own public r2.dev domain or a custom domain — the fast path,
+// serves directly from Cloudflare's edge with zero Worker involvement).
+// This route exists purely as a fallback for the moment BEFORE that
+// secret is set: an image just uploaded still needs to resolve to
+// *something* other than a 404, so the URL falls back to
+// `/r2-asset/<key>` and THIS Worker streams it straight from the
+// COMPANY_ASSETS bucket. Setting R2_PUBLIC_BASE_URL later is purely a
+// performance upgrade — no re-upload or code change needed, since old
+// `/r2-asset/...` links keep working here indefinitely.
+export async function handleR2AssetRoute(url, env) {
+  if (!url.pathname.startsWith('/r2-asset/')) return null;
+  if (!env.COMPANY_ASSETS) return new Response('Not found', { status: 404 });
+  const key = decodeURIComponent(url.pathname.slice('/r2-asset/'.length));
+  // Defense in depth: this key space is only ever written by
+  // company.router.js under the fixed `companies/<id>/<kind>-<ts>.<ext>`
+  // shape, so reject anything containing `..` or starting outside that
+  // prefix rather than trusting the path segment as a free-form R2 key.
+  if (!key || key.includes('..') || !key.startsWith('companies/')) return new Response('Not found', { status: 404 });
+  try {
+    const object = await env.COMPANY_ASSETS.get(key);
+    if (!object) return new Response('Not found', { status: 404 });
+    return new Response(object.body, {
+      headers: {
+        'Content-Type': object.httpMetadata?.contentType || 'application/octet-stream',
+        'Cache-Control': 'public, max-age=31536000, immutable', // filename is timestamped/unique per upload — safe to cache forever
+      },
+    });
+  } catch (e) {
+    return new Response('Not found', { status: 404 });
+  }
+}
+
 // Returns a Response if this router owns the path, otherwise null (caller tries the next router).
 export function handleAssetsRoute(url, base) {
   if (url.pathname === '/favicon.svg') {
