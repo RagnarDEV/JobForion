@@ -212,31 +212,113 @@ export async function renderCompanyJobsPage(env, user, company, ctx) {
 }
 
 // ── Post a Job ──────────────────────────────────────────────────
-export async function renderCompanyPostJobPage(user, company, ctx, { csrfToken, error, submitted, canPost } = {}) {
+const SENIORITY_LEVELS = ['Junior', 'Mid', 'Senior', 'Lead']; // matches the exact options in pages/home.js's #fSeniority filter, so a posted job is actually findable via that filter
+const SALARY_CURRENCIES = ['$', '€', '£', 'C$', 'A$']; // matches lib/salary.js's CURRENCY_TO_USD keys exactly (lowercased there) — must stay in sync if that map ever changes
+const SALARY_PERIODS = [['year', 'per year'], ['month', 'per month'], ['hour', 'per hour']];
+
+export async function renderCompanyPostJobPage(user, company, ctx, { csrfToken, error, submitted, canPost, formValues = {} } = {}) {
+  const v = (name, fallback = '') => escapeHtml(formValues[name] ?? fallback);
+  const skillsInitial = Array.isArray(formValues.skills) ? formValues.skills : [];
   const content = `
     ${companySwitcher(ctx.companies, company.id)}
-    ${submitted ? `<div class="auth-ok">Job submitted for review. It will go live once approved.</div>` : ''}
+    ${submitted ? `<div class="auth-ok">Job submitted for review. It will go live once approved — usually within 24 hours.</div>` : ''}
     ${error ? `<div class="auth-err">${escapeHtml(error)}</div>` : ''}
     ${!canPost ? `<div class="dash-card" style="border-color:rgba(255,92,122,.3)"><div style="font-size:13px;color:var(--coral);font-weight:700">You don't have permission to post jobs for this company.</div><div style="font-size:12px;color:var(--ink3);margin-top:4px">Ask a Company Admin to add you as a Recruiter or Admin.</div></div>` : `
-    <form method="POST" action="/company/post-job" class="dash-card">
+    <form method="POST" action="/company/post-job" class="pj-pro-form" id="postJobForm">
       ${csrfField(csrfToken)}
-      <div class="pj-row">
-        <div class="pj-group"><label class="pj-label">Job Title</label><input class="pj-input" name="title" required placeholder="Senior Backend Engineer"></div>
-        <div class="pj-group"><label class="pj-label">Apply URL</label><input class="pj-input" type="url" name="url" required placeholder="https://acme.com/careers/123"></div>
+      <div class="dash-card">
+        <div class="dash-card-title">Job Details</div>
+        <div class="pj-group"><label class="pj-label">Job Title</label><input class="pj-input" name="title" required maxlength="150" placeholder="Senior Backend Engineer" value="${v('title')}"></div>
+        <div class="pj-row">
+          <div class="pj-group"><label class="pj-label">Category</label>
+            <select class="pj-select" name="category">${CATEGORY_ORDER.map(k => `<option value="${k}" ${formValues.category === k ? 'selected' : ''}>${CATEGORY_META[k].label}</option>`).join('')}</select></div>
+          <div class="pj-group"><label class="pj-label">Seniority Level</label>
+            <select class="pj-select" name="seniority"><option value="">Not specified</option>${SENIORITY_LEVELS.map(s => `<option value="${s}" ${formValues.seniority === s ? 'selected' : ''}>${s}</option>`).join('')}</select></div>
+        </div>
+        <div class="pj-row">
+          <div class="pj-group"><label class="pj-label">Employment Type</label>
+            <select class="pj-select" name="employment_type">
+              <option value="full_time" ${!formValues.employment_type || formValues.employment_type === 'full_time' ? 'selected' : ''}>Full-time</option>
+              <option value="part_time" ${formValues.employment_type === 'part_time' ? 'selected' : ''}>Part-time</option>
+              <option value="contract" ${formValues.employment_type === 'contract' ? 'selected' : ''}>Contract</option>
+              <option value="internship" ${formValues.employment_type === 'internship' ? 'selected' : ''}>Internship</option>
+            </select></div>
+          <div class="pj-group"><label class="pj-label">Remote Type</label>
+            <select class="pj-select" name="remote_type">
+              <option value="fully_remote" ${!formValues.remote_type || formValues.remote_type === 'fully_remote' ? 'selected' : ''}>Fully Remote</option>
+              <option value="hybrid" ${formValues.remote_type === 'hybrid' ? 'selected' : ''}>Hybrid</option>
+              <option value="on_site" ${formValues.remote_type === 'on_site' ? 'selected' : ''}>On-site</option>
+            </select></div>
+        </div>
+        <div class="pj-group"><label class="pj-label">Location</label><input class="pj-input" name="location" maxlength="100" placeholder="Remote / Anywhere, or a city for hybrid/on-site" value="${v('location')}"></div>
+        <div class="pj-group"><label class="pj-label">Apply URL</label><input class="pj-input" type="url" name="url" required maxlength="400" placeholder="https://acme.com/careers/123" value="${v('url')}"></div>
       </div>
-      <div class="pj-row">
-        <div class="pj-group"><label class="pj-label">Location</label><input class="pj-input" name="location" placeholder="Remote / Anywhere"></div>
-        <div class="pj-group"><label class="pj-label">Salary Range</label><input class="pj-input" name="salary" placeholder="$90k - $130k"></div>
+
+      <div class="dash-card">
+        <div class="dash-card-title">Compensation <span style="font-weight:400;color:var(--ink3);font-size:12px">(optional, but listings with salary get 2-3× more applicants)</span></div>
+        <div class="pj-row" style="grid-template-columns:80px 1fr 1fr 1fr">
+          <div class="pj-group"><label class="pj-label">Currency</label>
+            <select class="pj-select" name="salary_currency">${SALARY_CURRENCIES.map(c => `<option value="${c}" ${formValues.salary_currency === c ? 'selected' : ''}>${c}</option>`).join('')}</select></div>
+          <div class="pj-group"><label class="pj-label">Min</label><input class="pj-input" type="number" name="salary_min" min="0" step="1" placeholder="90000" value="${v('salary_min')}"></div>
+          <div class="pj-group"><label class="pj-label">Max</label><input class="pj-input" type="number" name="salary_max" min="0" step="1" placeholder="130000" value="${v('salary_max')}"></div>
+          <div class="pj-group"><label class="pj-label">Period</label>
+            <select class="pj-select" name="salary_period">${SALARY_PERIODS.map(([val, lbl]) => `<option value="${val}" ${formValues.salary_period === val ? 'selected' : ''}>${lbl}</option>`).join('')}</select></div>
+        </div>
+        <p style="font-size:11px;color:var(--ink3);margin-top:-6px">Leave Min/Max blank to post without a salary range.</p>
       </div>
-      <div class="pj-row">
-        <div class="pj-group"><label class="pj-label">Category</label>
-          <select class="pj-select" name="category">${CATEGORY_ORDER.map(k => `<option value="${k}">${CATEGORY_META[k].label}</option>`).join('')}</select></div>
-        <div class="pj-group"><label class="pj-label">Remote Type</label>
-          <select class="pj-select" name="remote_type"><option value="fully_remote">Fully Remote</option><option value="hybrid">Hybrid</option><option value="on_site">On-site</option></select></div>
+
+      <div class="dash-card">
+        <div class="dash-card-title">Requirements</div>
+        <div class="pj-group">
+          <label class="pj-label">Skills <span style="font-weight:400;color:var(--ink3);text-transform:none;letter-spacing:0;font-size:11px">(press Enter to add, up to 15)</span></label>
+          <input class="pj-input" type="text" id="skillInput" placeholder="e.g. React, PostgreSQL, AWS...">
+          <div id="skillsWrap" style="margin-top:8px"></div>
+          <input type="hidden" name="skills" id="skillsHidden" value="${escapeHtml(JSON.stringify(skillsInitial))}">
+        </div>
+        <div class="pj-group"><label class="pj-label">Description</label><textarea class="pj-textarea" name="description" id="descInput" maxlength="4000" style="min-height:200px" placeholder="Responsibilities, requirements, benefits... Use blank lines between paragraphs — formatting is preserved.">${v('description')}</textarea>
+          <div id="descCounter" style="font-size:11px;color:var(--ink3);text-align:right;margin-top:4px">0 / 4000</div>
+        </div>
       </div>
-      <div class="pj-group"><label class="pj-label">Description</label><textarea class="pj-textarea" name="description" placeholder="Role responsibilities, requirements, benefits..."></textarea></div>
+
       <button class="pj-submit" type="submit">Submit for Review →</button>
-    </form>`}`;
+    </form>
+    <style>
+      .pj-pro-form .dash-card{margin-bottom:14px}
+      .skill-chip{display:inline-flex;align-items:center;gap:6px;background:var(--brand-soft);border:1px solid rgba(53,86,255,.2);color:var(--brand);padding:4px 10px;border-radius:20px;font-size:12px;font-weight:700;margin:0 6px 6px 0}
+      .skill-chip button{background:none;border:none;color:var(--brand);cursor:pointer;font-size:14px;line-height:1;padding:0;opacity:.7}
+      .skill-chip button:hover{opacity:1}
+    </style>
+    <script>
+    (function(){
+      var skills = ${JSON.stringify(skillsInitial).replace(/</g, '\\u003c')};
+      var wrap = document.getElementById('skillsWrap');
+      var hidden = document.getElementById('skillsHidden');
+      var input = document.getElementById('skillInput');
+      function render(){
+        wrap.innerHTML = skills.map(function(s, i){
+          return '<span class="skill-chip">' + s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') + '<button type="button" data-i="'+i+'">×</button></span>';
+        }).join('');
+        hidden.value = JSON.stringify(skills);
+        wrap.querySelectorAll('button[data-i]').forEach(function(btn){
+          btn.addEventListener('click', function(){ skills.splice(parseInt(btn.dataset.i, 10), 1); render(); });
+        });
+      }
+      input.addEventListener('keydown', function(e){
+        if (e.key !== 'Enter') return;
+        e.preventDefault();
+        var val = input.value.trim().slice(0, 40);
+        if (val && skills.length < 15 && skills.indexOf(val) === -1) { skills.push(val); render(); }
+        input.value = '';
+      });
+      render();
+      var desc = document.getElementById('descInput');
+      var counter = document.getElementById('descCounter');
+      function updateCounter(){ counter.textContent = desc.value.length + ' / 4000'; }
+      desc.addEventListener('input', updateCounter);
+      updateCounter();
+      document.getElementById('postJobForm').addEventListener('submit', function(){ hidden.value = JSON.stringify(skills); });
+    })();
+    </script>`}`;
   return wrap('post-job', 'Post a Job', `Posting as ${company.name}`, content, user, ctx);
 }
 
