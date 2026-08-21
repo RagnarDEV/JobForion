@@ -12,6 +12,7 @@ import { getSessionUser } from '../lib/accounts/session.js';
 import { getCsrfToken, verifyCsrf } from '../lib/accounts/csrf.js';
 import { checkRateLimit } from '../lib/rate-limit.js';
 import { logActivity } from '../lib/activity-log.js';
+import { parseSalary } from '../lib/salary.js';
 import { findUserByEmail } from '../lib/users.js';
 import {
   createCompany, getCompanyById, updateCompanyProfile, addCompanyMember, removeCompanyMember,
@@ -94,11 +95,78 @@ export async function handleCompanyRoute(url, request, env, base) {
     if (!capable) return new Response('Forbidden', { status: 403 });
     const { form, ok } = await requireCsrf(request);
     if (!ok) return new Response(await renderCompanyProfilePage(user, company, ctx, { csrfToken, canEdit: true }), { status: 400, headers: HTML });
-    await updateCompanyProfile(env, company.id, {
-      name: form.get('name'), website: form.get('website'), industry: form.get('industry'), country: form.get('country'),
-      city: form.get('city'), linkedin_url: form.get('linkedin_url'), description: form.get('description'),
-    });
+    try {
+      await updateCompanyProfile(env, company.id, {
+        name: form.get('name'), website: form.get('website'), industry: form.get('industry'), country: form.get('country'),
+        city: form.get('city'), linkedin_url: form.get('linkedin_url'), description: form.get('description'),
+        logo_url: form.get('logo_url'), cover_image_url: form.get('cover_image_url'), founded_year: form.get('founded_year'),
+        headquarters: form.get('headquarters'), contact_email: form.get('contact_email'), phone: form.get('phone'),
+        twitter_url: form.get('twitter_url'), facebook_url: form.get('facebook_url'),
+      });
+    } catch (e) {
+      return new Response(await renderCompanyProfilePage(user, company, ctx, { csrfToken, canEdit: true, uploadError: 'Could not save profile — please check your entries and try again.' }), { status: 400, headers: HTML });
+    }
     await logActivity(env, 'company_profile_updated', company.name, { companyId: company.id, userId: user.id });
+    const fresh = await getCompanyById(env, company.id);
+    return new Response(await renderCompanyProfilePage(user, fresh, ctx, { csrfToken, canEdit: true, saved: true }), { headers: HTML });
+  }
+
+  // ── Logo / Cover upload (Cloudflare R2 — plan §7) ────────────────
+  // Gated on env.COMPANY_ASSETS existing at all: this lets the upload UI
+  // ship now and "just work" the moment an admin creates the R2 bucket
+  // and adds the binding (see wrangler.toml), without a second code
+  // deploy. Until then, company admins can still set images by pasting a
+  // hosted URL directly into the Logo URL / Cover Image URL fields above
+  // — the same zero-infra pattern already used for job-card logos
+  // site-wide (lib/company-logos.js overrides).
+  if (url.pathname === '/company/logo' || url.pathname === '/company/cover') {
+    if (request.method !== 'POST') return new Response('Method not allowed', { status: 405 });
+    const capable = await requireCompanyCapability(env, user.id, company.id, 'edit_company');
+    if (!capable) return new Response('Forbidden', { status: 403 });
+
+    const rl = await checkRateLimit(env, `company_upload:${user.id}`, { maxRequests: 15, windowMinutes: 60 });
+    if (!rl.allowed) return new Response(await renderCompanyProfilePage(user, company, ctx, { csrfToken, canEdit: true, uploadError: 'Too many uploads — please wait a few minutes.' }), { status: 429, headers: HTML });
+
+    if (!env.COMPANY_ASSETS) {
+      return new Response(await renderCompanyProfilePage(user, company, ctx, { csrfToken, canEdit: true, uploadError: 'Image upload is not yet enabled on this site — paste a hosted image URL into the field below instead.' }), { status: 503, headers: HTML });
+    }
+
+    let form;
+    try { form = await request.formData(); } catch (e) { return new Response('Bad request', { status: 400 }); }
+    const csrfOk = await verifyCsrf(env, session.sessionId, (form.get('_csrf') || '').toString());
+    if (!csrfOk) return new Response(await renderCompanyProfilePage(user, company, ctx, { csrfToken, canEdit: true, uploadError: 'Your session expired — please try again.' }), { status: 400, headers: HTML });
+
+    const file = form.get('file');
+    const ALLOWED_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp']);
+    const MAX_BYTES = 2 * 1024 * 1024; // 2MB
+    if (!file || typeof file === 'string' || !ALLOWED_TYPES.has(file.type)) {
+      return new Response(await renderCompanyProfilePage(user, company, ctx, { csrfToken, canEdit: true, uploadError: 'Please upload a PNG, JPEG, or WebP image.' }), { status: 400, headers: HTML });
+    }
+    if (file.size > MAX_BYTES) {
+      return new Response(await renderCompanyProfilePage(user, company, ctx, { csrfToken, canEdit: true, uploadError: 'Image is too large — 2MB maximum.' }), { status: 400, headers: HTML });
+    }
+    const kind = url.pathname === '/company/logo' ? 'logo' : 'cover';
+    const ext = file.type === 'image/png' ? 'png' : file.type === 'image/webp' ? 'webp' : 'jpg';
+    // Content-addressed-ish key (company id + kind + timestamp) so a
+    // re-upload never collides with or overwrites another company's file,
+    // and old versions remain in the bucket (harmless, cheap) rather than
+    // risking a race with an in-flight request still serving the old URL.
+    const key = `companies/${company.id}/${kind}-${Date.now()}.${ext}`;
+    try {
+      await env.COMPANY_ASSETS.put(key, file.stream(), { httpMetadata: { contentType: file.type } });
+    } catch (e) {
+      return new Response(await renderCompanyProfilePage(user, company, ctx, { csrfToken, canEdit: true, uploadError: 'Upload failed — please try again.' }), { status: 500, headers: HTML });
+    }
+    // R2_PUBLIC_BASE_URL is the public bucket domain (r2.dev subdomain or
+    // a custom domain mapped to the bucket) — set once via
+    // `wrangler secret put R2_PUBLIC_BASE_URL`, see wrangler.toml notes.
+    const publicBase = (env.R2_PUBLIC_BASE_URL || '').replace(/\/$/, '');
+    const publicUrl = publicBase ? `${publicBase}/${key}` : `/r2-asset/${key}`;
+    await updateCompanyProfile(env, company.id, {
+      ...company,
+      [kind === 'logo' ? 'logo_url' : 'cover_image_url']: publicUrl,
+    });
+    await logActivity(env, kind === 'logo' ? 'company_logo_uploaded' : 'company_cover_uploaded', company.name, { companyId: company.id, userId: user.id });
     const fresh = await getCompanyById(env, company.id);
     return new Response(await renderCompanyProfilePage(user, fresh, ctx, { csrfToken, canEdit: true, saved: true }), { headers: HTML });
   }
@@ -121,11 +189,69 @@ export async function handleCompanyRoute(url, request, env, base) {
     const rl = await checkRateLimit(env, `company_post_job:${company.id}`, { maxRequests: 20, windowMinutes: 60 });
     if (!rl.allowed) return new Response(await renderCompanyPostJobPage(user, company, ctx, { csrfToken, canPost: true, error: 'Too many submissions. Try again later.' }), { status: 429, headers: HTML });
 
+    // Re-collect every field up front (not just title/url) so any
+    // validation error below can re-render the form with everything the
+    // employer already typed still filled in — losing a half-written job
+    // description to a typo'd salary field would be a genuinely hostile
+    // UX for what's supposed to be a "professional" posting flow.
     const title = (form.get('title') || '').toString().trim().slice(0, 150);
     const jobUrl = (form.get('url') || '').toString().trim().slice(0, 400);
-    if (!title || !jobUrl) {
-      return new Response(await renderCompanyPostJobPage(user, company, ctx, { csrfToken, canPost: true, error: 'Job title and apply URL are required.' }), { status: 400, headers: HTML });
+    const location = (form.get('location') || '').toString().trim().slice(0, 100);
+    const category = (form.get('category') || '').toString().slice(0, 40);
+    const employment_type = ['full_time', 'part_time', 'contract', 'internship'].includes((form.get('employment_type') || '').toString())
+      ? form.get('employment_type').toString() : 'full_time';
+    const remote_type = ['fully_remote', 'hybrid', 'on_site'].includes((form.get('remote_type') || '').toString())
+      ? form.get('remote_type').toString() : 'fully_remote';
+    const seniority = ['Junior', 'Mid', 'Senior', 'Lead'].includes((form.get('seniority') || '').toString()) ? form.get('seniority').toString() : '';
+    const description = (form.get('description') || '').toString().trim().slice(0, 4000);
+
+    let skills = [];
+    try {
+      const parsed = JSON.parse((form.get('skills') || '[]').toString());
+      if (Array.isArray(parsed)) skills = parsed.map(s => String(s).trim().slice(0, 40)).filter(Boolean).slice(0, 15);
+    } catch (e) { /* malformed/tampered hidden field — treat as no skills rather than fail the whole submission */ }
+
+    const salaryMinRaw = (form.get('salary_min') || '').toString().trim();
+    const salaryMaxRaw = (form.get('salary_max') || '').toString().trim();
+    const salaryCurrency = ['$', '€', '£', 'C$', 'A$'].includes((form.get('salary_currency') || '').toString()) ? form.get('salary_currency').toString() : '$';
+    const salaryPeriod = ['year', 'month', 'hour'].includes((form.get('salary_period') || '').toString()) ? form.get('salary_period').toString() : 'year';
+
+    const formValues = { title, url: jobUrl, location, category, employment_type, remote_type, seniority, description, skills, salary_min: salaryMinRaw, salary_max: salaryMaxRaw, salary_currency: salaryCurrency, salary_period: salaryPeriod };
+    const rerender = async (error, status = 400) => new Response(await renderCompanyPostJobPage(user, company, ctx, { csrfToken, canPost: true, error, formValues }), { status, headers: HTML });
+
+    if (!title || !jobUrl) return await rerender('Job title and apply URL are required.');
+    try { new URL(jobUrl); } catch (e) { return await rerender('Apply URL must be a valid, full URL (including https://).'); }
+
+    // Compensation is optional, but if either bound was entered, both must
+    // be present and form a sane range — silently accepting "min=90000,
+    // max=<blank>" would store a broken/misleading salary line, and
+    // min > max would sort and badge incorrectly downstream.
+    let salary = '';
+    if (salaryMinRaw || salaryMaxRaw) {
+      const min = parseInt(salaryMinRaw, 10);
+      const max = parseInt(salaryMaxRaw, 10);
+      if (!Number.isInteger(min) || !Number.isInteger(max) || min <= 0 || max <= 0) return await rerender('Enter both a minimum and maximum salary, or leave both blank.');
+      if (min > max) return await rerender('Minimum salary cannot be greater than the maximum.');
+      const periodLabel = salaryPeriod === 'year' ? 'per year' : salaryPeriod === 'month' ? 'per month' : 'per hour';
+      // Canonical human-readable string, re-parsed by lib/salary.js's
+      // parseSalary() at admin-approval time (see admin/jobs.router.js) to
+      // derive jobs.salary_min_usd/salary_max_usd — building it in this
+      // exact shape is what makes that round-trip lossless.
+      salary = `${salaryCurrency}${min.toLocaleString('en-US')} - ${salaryCurrency}${max.toLocaleString('en-US')} ${periodLabel}`;
     }
+
+    // Accidental-double-submit guard: the same company posting the exact
+    // same title again within a few minutes is almost always a double
+    // click or a back-button resubmit, not a genuine second opening.
+    // Deliberately narrow (name + company_id + 10 minutes) so it never
+    // blocks a legitimate re-post of a role that closed and reopened
+    // later — this is a UX safety net, not a moderation rule.
+    try {
+      const { results: dupe } = await env.DB.prepare(
+        `SELECT id FROM job_postings WHERE company_id = ? AND LOWER(title) = LOWER(?) AND created_at >= datetime('now','-10 minutes') LIMIT 1`
+      ).bind(company.id, title).all();
+      if (dupe && dupe.length) return await rerender('You already submitted a job with this title a few minutes ago. Please wait before submitting again.');
+    } catch (e) { /* dedupe check failing must never block a genuine submission */ }
 
     // Employer Submitted Jobs (plan §15/§16) go through the SAME
     // job_postings → Admin Review → jobs pipeline as the existing
@@ -134,13 +260,12 @@ export async function handleCompanyRoute(url, request, env, base) {
     // set here so the approval step can link the resulting job back to
     // this company and mark it source_type='employer'.
     await env.DB.prepare(
-      `INSERT INTO job_postings (title,company,email,url,location,category,employment_type,remote_type,salary,description,status,user_id,company_id)
-       VALUES (?,?,?,?,?,?,?,?,?,?,'pending',?,?)`
+      `INSERT INTO job_postings (title,company,email,url,location,category,employment_type,remote_type,salary,description,skills,seniority,status,user_id,company_id)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,'pending',?,?)`
     ).bind(
-      title, company.name, user.email, jobUrl,
-      (form.get('location') || '').toString().slice(0, 100), (form.get('category') || '').toString().slice(0, 40),
-      'full_time', (form.get('remote_type') || 'fully_remote').toString().slice(0, 40),
-      (form.get('salary') || '').toString().slice(0, 60), (form.get('description') || '').toString().slice(0, 4000),
+      title, company.name, user.email, jobUrl, location, category,
+      employment_type, remote_type, salary, description,
+      JSON.stringify(skills), seniority,
       user.id, company.id
     ).run();
     await logActivity(env, 'employer_job_submitted', title, { companyId: company.id, userId: user.id });
