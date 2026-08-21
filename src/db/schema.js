@@ -774,5 +774,13 @@ export async function ensureAccountTables(env) {
   await ensureColumn(env, 'job_postings', 'user_id', 'INTEGER REFERENCES users(id)');
   await ensureColumn(env, 'job_postings', 'company_id', 'INTEGER REFERENCES companies(id)');
 
+  // ── Professional Post a Job (Stage 4) — additive structured fields ──
+  // Only the authenticated /company/post-job form (routes/company.router.js)
+  // ever writes these; the original anonymous "Post a Job" modal
+  // (components/post-job-modal.js, /api/post-job) is untouched and simply
+  // leaves them NULL, exactly like user_id/company_id above.
+  await ensureColumn(env, 'job_postings', 'skills', 'TEXT');
+  await ensureColumn(env, 'job_postings', 'seniority', 'TEXT');
+
   accountSchemaEnsured = true;
 }
