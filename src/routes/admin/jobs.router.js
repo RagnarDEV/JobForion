@@ -13,6 +13,7 @@ import { JOB_TYPE_META } from '../../config/constants.js';
 import { getSettings } from '../../lib/settings.js';
 import { logActivity } from '../../lib/activity-log.js';
 import { errorPage } from './error-page.js';
+import { parseSalary } from '../../lib/salary.js';
 
 export async function handleAdminJobsRoute(url, request, env, base) {
   if (url.pathname === '/admin/postings/approve' && request.method === 'POST') {
@@ -36,10 +37,28 @@ export async function handleAdminJobsRoute(url, request, env, base) {
             // (routes/company.router.js) — the original anonymous public
             // "Post a Job" modal still works exactly as before and simply
             // leaves both NULL, which is a perfectly valid employer job.
+            //
+            // skills/seniority carry straight through from job_postings
+            // (Stage 4: Professional Post a Job) instead of being
+            // hardcoded to '[]'/'' as before — p.skills is already a JSON
+            // array string in the exact shape jobs.skills expects, since
+            // routes/company.router.js writes it with JSON.stringify().
+            //
+            // salary_min_usd/salary_max_usd were NEVER populated for
+            // employer-submitted jobs before this — re-parsing p.salary
+            // through the same lib/salary.js used for every provider-
+            // synced job is what makes an employer job's "Hot 🔥" badge,
+            // salary sort, and salary_min search filter all work
+            // identically to a synced one.
+            const parsedSalary = parseSalary(p.salary);
             await env.DB.prepare(
-              `INSERT OR IGNORE INTO jobs (title,company,location,url,description,salary,remote_type,skills,seniority,employment_type,job_handle,source,source_type,company_id,submitted_by_user_id,status,updated_at,expires_at)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,'manual','employer',?,?,'active',CURRENT_TIMESTAMP,datetime('now','+45 days'))`
-            ).bind(p.title, p.company, p.location || 'Remote', p.url, p.description || '', p.salary || '', p.remote_type || 'fully_remote', '[]', '', p.employment_type || 'full_time', '', p.company_id || null, p.user_id || null).run();
+              `INSERT OR IGNORE INTO jobs (title,company,location,url,description,salary,remote_type,skills,seniority,employment_type,job_handle,source,source_type,company_id,submitted_by_user_id,salary_min_usd,salary_max_usd,status,updated_at,expires_at)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,'manual','employer',?,?,?,?,'active',CURRENT_TIMESTAMP,datetime('now','+45 days'))`
+            ).bind(
+              p.title, p.company, p.location || 'Remote', p.url, p.description || '', p.salary || '', p.remote_type || 'fully_remote',
+              p.skills || '[]', p.seniority || '', p.employment_type || 'full_time', '',
+              p.company_id || null, p.user_id || null, parsedSalary.annualMinUsd, parsedSalary.annualMaxUsd
+            ).run();
             await env.DB.prepare("UPDATE job_postings SET status='approved' WHERE id = ?").bind(id).run();
           } catch (e) { /* keep posting pending rather than crash the whole request */ }
         }
