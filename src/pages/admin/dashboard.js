@@ -211,17 +211,22 @@ export async function renderDashboardContent(env) {
     ${(pendingPostings || []).length ? `
     <div class="adm-card" style="margin-bottom:16px">
       <div class="adm-card-title">📮 Pending Job Postings <span style="font-weight:400;color:var(--ink3);font-size:12px">— submitted via "Post a Job"</span></div>
-      ${pendingPostings.map(p => `<div class="pp-row">
+      ${pendingPostings.map(p => {
+        let pSkills = [];
+        try { pSkills = JSON.parse(p.skills || '[]'); } catch (e) {}
+        return `<div class="pp-row">
         <div class="pp-info">
-          <div class="pp-title">${escapeHtml(p.title)} <span style="color:var(--ink3);font-weight:500">at ${escapeHtml(p.company)}</span></div>
-          <div class="pp-meta">${escapeHtml(p.email)} · ${escapeHtml(p.location || 'Remote')} · ${escapeHtml(p.salary || 'No salary listed')} · ${new Date(p.created_at).toLocaleString()}</div>
+          <div class="pp-title">${escapeHtml(p.title)} <span style="color:var(--ink3);font-weight:500">at ${escapeHtml(p.company)}</span>${p.company_id ? ' <span style="color:var(--green);font-size:10px;font-weight:700;border:1px solid rgba(15,174,121,.3);border-radius:10px;padding:1px 7px">Verified Employer Account</span>' : ''}</div>
+          <div class="pp-meta">${escapeHtml(p.email)} · ${escapeHtml(p.location || 'Remote')} · ${escapeHtml(p.salary || 'No salary listed')}${p.seniority ? ' · ' + escapeHtml(p.seniority) : ''} · ${new Date(p.created_at).toLocaleString()}</div>
+          ${pSkills.length ? `<div style="font-size:10.5px;color:var(--ink3);margin:3px 0">Skills: ${pSkills.map(escapeHtml).join(', ')}</div>` : ''}
           <a href="${escapeHtml(p.url)}" target="_blank" style="font-size:11px;color:var(--brand)">${escapeHtml(p.url)}</a>
         </div>
         <div class="pp-actions">
           <form method="POST" action="/admin/postings/approve"><input type="hidden" name="id" value="${p.id}"><button class="adm-btn-sm adm-btn-approve" type="submit">✓ Approve</button></form>
           <form method="POST" action="/admin/postings/reject"><input type="hidden" name="id" value="${p.id}"><button class="adm-btn-sm" type="submit" onclick="return confirm('Reject this posting?')">✕ Reject</button></form>
         </div>
-      </div>`).join('')}
+      </div>`;
+      }).join('')}
     </div>` : ''}
 
     <div class="adm-grid">
