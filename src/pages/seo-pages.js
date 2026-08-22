@@ -30,7 +30,7 @@ import { MIN_JOBS_FOR_INDEXING } from '../lib/entities.js';
 import { collectionPageSchema, itemListSchema, ldJsonTag } from '../lib/schema.js';
 import { buildBreadcrumb } from '../lib/breadcrumbs.js';
 import { truncateDescription } from '../lib/seo.js';
-import { JOB_TYPE_SORT_SQL, PUBLIC_JOB_STATUS_SQL } from '../config/constants.js';
+import { JOB_TYPE_SORT_SQL, PUBLIC_JOB_STATUS_SQL, JOB_LISTING_COLUMNS } from '../config/constants.js';
 import { getSettings } from '../lib/settings.js';
 import { getCategories } from '../lib/categories.js';
 import { getCardStyles } from '../lib/job-card-styles.js';
@@ -99,7 +99,7 @@ export async function renderCategoryDetail(env, base, key, user = null) {
   const { settings, categoryMap, categoryOrder, cardStyles, categoryBundle, footerPages, menuPages, navButtons } = await loadPageContext(env);
   const meta = categoryMap[key];
   if (!meta) return null;
-  const { results } = await env.DB.prepare(`SELECT * FROM jobs WHERE LOWER(title) LIKE ? AND ${PUBLIC_JOB_STATUS_SQL} ORDER BY ${JOB_TYPE_SORT_SQL} ASC, id DESC LIMIT 60`).bind(`%${key}%`).all();
+  const { results } = await env.DB.prepare(`SELECT ${JOB_LISTING_COLUMNS} FROM jobs WHERE LOWER(title) LIKE ? AND ${PUBLIC_JOB_STATUS_SQL} ORDER BY ${JOB_TYPE_SORT_SQL} ASC, id DESC LIMIT 60`).bind(`%${key}%`).all();
   const { html: bc, jsonLd: bcSchema } = buildBreadcrumb(base, [{ name: 'Categories', path: '/categories' }, { name: meta.label, path: `/categories/${key}` }]);
   const jobsHtml = await jobsListHtml(env, results, categoryMap, categoryOrder, cardStyles, '<div class="empty"><div class="e-icon">📭</div><h3>No jobs in this category yet</h3></div>');
   const content = `<div class="page">${bc}
@@ -393,7 +393,7 @@ export async function renderSearchPage(env, base, query, user = null) {
   const { settings, categoryMap, categoryOrder, cardStyles, categoryBundle, footerPages, menuPages, navButtons } = await loadPageContext(env);
   const q = decodeURIComponent(query || '').trim();
   const { results } = await env.DB.prepare(
-    `SELECT * FROM jobs WHERE (LOWER(title) LIKE ? OR LOWER(company) LIKE ? OR LOWER(location) LIKE ?) AND ${PUBLIC_JOB_STATUS_SQL} ORDER BY ${JOB_TYPE_SORT_SQL} ASC, id DESC LIMIT 50`
+    `SELECT ${JOB_LISTING_COLUMNS} FROM jobs WHERE (LOWER(title) LIKE ? OR LOWER(company) LIKE ? OR LOWER(location) LIKE ?) AND ${PUBLIC_JOB_STATUS_SQL} ORDER BY ${JOB_TYPE_SORT_SQL} ASC, id DESC LIMIT 50`
   ).bind(`%${q.toLowerCase()}%`, `%${q.toLowerCase()}%`, `%${q.toLowerCase()}%`).all();
   const hasResults = (results || []).length > 0;
   const { html: bc, jsonLd: bcSchema } = buildBreadcrumb(base, [{ name: `Search: ${q}`, path: `/search/${query}` }]);

@@ -8,7 +8,7 @@ import { footerHtml } from '../components/footer.js';
 import { postJobModalHtml } from '../components/post-job-modal.js';
 import { SHARED_CSS } from '../styles/shared-css.js';
 import { ICON_HEAD } from '../assets/favicon.js';
-import { JOB_TYPE_META, JOB_TYPE_SORT_SQL, PUBLIC_JOB_STATUS_SQL } from '../config/constants.js';
+import { JOB_TYPE_META, JOB_TYPE_SORT_SQL, PUBLIC_JOB_STATUS_SQL, JOB_LISTING_COLUMNS } from '../config/constants.js';
 import { jobCardSSR } from '../components/job-card.js';
 import { adSlot } from '../components/ad-slot.js';
 import { escapeHtml, slugify, listCompanies } from '../lib/entities.js';
@@ -66,7 +66,7 @@ export async function renderMainHTML(env, base, user = null) {
   const heroFontGoogleParam = heroFont.name === 'Plus Jakarta Sans' ? '' : `&family=${heroFont.googleParam}`;
   let initialJobs = [], initialTotal = 0, totalJobsCount = 0, companiesCount = 0;
   try {
-    const { results } = await env.DB.prepare(`SELECT * FROM jobs WHERE ${PUBLIC_JOB_STATUS_SQL} ORDER BY ${JOB_TYPE_SORT_SQL} ASC, featured DESC, id DESC LIMIT 20`).all();
+    const { results } = await env.DB.prepare(`SELECT ${JOB_LISTING_COLUMNS} FROM jobs WHERE ${PUBLIC_JOB_STATUS_SQL} ORDER BY ${JOB_TYPE_SORT_SQL} ASC, featured DESC, id DESC LIMIT 20`).all();
     initialJobs = results || [];
     const { results: cr } = await env.DB.prepare(`SELECT COUNT(*) as total FROM jobs WHERE ${PUBLIC_JOB_STATUS_SQL}`).all();
     initialTotal = cr[0]?.total || 0;
@@ -235,7 +235,6 @@ export async function renderMainHTML(env, base, user = null) {
 <head>
 ${googleAnalyticsTag(settings.ga_measurement_id)}
 <meta charset="UTF-8">
-<meta name='impact-site-verification' value='e153d47f-855f-4456-925c-57435d2391ee'>
 <meta name="google-site-verification" content="7Q0EJk3kQKNLNzIhyzH4k5CsuHsQEa-U0Pwp_w_b0n0"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>${siteName} — ${escapeHtml(settings.site_tagline)}</title>
