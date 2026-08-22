@@ -173,7 +173,50 @@ export async function handleCompanyRoute(url, request, env, base) {
 
   // ── Jobs ──
   if (url.pathname === '/company/jobs' && request.method === 'GET') {
-    return new Response(await renderCompanyJobsPage(env, user, company, ctx), { headers: HTML });
+    const statusFilter = url.searchParams.get('status') || '';
+    return new Response(await renderCompanyJobsPage(env, user, company, ctx, statusFilter, csrfToken), { headers: HTML });
+  }
+
+  // Pause / Resume / Close / Archive — all four are pure status
+  // transitions on a row the company already owns, so they share one
+  // handler instead of four near-identical blocks. `edit_job` is the
+  // same capability the existing job-edit flow would use — pausing your
+  // own listing is a lighter action than editing its content, not a
+  // heavier one, so gating it any stricter would be inconsistent.
+  const jobActionMatch = url.pathname.match(/^\/company\/jobs\/(\d+)\/(pause|resume|close|archive)$/);
+  if (jobActionMatch && request.method === 'POST') {
+    const capable = await requireCompanyCapability(env, user.id, company.id, 'edit_job');
+    if (!capable) return new Response('Forbidden', { status: 403 });
+    const { ok } = await requireCsrf(request);
+    if (!ok) return new Response(null, { status: 302, headers: { 'Location': `/company/jobs?flash=${encodeURIComponent('Session expired — please try again.')}` } });
+
+    const jobId = parseInt(jobActionMatch[1], 10);
+    const action = jobActionMatch[2];
+    // OWNERSHIP CHECK (plan §6): the WHERE clause below requires
+    // company_id = ? in the SAME statement as the UPDATE — this is what
+    // makes it structurally impossible for a recruiter at Company A to
+    // pause/close/archive a job belonging to Company B by guessing or
+    // enumerating job ids in the URL, even though requireCompanyCapability
+    // above already confirmed they're a legitimate member of Company A.
+    // A capable member of the WRONG company still can't touch this row:
+    // the UPDATE simply matches zero rows and changes nothing.
+    const newStatus = action === 'pause' ? 'paused' : action === 'resume' ? 'active' : action === 'close' ? 'closed' : 'archived';
+    // resume only makes sense coming from paused/closed; pause only from
+    // active — restricting the FROM-state per action prevents nonsense
+    // transitions (e.g. "resuming" an already-archived job back to live
+    // via a replayed form submission) without needing a bigger state
+    // machine library for four transitions.
+    const allowedFrom = action === 'resume' ? ['paused', 'closed'] : action === 'pause' ? ['active'] : ['active', 'paused', 'closed'];
+    const fromPlaceholders = allowedFrom.map(() => '?').join(',');
+    const r = await env.DB.prepare(
+      `UPDATE jobs SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND company_id = ? AND status IN (${fromPlaceholders})`
+    ).bind(newStatus, jobId, company.id, ...allowedFrom).run();
+
+    if (r.meta?.changes > 0) {
+      await logActivity(env, `job_${action}d_by_company`, String(jobId), { companyId: company.id, userId: user.id });
+    }
+    const msg = r.meta?.changes > 0 ? `Job ${action === 'resume' ? 'resumed' : action + 'd'}.` : 'No change — the job may already be in that state, or belongs to a different company.';
+    return new Response(null, { status: 302, headers: { 'Location': `/company/jobs?flash=${encodeURIComponent(msg)}` } });
   }
 
   // ── Post a Job ──

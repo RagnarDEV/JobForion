@@ -9,6 +9,7 @@ import {
 import { getPosts } from '../lib/blog-cms.js';
 import { getCategoryOrder } from '../lib/categories.js';
 import { getSettings } from '../lib/settings.js';
+import { PUBLIC_JOB_STATUS_SQL } from '../config/constants.js';
 
 // PERFORMANCE + RELIABILITY: cache every sitemap variant at Cloudflare's
 // edge for 1 hour. Without this, EVERY request (including repeated crawler
@@ -87,7 +88,7 @@ export async function handleFeedRoute(url, env, base, ctx) {
 
   if (url.pathname === '/feed.rss') {
     const settings = await getSettings(env);
-    const { results } = await env.DB.prepare("SELECT * FROM jobs ORDER BY id DESC LIMIT 50").all();
+    const { results } = await env.DB.prepare(`SELECT * FROM jobs WHERE ${PUBLIC_JOB_STATUS_SQL} ORDER BY id DESC LIMIT 50`).all();
     const jobItems = results.map(j => `<item>
         <title><![CDATA[${j.title} at ${j.company}]]></title>
         <link>${base}/job/${j.id}</link>

@@ -93,7 +93,15 @@ export async function handlePagesRoute(url, request, env, base) {
   const jobMatch = url.pathname.match(/^\/job\/(\d+)$/);
   if (jobMatch) {
     const { results } = await env.DB.prepare("SELECT * FROM jobs WHERE id = ?").bind(jobMatch[1]).all();
-    if (!results.length) return renderJobGonePage(env, base, jobMatch[1]);
+    // A row existing but status != 'active' (paused/closed by its owner,
+    // or expired/archived by db/cleanup.js's lifecycle — see Job
+    // Management, Stage 5) is publicly indistinguishable from a fully
+    // deleted job: either way, this is not something the public should
+    // be able to view or apply to right now. renderJobGonePage's
+    // "no longer available" / 410 treatment is exactly the correct
+    // message for both cases, so it's reused as-is rather than adding a
+    // second near-identical page for "exists but not active".
+    if (!results.length || results[0].status !== 'active') return renderJobGonePage(env, base, jobMatch[1]);
     const job = results[0];
     // NOTE: the old jobdatalake-specific description backfill (a second
     // fetch to api.jobdatalake.com by job_handle) was removed along with
@@ -102,7 +110,7 @@ export async function handlePagesRoute(url, request, env, base) {
     // description in its single list request; Workable/Workday/iCIMS
     // degrade to a short/empty description by design rather than costing
     // a second request per job (see each provider's own comments).
-    const { results: related } = await env.DB.prepare("SELECT * FROM jobs WHERE id != ? ORDER BY RANDOM() LIMIT 4").bind(jobMatch[1]).all();
+    const { results: related } = await env.DB.prepare("SELECT * FROM jobs WHERE id != ? AND status = 'active' ORDER BY RANDOM() LIMIT 4").bind(jobMatch[1]).all();
     return new Response(await renderJobPage(job, related, base, env, user), { headers: { "Content-Type": "text/html; charset=utf-8" } });
   }
 
