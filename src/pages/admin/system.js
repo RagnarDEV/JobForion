@@ -6,6 +6,7 @@
 // no new mutation logic, just a fuller view of what's already there.
 
 import { ensureTable } from '../../db/schema.js';
+import { JOB_STATUS_ORDER, JOB_STATUS_META } from '../../config/constants.js';
 
 // Tables considered safe/useful to show a row count for. Deliberately an
 // explicit allow-list (not "every table in sqlite_master") so a future
@@ -14,6 +15,12 @@ const COUNTED_TABLES = [
   'jobs', 'subscribers', 'job_postings', 'api_sources', 'categories',
   'pages', 'blog_posts', 'nav_buttons', 'visits', 'admin_activity_log',
   'rate_limits', 'hidden_companies', 'directory_overrides',
+  // Stage 7 addition — plan §28 explicitly asks for company/user/
+  // applications/saved-jobs counts, which simply weren't in this
+  // allow-list yet (every one of these tables already existed since
+  // Stages 1/3/5 — this is purely making them visible here, not a new
+  // table or query pattern).
+  'companies', 'users', 'saved_jobs', 'applications', 'company_members',
 ];
 
 export async function renderSystemContent(env) {
@@ -39,6 +46,25 @@ export async function renderSystemContent(env) {
     "SELECT COUNT(*) c FROM jobs WHERE salary IS NOT NULL AND salary != '' AND salary_min_usd IS NULL"
   );
   const salaryRemaining = salaryRemainingRows?.[0]?.c || 0;
+
+  // ── Data Integrity report (plan §29) — read-only diagnostics only.
+  // Nothing here is auto-fixed or deleted; an admin decides what (if
+  // anything) to do about a nonzero count. All four are cheap: the first
+  // two use idx_saved_jobs_job/idx_applications_job (already existed),
+  // the status breakdown uses idx_jobs_status, and NOT EXISTS avoids
+  // pulling any actual row data into memory just to count it.
+  const [{ results: orphanSavedRows }, { results: orphanAppRows }, { results: jobStatusRows }] = await Promise.all([
+    // Possible since Job Management's (Stage 5) 3-phase lifecycle can
+    // eventually hard-delete a job ~89 days after it goes stale — a
+    // saved_jobs row surviving that isn't a bug, it's expected, but an
+    // admin should be able to SEE the count exists.
+    q("SELECT COUNT(*) c FROM saved_jobs sj WHERE NOT EXISTS (SELECT 1 FROM jobs j WHERE j.id = sj.job_id)"),
+    q("SELECT COUNT(*) c FROM applications a WHERE NOT EXISTS (SELECT 1 FROM jobs j WHERE j.id = a.job_id)"),
+    q("SELECT status, COUNT(*) c FROM jobs GROUP BY status"),
+  ]);
+  const orphanSaved = orphanSavedRows?.[0]?.c || 0;
+  const orphanApps = orphanAppRows?.[0]?.c || 0;
+  const jobStatusMap = Object.fromEntries((jobStatusRows || []).map(r => [r.status || 'active', r.c]));
 
   return `
   <div class="adm-wrap">
@@ -78,6 +104,21 @@ export async function renderSystemContent(env) {
             <div style="font-size:16px;font-weight:800;color:var(--ink)">${tableCounts[t] === null ? '—' : tableCounts[t].toLocaleString()}</div>
           </div>`).join('')}
         </div>
+      </div>
+      <div class="adm-card" style="grid-column:span 2">
+        <div class="adm-card-title">Jobs by Status <span style="font-weight:400;color:var(--ink3);font-size:12px">— see Job Management's lifecycle</span></div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:10px">
+          ${JOB_STATUS_ORDER.map(s => `<div style="background:var(--surface2);border-radius:10px;padding:10px 12px">
+            <div style="font-size:10px;color:${JOB_STATUS_META[s].color};text-transform:uppercase;font-weight:700;margin-bottom:4px">${JOB_STATUS_META[s].label}</div>
+            <div style="font-size:16px;font-weight:800;color:var(--ink)">${(jobStatusMap[s] || 0).toLocaleString()}</div>
+          </div>`).join('')}
+        </div>
+      </div>
+      <div class="adm-card" style="grid-column:span 2">
+        <div class="adm-card-title">Data Integrity <span style="font-weight:400;color:var(--ink3);font-size:12px">— read-only diagnostic, nothing is auto-fixed</span></div>
+        <div class="adm-row"><span class="adm-row-label">Saved Jobs pointing to a deleted job</span><span class="adm-row-val" style="color:${orphanSaved ? 'var(--coral)' : 'var(--green)'}">${orphanSaved.toLocaleString()}</span></div>
+        <div class="adm-row"><span class="adm-row-label">Applications pointing to a deleted job</span><span class="adm-row-val" style="color:${orphanApps ? 'var(--coral)' : 'var(--green)'}">${orphanApps.toLocaleString()}</span></div>
+        <div style="font-size:10.5px;color:var(--ink3);margin-top:8px">${(orphanSaved + orphanApps) ? 'A nonzero count here is expected over time — jobs are only ever hard-deleted after passing through Expired → Archived (see Job Management), roughly 89 days of inactivity. It means a user saved/applied to a job that has since been permanently removed.' : 'No orphaned references found.'}</div>
       </div>
       <div class="adm-card" style="grid-column:span 2">
         <div class="adm-card-title">Salary Data Backfill <span style="font-weight:400;color:var(--ink3);font-size:12px">— normalizes free-text salaries (e.g. "$90k - $130k") into sortable/filterable USD numbers</span></div>
