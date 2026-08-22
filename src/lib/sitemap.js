@@ -23,6 +23,7 @@ import { listCompanies, listSkills, listCountries, MIN_JOBS_FOR_INDEXING } from 
 import { getPages } from './pages-cms.js';
 import { getPosts } from './blog-cms.js';
 import { listPublicCompanies } from './companies.js';
+import { PUBLIC_JOB_STATUS_SQL } from '../config/constants.js';
 
 // Google's sitemap protocol caps a single file at 50,000 URLs. 20,000 per
 // job-chunk keeps meaningful headroom under that limit (a single chunk
@@ -44,7 +45,7 @@ ${urls.join('')}
 
 export async function getJobCount(env) {
   try {
-    const { results } = await env.DB.prepare("SELECT COUNT(*) c FROM jobs").all();
+    const { results } = await env.DB.prepare(`SELECT COUNT(*) c FROM jobs WHERE ${PUBLIC_JOB_STATUS_SQL}`).all();
     return results[0]?.c || 0;
   } catch (e) { return 0; }
 }
@@ -110,7 +111,7 @@ export async function buildJobsSitemapXml(env, base, page) {
   const urls = [];
   try {
     const { results } = await env.DB.prepare(
-      "SELECT id, created_at FROM jobs ORDER BY id DESC LIMIT ? OFFSET ?"
+      `SELECT id, created_at FROM jobs WHERE ${PUBLIC_JOB_STATUS_SQL} ORDER BY id DESC LIMIT ? OFFSET ?`
     ).bind(JOBS_PER_SITEMAP, offset).all();
     for (const j of results || []) {
       urls.push(urlTag(`${base}/job/${j.id}`, {
