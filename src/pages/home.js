@@ -235,6 +235,7 @@ export async function renderMainHTML(env, base, user = null) {
 <head>
 ${googleAnalyticsTag(settings.ga_measurement_id)}
 <meta charset="UTF-8">
+<meta name='impact-site-verification' value='e153d47f-855f-4456-925c-57435d2391ee'>
 <meta name="google-site-verification" content="7Q0EJk3kQKNLNzIhyzH4k5CsuHsQEa-U0Pwp_w_b0n0"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>${siteName} — ${escapeHtml(settings.site_tagline)}</title>
