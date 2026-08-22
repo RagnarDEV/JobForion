@@ -5,7 +5,7 @@
 import { syncJobs } from '../db/sync.js';
 import { PROVIDERS } from '../providers/index.js';
 import { checkRateLimit } from '../lib/rate-limit.js';
-import { JOB_TYPE_SORT_SQL, PUBLIC_JOB_STATUS_SQL } from '../config/constants.js';
+import { JOB_TYPE_SORT_SQL, PUBLIC_JOB_STATUS_SQL, JOB_LISTING_COLUMNS } from '../config/constants.js';
 import { resolveRawNames } from '../lib/directory-overrides.js';
 import { getSettings } from '../lib/settings.js';
 import { logActivity } from '../lib/activity-log.js';
@@ -185,7 +185,7 @@ export async function handleApiRoute(url, request, env) {
     if (company) { conditions.push("company = ?"); params.push(company); }
     const where = conditions.length ? " WHERE " + conditions.join(" AND ") : "";
     const [{ results }, { results: cr }, verifiedCompanySet] = await Promise.all([
-      env.DB.prepare(`SELECT * FROM jobs${where} ORDER BY ${JOB_TYPE_SORT_SQL} ASC, featured DESC, id DESC LIMIT ${limit} OFFSET ${offset}`).bind(...params).all(),
+      env.DB.prepare(`SELECT ${JOB_LISTING_COLUMNS} FROM jobs${where} ORDER BY ${JOB_TYPE_SORT_SQL} ASC, featured DESC, id DESC LIMIT ${limit} OFFSET ${offset}`).bind(...params).all(),
       env.DB.prepare(`SELECT COUNT(*) as total FROM jobs${where}`).bind(...params).all(),
       getVerifiedCompanyNameSet(env), // 60s-cached, see lib/companies.js — drives the "✓ Verified" badge client-side (plan §8)
     ]);
