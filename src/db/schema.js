@@ -782,5 +782,25 @@ export async function ensureAccountTables(env) {
   await ensureColumn(env, 'job_postings', 'skills', 'TEXT');
   await ensureColumn(env, 'job_postings', 'seniority', 'TEXT');
 
+  // ── Job Management (Stage 5) — additive ─────────────────────────
+  // Admin's chosen reason when rejecting a job_postings row (plan §10).
+  // NULL for the vast majority of rows (approved, or rejected before this
+  // column existed) — never touches jobs already approved into `jobs`.
+  await ensureColumn(env, 'job_postings', 'rejection_reason', 'TEXT');
+
+  // Indexes for the query patterns Job Management actually runs:
+  // admin/company filtering by status, cleanup's source/expiry scan, and
+  // the new company-jobs page's "my jobs, this status" lookup.
+  await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status)`).run();
+  await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_jobs_source ON jobs(source)`).run();
+  await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_jobs_created_at ON jobs(created_at)`).run();
+  await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_jobs_expires_at ON jobs(expires_at)`).run();
+  await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_job_postings_company_status ON job_postings(company_id, status)`).run();
+  // Powers per-job view counts on the company dashboard (COUNT(*) FROM
+  // visits WHERE path = '/job/:id') — visits has no index at all today,
+  // and this table only ever grows, so this is worth adding now rather
+  // than waiting for it to show up as a slow query later.
+  await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_visits_path ON visits(path)`).run();
+
   accountSchemaEnsured = true;
 }
