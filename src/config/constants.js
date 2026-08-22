@@ -60,3 +60,62 @@ export const JOB_TYPE_ORDER = ['Sponsored', 'Premium', 'Featured', 'Free'];
 // missing job_type never breaks sorting.
 export const JOB_TYPE_SORT_SQL = "CASE job_type WHEN 'Sponsored' THEN 0 WHEN 'Premium' THEN 1 WHEN 'Featured' THEN 2 ELSE 3 END";
 
+// ════════════════════════════════════════════════════════════════
+// JOB STATUS LIFECYCLE (Job Management, Stage 5) — single source of
+// truth, same pattern as JOB_TYPE_SORT_SQL above.
+//
+// The underlying DB value stays 'active' for a live/published job —
+// deliberately NOT renamed to 'published', since that string is already
+// hardcoded in dozens of places across sync.js, db/schema.js's column
+// default, every admin/company approval handler, and every provider's
+// saveJobs() call from before this stage existed. Renaming the stored
+// value would need a data migration touching every existing row for a
+// purely cosmetic difference; JOB_STATUS_META below is what makes the
+// admin/company UI still SAY "Published" without that risk. Anywhere
+// this file says "active", read it as "published and publicly visible".
+//
+// New statuses added in this stage: paused, closed (both employer/
+// admin-initiated, reversible), expired, archived (both lifecycle-
+// initiated by db/cleanup.js, a one-way trip toward eventual deletion).
+// job_postings (pre-approval) has its own separate, disjoint status
+// values (draft/pending/approved/rejected) — never confuse the two
+// tables' status columns; a job_postings row never has 'active' and a
+// jobs row never has 'pending'.
+// ════════════════════════════════════════════════════════════════
+export const JOB_STATUS_META = {
+  active: { label: 'Published', color: '#0FAE79' },
+  paused: { label: 'Paused', color: '#F5A623' },
+  closed: { label: 'Closed', color: '#8890A4' },
+  expired: { label: 'Expired', color: '#FF5C7A' },
+  archived: { label: 'Archived', color: '#525A72' },
+};
+export const JOB_STATUS_ORDER = ['active', 'paused', 'closed', 'expired', 'archived'];
+
+// The ONE filter every public-facing job query must apply — home page,
+// /api/jobs, category/company/skill/country pages, search, sitemap, RSS.
+// A job leaves public visibility the instant its status changes to
+// anything else (paused/closed by its owner, or expired/archived by
+// db/cleanup.js's lifecycle) without needing a second "is this visible"
+// flag anywhere. Admin and company-owned-jobs queries intentionally do
+// NOT use this — they need to see every status to manage it.
+export const PUBLIC_JOB_STATUS_SQL = "jobs.status = 'active'";
+
+// job_postings.status values (pre-approval pipeline — see
+// routes/company.router.js and routes/admin/jobs.router.js). Kept
+// separate from JOB_STATUS_META above on purpose (see comment there).
+export const POSTING_STATUS_META = {
+  draft: { label: 'Draft', color: '#8890A4' },
+  pending: { label: 'Pending Review', color: '#F5A623' },
+  approved: { label: 'Approved', color: '#0FAE79' },
+  rejected: { label: 'Rejected', color: '#FF5C7A' },
+};
+export const REJECTION_REASONS = [
+  'Incomplete information',
+  'Invalid company',
+  'Invalid job',
+  'Duplicate',
+  'Suspicious content',
+  'Broken application link',
+  'Other',
+];
+
