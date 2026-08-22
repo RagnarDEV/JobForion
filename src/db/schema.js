@@ -105,6 +105,30 @@ export async function ensureTable(env) {
   // SmartRecruiters, Workable, Teamtailor, Recruitee, Workday, iCIMS.
   await ensureColumn(env, 'api_sources', 'provider', "TEXT DEFAULT 'greenhouse'");
 
+  // ── Providers Improvements (Stage 6) — persisted per-source health ──
+  // Previously "is this provider healthy?" had to be RE-DERIVED on every
+  // dashboard load by scanning the latest sync_logs row's `details` JSON
+  // for this provider's name — which only ever reflected the SINGLE most
+  // recent sync run, with no memory of a genuinely failing source vs one
+  // that had one bad run. These columns are written directly by
+  // db/sync.js after every attempt (success or failure) for every source,
+  // giving each one its own persistent, queryable history.
+  await ensureColumn(env, 'api_sources', 'last_synced_at', 'DATETIME');
+  await ensureColumn(env, 'api_sources', 'last_success_at', 'DATETIME');
+  await ensureColumn(env, 'api_sources', 'last_error', 'TEXT');
+  // Machine-readable classification of last_error (see classifyError() in
+  // db/sync.js) — RATE_LIMITED / UNAUTHORIZED / NOT_FOUND / SERVER_ERROR /
+  // NETWORK_ERROR / TIMEOUT / INVALID_RESPONSE / UNKNOWN. Lets the admin
+  // UI show a distinct "Rate Limited" badge instead of a generic "Failed"
+  // one, without re-parsing the error message string every render.
+  await ensureColumn(env, 'api_sources', 'last_error_type', 'TEXT');
+  // Resets to 0 on every success; only a source with 3+ CONSECUTIVE
+  // failures is shown as genuinely "Failed" in the admin UI — a single
+  // transient blip on an otherwise-healthy source shouldn't read the same
+  // as one that's been broken for days (plan §3's Active/Failed
+  // distinction).
+  await ensureColumn(env, 'api_sources', 'consecutive_failures', 'INTEGER DEFAULT 0');
+
   await env.DB.prepare(`
     CREATE TABLE IF NOT EXISTS job_postings (
       id INTEGER PRIMARY KEY AUTOINCREMENT,

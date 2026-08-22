@@ -102,12 +102,12 @@ function estimateSubrequests(capForThisProvider, apiKey) {
 // Sources (api_sources table)
 // ────────────────────────────────────────────────────────────────
 
-export async function getActiveSources(env) {
+export async function getActiveSources(env, { onlyProvider = null } = {}) {
   const sources = [];
   try {
-    const { results } = await env.DB.prepare(`SELECT label, api_key, provider FROM api_sources WHERE active = 1`).all();
+    const { results } = await env.DB.prepare(`SELECT id, label, api_key, provider FROM api_sources WHERE active = 1`).all();
     (results || []).forEach(r => {
-      if (r.api_key && r.provider) sources.push({ label: r.label, api_key: r.api_key, provider: r.provider });
+      if (r.api_key && r.provider && (!onlyProvider || r.provider === onlyProvider)) sources.push({ id: r.id, label: r.label, api_key: r.api_key, provider: r.provider });
     });
   } catch (e) {}
   const seen = new Set();
@@ -147,18 +147,116 @@ export async function insertApiSource(env, label, apiKey, provider = 'greenhouse
 }
 
 // ────────────────────────────────────────────────────────────────
+// PER-PROVIDER CONCURRENCY LOCK (plan §14) — the scheduled cron and a
+// manual "Sync Now" click (see routes/api.router.js) are two separate
+// Worker invocations that can genuinely overlap in time. Without a lock,
+// both could fetch + write the same provider's boards concurrently:
+// wasted subrequest budget (two full fetches of the same data), noisy
+// interleaved sync_logs, and — since two invocations mean two separate
+// in-memory `counters` objects — misleading per-run stats even though
+// jobs.url's UNIQUE constraint keeps the DATA itself safe either way.
+//
+// Reuses the existing `site_settings` key-value table (see
+// lib/settings.js) rather than a new table — these keys are internal
+// system state, never rendered in the Settings UI, so they're written
+// directly here rather than through setSettings()'s SETTINGS_KEYS
+// allow-list (which exists specifically to keep admin-facing settings
+// separate from things like this).
+const LOCK_STALE_MS = 5 * 60 * 1000; // a lock older than this is treated as abandoned (crashed invocation) rather than genuinely in-progress
+
+async function acquireProviderLock(env, providerId) {
+  const key = `_sync_lock_${providerId}`;
+  try {
+    const { results } = await env.DB.prepare(`SELECT value FROM site_settings WHERE key = ?`).bind(key).all();
+    const existing = results?.[0]?.value;
+    if (existing && (Date.now() - parseInt(existing, 10)) < LOCK_STALE_MS) return false; // genuinely still running elsewhere
+    await env.DB.prepare(
+      `INSERT INTO site_settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP`
+    ).bind(key, String(Date.now())).run();
+    return true;
+  } catch (e) {
+    return true; // fail OPEN — a broken lock table must never permanently block syncing
+  }
+}
+
+async function releaseProviderLock(env, providerId) {
+  try { await env.DB.prepare(`DELETE FROM site_settings WHERE key = ?`).bind(`_sync_lock_${providerId}`).run(); } catch (e) {}
+}
+
+// ────────────────────────────────────────────────────────────────
+// Per-source health persistence (plan §3) — called once per source after
+// EVERY attempt, success or failure, so api_sources always reflects real,
+// current status instead of it having to be re-derived from the latest
+// sync_logs row on every dashboard render.
+// ────────────────────────────────────────────────────────────────
+async function recordSourceOutcome(env, sourceId, { success, errorType, errorMessage }) {
+  try {
+    if (success) {
+      await env.DB.prepare(
+        `UPDATE api_sources SET last_synced_at = CURRENT_TIMESTAMP, last_success_at = CURRENT_TIMESTAMP, last_error = NULL, last_error_type = NULL, consecutive_failures = 0 WHERE id = ?`
+      ).bind(sourceId).run();
+    } else {
+      await env.DB.prepare(
+        `UPDATE api_sources SET last_synced_at = CURRENT_TIMESTAMP, last_error = ?, last_error_type = ?, consecutive_failures = consecutive_failures + 1 WHERE id = ?`
+      ).bind((errorMessage || '').slice(0, 300), errorType || 'UNKNOWN', sourceId).run();
+    }
+  } catch (e) { /* health bookkeeping must never fail the actual sync */ }
+}
+
+// ────────────────────────────────────────────────────────────────
 // Retry / dedupe / save
 // ────────────────────────────────────────────────────────────────
 
-// Retrying is only worth it for transient failures (network blips, HTTP
-// 5xx). A 402 (payment required) or 429 (rate limited) will not succeed on
-// immediate retry — retrying it just burns 2-3x the subrequest budget for
-// zero benefit, which is exactly what was starving other providers.
-function isRetryable(err) {
-  const match = err && typeof err.message === 'string' && err.message.match(/^HTTP (\d{3})/);
-  if (match) return parseInt(match[1], 10) >= 500;
-  return true; // network errors / timeouts are worth one retry
+// ────────────────────────────────────────────────────────────────
+// Error classification (plan §5) — every provider's fetchJobs() throws a
+// plain Error with a message like "HTTP 429" or a native network/abort
+// exception; this turns that into a stable, machine-readable category
+// used for (a) deciding retry behavior below, (b) the human-readable
+// label persisted to api_sources.last_error_type, and (c) clearer sync
+// log lines than a bare "HTTP 429" ever was.
+// ────────────────────────────────────────────────────────────────
+function classifyError(err) {
+  const msg = err && typeof err.message === 'string' ? err.message : String(err || 'Unknown error');
+  const httpMatch = msg.match(/^HTTP (\d{3})/);
+  if (httpMatch) {
+    const code = parseInt(httpMatch[1], 10);
+    if (code === 429) return { type: 'RATE_LIMITED', retryable: true, label: 'Rate limited (429)' };
+    if (code === 401) return { type: 'UNAUTHORIZED', retryable: false, label: 'Unauthorized (401)' };
+    if (code === 403) return { type: 'FORBIDDEN', retryable: false, label: 'Forbidden (403)' };
+    if (code === 404) return { type: 'NOT_FOUND', retryable: false, label: 'Not found (404) — check the company identifier' };
+    if (code === 400) return { type: 'BAD_REQUEST', retryable: false, label: 'Bad request (400)' };
+    if (code >= 500) return { type: 'SERVER_ERROR', retryable: true, label: `Provider server error (${code})` };
+    return { type: 'HTTP_ERROR', retryable: false, label: `HTTP ${code}` };
+  }
+  if (err && err.name === 'AbortError') return { type: 'TIMEOUT', retryable: true, label: 'Request timed out' };
+  if (msg.includes('Unexpected token') || msg.includes('JSON')) return { type: 'INVALID_RESPONSE', retryable: false, label: 'Invalid/unparseable response' };
+  if (msg.startsWith('DB ')) return { type: 'DATABASE_ERROR', retryable: false, label: msg };
+  // Native fetch() network failures (DNS, connection reset, TLS, etc.)
+  // don't carry a structured code — treated as retryable, same as before.
+  return { type: 'NETWORK_ERROR', retryable: true, label: msg.slice(0, 100) };
 }
+
+// Retrying is only worth it for transient failures: network blips,
+// timeouts, HTTP 5xx, and now HTTP 429 (plan §7 — rate limits ARE worth
+// retrying, just not immediately). A 401/403/404/400 or invalid job data
+// will not succeed on immediate retry — retrying those just burns 2-3x
+// the subrequest budget for zero benefit, which is exactly what was
+// starving other providers before this classification existed.
+function isRetryable(err) {
+  return classifyError(err).retryable;
+}
+
+// BACKOFF (plan §6/§7): previously every retry fired immediately with no
+// delay at all, which for a 5xx is marginal and for a 429 specifically is
+// close to useless — hitting the same rate limit again a few
+// milliseconds later. Exponential backoff (500ms, then 1500ms) gives a
+// rate-limited provider a real chance to recover between attempts while
+// staying well inside a single Worker invocation's execution time
+// budget even in the worst case (2 providers × 2 retries × ~2s ≈ a few
+// seconds total, not minutes). Reuses the same `sleep` helper defined
+// near the top of this file for DELAY_BETWEEN_QUERIES_MS.
+const RETRY_BACKOFF_MS = [500, 1500];
 
 async function withRetry(fn, retries) {
   let lastErr;
@@ -168,6 +266,7 @@ async function withRetry(fn, retries) {
     } catch (e) {
       lastErr = e;
       if (!isRetryable(e)) break;
+      if (attempt < retries) await sleep(RETRY_BACKOFF_MS[attempt] || RETRY_BACKOFF_MS[RETRY_BACKOFF_MS.length - 1]);
     }
   }
   throw lastErr;
@@ -256,8 +355,15 @@ function enrichJobFromDescription(j) {
 
 async function saveJobs(env, jobs, counters, errorLog, providerId) {
   const validJobs = (jobs || []).filter((j) => j && j.url).map(enrichJobFromDescription);
-  counters.skipped += (jobs || []).length - validJobs.length;
+  const skippedCount = (jobs || []).length - validJobs.length;
+  counters.skipped += skippedCount;
   let batchesUsed = 0; // returned so the caller's subrequest budget stays accurate
+  // Per-call breakdown (plan §4: Jobs Fetched/Added/Updated/Skipped per
+  // PROVIDER, not just globally across the whole run) — `counters` above
+  // stays as the run-wide total every existing caller already relies on;
+  // this is purely additive, returned alongside batchesUsed so
+  // syncJobs()'s providerStats entries can be accurate per-source.
+  const own = { fetched: (jobs || []).length, inserted: 0, updated: 0, skipped: skippedCount, failed: 0 };
 
   for (let i = 0; i < validJobs.length; i += DB_BATCH_SIZE) {
     const chunk = validJobs.slice(i, i + DB_BATCH_SIZE);
@@ -280,10 +386,11 @@ async function saveJobs(env, jobs, counters, errorLog, providerId) {
       const results = await env.DB.batch(insertStmts);
       batchesUsed++;
       results.forEach((r, idx) => {
-        if (r.meta?.changes > 0) { counters.inserted++; insertedUrls.add(chunk[idx].url); }
+        if (r.meta?.changes > 0) { counters.inserted++; own.inserted++; insertedUrls.add(chunk[idx].url); }
       });
     } catch (e) {
       errorLog.add(providerId, `DB insert: ${e.message.slice(0, 60)}`);
+      own.failed += chunk.length;
       continue; // phase 1 itself failed for this chunk — skip phase 2 too
     }
 
@@ -303,13 +410,14 @@ async function saveJobs(env, jobs, counters, errorLog, providerId) {
       try {
         const results = await env.DB.batch(updateStmts);
         batchesUsed++;
-        results.forEach((r) => { if (r.meta?.changes > 0) counters.updated++; });
+        results.forEach((r) => { if (r.meta?.changes > 0) { counters.updated++; own.updated++; } });
       } catch (e) {
         errorLog.add(providerId, `DB update: ${e.message.slice(0, 60)}`);
+        own.failed += toUpdate.length;
       }
     }
   }
-  return batchesUsed;
+  return { batchesUsed, ...own };
 }
 
 // ROTATING WINDOW CAP — the fix for a real bug: capping via a fixed
@@ -333,9 +441,9 @@ function rotatingCapSlice(jobs, cap) {
 // Main entry point
 // ────────────────────────────────────────────────────────────────
 
-export async function syncJobs(env) {
+export async function syncJobs(env, { onlyProvider = null } = {}) {
   await ensureTable(env);
-  const sources = await getActiveSources(env);
+  const sources = await getActiveSources(env, { onlyProvider });
   // Run cheap, single-request providers (every provider currently
   // registered is ignoresQuery=true) before any future keyword-search
   // provider. Otherwise a provider that needs one subrequest could get
@@ -350,7 +458,10 @@ export async function syncJobs(env) {
   const providerStats = [];
 
   if (!sources.length) {
-    const result = { inserted: 0, updated: 0, skipped: 0, errors: ['No job sources configured — add one under Admin → API Sources'] };
+    const result = {
+      inserted: 0, updated: 0, skipped: 0,
+      errors: [onlyProvider ? `No active sources found for provider "${onlyProvider}"` : 'No job sources configured — add one under Admin → API Sources'],
+    };
     await logSync(env, result);
     return result;
   }
@@ -363,9 +474,27 @@ export async function syncJobs(env) {
   const perRunCap = warmupActive ? governor.warmupCapPerProvider : governor.hardCapPerProvider;
   subrequestsUsed = 0; // reset per invocation — this module can be reused across a warm isolate
 
+  // Providers actually attempted this run vs skipped for still holding a
+  // lock — locks are acquired/released per PROVIDER ID (not per source
+  // row), since multiple sources of the same provider are already
+  // processed sequentially within one JS loop iteration and can never
+  // race each other; the real race is this whole invocation vs a
+  // DIFFERENT overlapping invocation reaching the same provider.
+  const lockedProviders = new Set();
+
   for (const source of sources) {
     const provider = PROVIDERS[source.provider];
     if (!provider) { errorLog.add(source.provider, 'Unknown provider'); continue; }
+
+    if (!lockedProviders.has(source.provider)) {
+      const acquired = await acquireProviderLock(env, source.provider);
+      subrequestsUsed += 2; // SELECT + write — conservative, see estimateSubrequests' philosophy above
+      if (!acquired) {
+        errorLog.add(source.provider, 'Skipped — already syncing in another run (concurrent sync prevented)', undefined);
+        continue;
+      }
+      lockedProviders.add(source.provider);
+    }
 
     // SUBREQUEST BUDGET CHECK — stop picking up new sources once this
     // provider's estimated cost would risk exceeding Cloudflare's
@@ -386,6 +515,8 @@ export async function syncJobs(env) {
     const runQueries = provider.ignoresQuery ? [null] : QUERIES;
     let providerBroken = false;
     let remainingCap = perRunCap;
+    let sourceErr = null; // last error for THIS source, used for recordSourceOutcome below
+    const own = { fetched: 0, inserted: 0, updated: 0, skipped: 0, failed: 0 };
 
     for (const q of runQueries) {
       if (providerBroken) break; // first failure already indicates an account/quota-level issue — trying the other 12 keywords would just waste subrequest budget other providers need
@@ -401,23 +532,35 @@ export async function syncJobs(env) {
           jobs = rotatingCapSlice(jobs, remainingCap);
           errorLog.add(source.provider, `Capped at ${perRunCap} of ${total} jobs this run (rotating window)${warmupActive ? ' (warm-up mode)' : ''} — the rest will sync on a later run`, undefined);
         }
-        const batchesUsed = await saveJobs(env, jobs, counters, errorLog, source.provider);
-        subrequestsUsed += batchesUsed;
+        const saved = await saveJobs(env, jobs, counters, errorLog, source.provider);
+        subrequestsUsed += saved.batchesUsed;
         remainingCap -= jobs.length;
+        own.fetched += saved.fetched; own.inserted += saved.inserted; own.updated += saved.updated; own.skipped += saved.skipped; own.failed += saved.failed;
       } catch (e) {
-        errorLog.add(source.provider, e.message, q || undefined);
+        const cls = classifyError(e);
+        errorLog.add(source.provider, `${cls.label}${cls.type === 'HTTP_ERROR' || cls.type === 'NETWORK_ERROR' ? '' : ` (${cls.type})`}`, q || undefined);
+        sourceErr = { type: cls.type, message: e.message || String(e) };
         providerBroken = true;
       }
       if (runQueries.length > 1) await sleep(DELAY_BETWEEN_QUERIES_MS);
+    }
+
+    if (source.id) {
+      await recordSourceOutcome(env, source.id, sourceErr
+        ? { success: false, errorType: sourceErr.type, errorMessage: sourceErr.message }
+        : { success: true });
     }
 
     providerStats.push({
       provider: source.provider,
       label: source.label,
       inserted: counters.inserted - startInserted,
+      fetched: own.fetched, updated: own.updated, skipped: own.skipped, failed: own.failed,
       duration_ms: Date.now() - startedAt,
     });
   }
+
+  for (const providerId of lockedProviders) await releaseProviderLock(env, providerId);
 
   const result = {
     inserted: counters.inserted, updated: counters.updated, skipped: counters.skipped,
