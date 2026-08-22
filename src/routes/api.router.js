@@ -4,7 +4,7 @@
 
 import { syncJobs } from '../db/sync.js';
 import { checkRateLimit } from '../lib/rate-limit.js';
-import { JOB_TYPE_SORT_SQL } from '../config/constants.js';
+import { JOB_TYPE_SORT_SQL, PUBLIC_JOB_STATUS_SQL } from '../config/constants.js';
 import { resolveRawNames } from '../lib/directory-overrides.js';
 import { getSettings } from '../lib/settings.js';
 import { logActivity } from '../lib/activity-log.js';
@@ -150,7 +150,7 @@ export async function handleApiRoute(url, request, env) {
     // Company filter — exact match on the jobs.company column, same value
     // shape produced by listCompanies() (lib/entities.js).
     const company = url.searchParams.get("company") || "";
-    const conditions = [], params = [];
+    const conditions = [PUBLIC_JOB_STATUS_SQL], params = [];
     if (category) { conditions.push("LOWER(title) LIKE ?"); params.push(`%${category}%`); }
     if (search) { conditions.push("(LOWER(title) LIKE ? OR LOWER(company) LIKE ?)"); params.push(`%${search.toLowerCase()}%`, `%${search.toLowerCase()}%`); }
     if (remoteType) { conditions.push("remote_type = ?"); params.push(remoteType); }
