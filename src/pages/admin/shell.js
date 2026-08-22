@@ -193,6 +193,8 @@ export function adminShell(activeId, content) {
 .pp-title{font-size:13px;font-weight:700;color:var(--ink)}
 .pp-meta{font-size:11px;color:var(--ink3);margin:3px 0}
 .pp-actions{display:flex;gap:8px;flex-shrink:0}
+.pp-reject-box{display:none;gap:6px;flex-wrap:wrap;width:100%;padding-top:8px;margin-top:4px;border-top:1px dashed var(--border)}
+.pp-reject-box.show{display:flex}
 .health-row{display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)}
 .health-row:last-child{border-bottom:none}
 .health-dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:6px}

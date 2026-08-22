@@ -8,6 +8,7 @@ import { ensureTable } from '../../db/schema.js';
 import { escapeHtml } from '../../lib/entities.js';
 import { PROVIDERS } from '../../providers/index.js';
 import { BLOG_POSTS } from '../../data/blog-posts.js';
+import { JOB_STATUS_META, JOB_STATUS_ORDER, REJECTION_REASONS } from '../../config/constants.js';
 import { getRecentActivity, ACTION_LABELS } from '../../lib/activity-log.js';
 
 function barChart(rows) {
@@ -83,12 +84,21 @@ export async function renderDashboardContent(env) {
   const skillsCount = await estimateDistinctSkills(env);
 
   // ── Job Lifecycle stats (schema.js: updated_at/expires_at/source/status) ──
-  const [{ results: activeR }, { results: expiringSoonR }, { results: deletedTodayR }, { results: sourceBreakdownR }] = await Promise.all([
+  const [{ results: activeR }, { results: expiringSoonR }, { results: deletedTodayR }, { results: sourceBreakdownR }, { results: statusBreakdownR }, { results: sourceTypeR }] = await Promise.all([
     q("SELECT COUNT(*) c FROM jobs WHERE status = 'active'"),
     q("SELECT COUNT(*) c FROM jobs WHERE expires_at IS NOT NULL AND expires_at < datetime('now','+3 day')"),
     q("SELECT COALESCE(SUM(deleted),0) c FROM cleanup_logs WHERE created_at >= datetime('now','-1 day')"),
     q("SELECT COALESCE(source,'unknown') s, COUNT(*) c FROM jobs GROUP BY s ORDER BY c DESC LIMIT 12"),
+    // Job Management (Stage 5) — status breakdown across the FULL new
+    // lifecycle (active/paused/closed/expired/archived), one GROUP BY
+    // instead of five separate COUNT(*) queries.
+    q("SELECT COALESCE(status,'active') s, COUNT(*) c FROM jobs GROUP BY s"),
+    // Provider-synced vs employer-submitted vs admin-created — plan §25's
+    // "Provider Jobs" / "Company Jobs" split.
+    q("SELECT COALESCE(source_type,'provider') s, COUNT(*) c FROM jobs GROUP BY s"),
   ]);
+  const statusCounts = Object.fromEntries((statusBreakdownR || []).map(r => [r.s, r.c]));
+  const sourceTypeCounts = Object.fromEntries((sourceTypeR || []).map(r => [r.s, r.c]));
   const { results: cleanupLogs } = await q("SELECT * FROM cleanup_logs ORDER BY id DESC LIMIT 6");
   const { results: lastCleanupR } = await q("SELECT created_at FROM cleanup_logs ORDER BY id DESC LIMIT 1");
 
@@ -194,7 +204,11 @@ export async function renderDashboardContent(env) {
 
     <div class="kpi-grid">
       ${kpi('Total Jobs', (totalJobsR[0]?.c || 0).toLocaleString(), `+${jobsTodayR[0]?.c || 0} today · +${jobsWeekR[0]?.c || 0} this week`)}
-      ${kpi('Active Jobs', (activeR[0]?.c || 0).toLocaleString(), 'status = active', 'var(--green)')}
+      ${kpi('Active Jobs', (activeR[0]?.c || 0).toLocaleString(), 'Published, live now', 'var(--green)')}
+      ${kpi('Paused / Closed', ((statusCounts.paused || 0) + (statusCounts.closed || 0)).toLocaleString(), `${statusCounts.paused || 0} paused · ${statusCounts.closed || 0} closed`, 'var(--amber, #F5A623)')}
+      ${kpi('Expired / Archived', ((statusCounts.expired || 0) + (statusCounts.archived || 0)).toLocaleString(), `${statusCounts.expired || 0} expired · ${statusCounts.archived || 0} archived`, 'var(--ink3)')}
+      ${kpi('Provider Jobs', (sourceTypeCounts.provider || 0).toLocaleString(), 'Synced from ATS providers', 'var(--cyan)')}
+      ${kpi('Employer Jobs', (sourceTypeCounts.employer || 0).toLocaleString(), 'Via Post a Job', 'var(--brand2)')}
       ${kpi('Expiring Soon', (expiringSoonR[0]?.c || 0).toLocaleString(), 'Within 3 days', 'var(--amber, #F59E0B)')}
       ${kpi('Deleted Today', (deletedTodayR[0]?.c || 0).toLocaleString(), 'By daily cleanup job', 'var(--coral)')}
       ${kpi('This Month', (jobsMonthR[0]?.c || 0).toLocaleString(), 'New jobs, last 30 days', 'var(--brand2)')}
@@ -223,8 +237,16 @@ export async function renderDashboardContent(env) {
         </div>
         <div class="pp-actions">
           <form method="POST" action="/admin/postings/approve"><input type="hidden" name="id" value="${p.id}"><button class="adm-btn-sm adm-btn-approve" type="submit">✓ Approve</button></form>
-          <form method="POST" action="/admin/postings/reject"><input type="hidden" name="id" value="${p.id}"><button class="adm-btn-sm" type="submit" onclick="return confirm('Reject this posting?')">✕ Reject</button></form>
+          <button type="button" class="adm-btn-sm" onclick="document.getElementById('rejBox${p.id}').classList.toggle('show')">✕ Reject</button>
         </div>
+        <form method="POST" action="/admin/postings/reject" id="rejBox${p.id}" class="pp-reject-box">
+          <input type="hidden" name="id" value="${p.id}">
+          <select class="adm-input" name="reason" style="font-size:11px;padding:5px 8px">
+            ${REJECTION_REASONS.map(r => `<option value="${escapeHtml(r)}">${escapeHtml(r)}</option>`).join('')}
+          </select>
+          <input class="adm-input" name="reason_note" placeholder="Optional note…" style="font-size:11px;padding:5px 8px;flex:1;min-width:120px">
+          <button class="adm-btn-sm" type="submit" style="color:var(--coral)" onclick="return confirm('Reject this posting?')">Confirm Reject</button>
+        </form>
       </div>`;
       }).join('')}
     </div>` : ''}

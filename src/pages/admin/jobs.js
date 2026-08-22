@@ -3,12 +3,23 @@
 // copy-link, preview, duplicate-detection (manual review, never auto-delete),
 // and stale-job cleanup (configurable age threshold, confirmed before running).
 
-import { BASE_URL, JOB_TYPE_META, JOB_TYPE_ORDER, JOB_TYPE_SORT_SQL } from '../../config/constants.js';
+import { BASE_URL, JOB_TYPE_META, JOB_TYPE_ORDER, JOB_TYPE_SORT_SQL, JOB_STATUS_META, JOB_STATUS_ORDER, REJECTION_REASONS } from '../../config/constants.js';
 import { getCategories } from '../../lib/categories.js';
 import { ensureTable } from '../../db/schema.js';
 import { escapeHtml } from '../../lib/entities.js';
 
 const PAGE_SIZE = 30;
+// Sorting (plan §19): a fixed allow-list of (label -> real ORDER BY
+// clause) pairs — the query string only ever carries the LABEL key
+// ('newest', 'salary', ...), never a raw column name, so there is no way
+// for a crafted `?sort=` value to inject arbitrary SQL into ORDER BY.
+const SORT_OPTIONS = {
+  relevance: { label: 'Relevance', sql: `${JOB_TYPE_SORT_SQL} ASC, featured DESC, id DESC` },
+  newest: { label: 'Newest', sql: 'id DESC' },
+  oldest: { label: 'Oldest', sql: 'id ASC' },
+  updated: { label: 'Recently Updated', sql: "updated_at DESC" },
+  salary: { label: 'Highest Salary', sql: 'salary_max_usd DESC, salary_min_usd DESC' },
+};
 
 // `categoryOrder`/`categoryMap` are optional — default to empty (no
 // category column shown) only if a caller somehow forgets to pass them;
@@ -18,15 +29,17 @@ function jobRow(j, categoryOrder = [], categoryMap = {}) {
   const catMeta = cat ? categoryMap[cat] : null;
   const jt = (j.job_type && JOB_TYPE_META[j.job_type]) ? j.job_type : 'Free';
   const jtBadge = jt !== 'Free' ? `<span class="adm-jt-badge">${JOB_TYPE_META[jt].icon} ${jt}</span> ` : '';
+  const statusMeta = JOB_STATUS_META[j.status] || { label: j.status || 'active', color: 'var(--ink3)' };
   return `<tr>
     <td style="width:32px"><input type="checkbox" class="bulk-row-check" name="ids" form="bulkForm" value="${j.id}" onchange="jnBulkSync()"></td>
     <td style="max-width:220px">
       <div style="font-weight:700;font-size:12.5px;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${j.featured ? '📌 ' : ''}${jtBadge}${escapeHtml(j.title)}</div>
-      <div style="font-size:11px;color:var(--ink3)">${escapeHtml(j.company)}</div>
+      <div style="font-size:11px;color:var(--ink3)">${escapeHtml(j.company)}${j.source_type === 'employer' ? ' · <span style="color:var(--brand)">Employer</span>' : ''}</div>
     </td>
+    <td><span class="status-badge" style="background:${statusMeta.color}22;color:${statusMeta.color}">${statusMeta.label}</span></td>
     <td style="font-size:11px;color:var(--ink2)">${escapeHtml(j.location || '—')}</td>
     <td style="font-size:11px;color:var(--ink2)">${catMeta ? `${catMeta.emoji} ${escapeHtml(catMeta.label)}` : '—'}</td>
-    <td style="font-size:11px;color:var(--ink2)">${escapeHtml(j.remote_type || '—')}</td>
+    <td style="font-size:11px;color:var(--ink2)">${escapeHtml(j.source || '—')}</td>
     <td style="font-size:11px;color:var(--green);font-weight:700">${escapeHtml(j.salary || '—')}</td>
     <td style="font-size:11px;color:var(--ink3)">${j.created_at ? new Date(j.created_at).toLocaleDateString() : '—'}</td>
     <td>
@@ -53,20 +66,18 @@ function jobRow(j, categoryOrder = [], categoryMap = {}) {
 // built server-side per request; see renderJobsListContent for real usage.
 function currentQueryString() { return '__REDIRECT__'; }
 
-export async function renderJobsListContent(env, params) {
-  await ensureTable(env);
-  const categories = await getCategories(env);
-  const categoryOrder = categories.map(c => c.key);
-  const categoryMap = Object.fromEntries(categories.map(c => [c.key, { label: c.label, emoji: c.emoji, color: c.color }]));
+// Shared by renderJobsListContent (below) and the CSV export handler in
+// routes/admin/jobs.router.js, so the two can never drift apart — an
+// export must always match exactly what the admin is currently looking
+// at, filters included (plan §22: "يجب أن يحترم Filters").
+export function buildJobsFilterSql(params) {
   const qText = (params.get('q') || '').trim();
   const category = params.get('category') || '';
   const remote = params.get('remote') || '';
   const employment = params.get('employment') || '';
   const jobType = params.get('job_type') || '';
-  const page = Math.max(1, parseInt(params.get('page') || '1', 10) || 1);
-  const offset = (page - 1) * PAGE_SIZE;
-  const qsString = params.toString();
-  const redirectTarget = qsString ? `/admin/jobs?${qsString}` : '/admin/jobs';
+  const status = params.get('status') || '';
+  const source = params.get('source') || '';
 
   const where = [];
   const binds = [];
@@ -75,12 +86,29 @@ export async function renderJobsListContent(env, params) {
   if (remote) { where.push('remote_type = ?'); binds.push(remote); }
   if (employment) { where.push('employment_type = ?'); binds.push(employment); }
   if (jobType) { where.push('job_type = ?'); binds.push(jobType); }
+  if (status) { where.push('status = ?'); binds.push(status); }
+  if (source) { where.push('source = ?'); binds.push(source); }
   const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+  return { whereSql, binds, filters: { qText, category, remote, employment, jobType, status, source } };
+}
 
-  const { results: rows } = await env.DB.prepare(
-    `SELECT * FROM jobs ${whereSql} ORDER BY ${JOB_TYPE_SORT_SQL} ASC, featured DESC, id DESC LIMIT ${PAGE_SIZE} OFFSET ${offset}`
-  ).bind(...binds).all();
-  const { results: countRows } = await env.DB.prepare(`SELECT COUNT(*) c FROM jobs ${whereSql}`).bind(...binds).all();
+export async function renderJobsListContent(env, params) {
+  await ensureTable(env);
+  const categories = await getCategories(env);
+  const categoryOrder = categories.map(c => c.key);
+  const categoryMap = Object.fromEntries(categories.map(c => [c.key, { label: c.label, emoji: c.emoji, color: c.color }]));
+  const { whereSql, binds, filters: { qText, category, remote, employment, jobType, status, source } } = buildJobsFilterSql(params);
+  const sortKey = SORT_OPTIONS[params.get('sort')] ? params.get('sort') : 'relevance';
+  const page = Math.max(1, parseInt(params.get('page') || '1', 10) || 1);
+  const offset = (page - 1) * PAGE_SIZE;
+  const qsString = params.toString();
+  const redirectTarget = qsString ? `/admin/jobs?${qsString}` : '/admin/jobs';
+
+  const [{ results: rows }, { results: countRows }, { results: sourceRows }] = await Promise.all([
+    env.DB.prepare(`SELECT * FROM jobs ${whereSql} ORDER BY ${SORT_OPTIONS[sortKey].sql} LIMIT ${PAGE_SIZE} OFFSET ${offset}`).bind(...binds).all(),
+    env.DB.prepare(`SELECT COUNT(*) c FROM jobs ${whereSql}`).bind(...binds).all(),
+    env.DB.prepare(`SELECT DISTINCT source FROM jobs WHERE source IS NOT NULL AND source != '' ORDER BY source ASC`).all(),
+  ]);
   const total = countRows[0]?.c || 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
@@ -109,7 +137,10 @@ export async function renderJobsListContent(env, params) {
         <div class="adm-title">💼 Job Management</div>
         <div class="adm-sub">${total.toLocaleString()} jobs match current filters</div>
       </div>
-      <a href="/admin/jobs/duplicates" class="adm-btn">🔍 Find Duplicates</a>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <a href="/admin/jobs/duplicates" class="adm-btn">🔍 Find Duplicates</a>
+        <a href="/admin/jobs/export?${params.toString()}" class="adm-btn">⬇ Export CSV</a>
+      </div>
     </div>
 
     ${staleCount > 0 ? `
@@ -148,6 +179,14 @@ export async function renderJobsListContent(env, params) {
           <option value="hybrid" ${remote === 'hybrid' ? 'selected' : ''}>Hybrid</option>
           <option value="on_site" ${remote === 'on_site' ? 'selected' : ''}>On-site</option>
         </select>
+        <select class="adm-input" name="status" onchange="this.form.submit()">
+          <option value="">Any status</option>
+          ${JOB_STATUS_ORDER.map(s => `<option value="${s}" ${status === s ? 'selected' : ''}>${JOB_STATUS_META[s].label}</option>`).join('')}
+        </select>
+        <select class="adm-input" name="source" onchange="this.form.submit()">
+          <option value="">Any source</option>
+          ${(sourceRows || []).map(r => `<option value="${escapeHtml(r.source)}" ${source === r.source ? 'selected' : ''}>${escapeHtml(r.source)}</option>`).join('')}
+        </select>
         <select class="adm-input" name="employment" onchange="this.form.submit()">
           <option value="">Any employment type</option>
           <option value="full_time" ${employment === 'full_time' ? 'selected' : ''}>Full-time</option>
@@ -158,8 +197,11 @@ export async function renderJobsListContent(env, params) {
           <option value="">Any job type</option>
           ${JOB_TYPE_ORDER.map(t => `<option value="${t}" ${jobType === t ? 'selected' : ''}>${JOB_TYPE_META[t].icon} ${t}</option>`).join('')}
         </select>
+        <select class="adm-input" name="sort" onchange="this.form.submit()">
+          ${Object.entries(SORT_OPTIONS).map(([k, o]) => `<option value="${k}" ${sortKey === k ? 'selected' : ''}>Sort: ${o.label}</option>`).join('')}
+        </select>
         <button class="adm-btn adm-btn-primary" type="submit">Filter</button>
-        ${(qText || category || remote || employment || jobType) ? `<a href="/admin/jobs" class="adm-btn">Clear</a>` : ''}
+        ${(qText || category || remote || employment || jobType || status || source) ? `<a href="/admin/jobs" class="adm-btn">Clear</a>` : ''}
       </form>
     </div>
 
@@ -178,6 +220,9 @@ export async function renderJobsListContent(env, params) {
             ${JOB_TYPE_ORDER.map(t => `<option value="${t}">${JOB_TYPE_META[t].icon} ${t}</option>`).join('')}
           </select>
           <button type="button" class="adm-btn-sm" onclick="jnBulkAction('set_job_type')" style="color:var(--brand)">Set Job Type</button>
+          <button type="button" class="adm-btn-sm" onclick="jnBulkAction('pause')" style="color:var(--amber, #F5A623)">⏸ Pause</button>
+          <button type="button" class="adm-btn-sm" onclick="jnBulkAction('restore')" style="color:var(--green)">▶ Restore</button>
+          <button type="button" class="adm-btn-sm" onclick="jnBulkAction('archive')" style="color:var(--ink2)">🗄 Archive</button>
           <button type="button" class="adm-btn-sm" onclick="jnBulkAction('delete')" style="color:var(--coral)">🗑 Delete</button>
         </div>
       </div>
@@ -185,14 +230,15 @@ export async function renderJobsListContent(env, params) {
         <thead><tr style="text-align:left;border-bottom:1.5px solid var(--border)">
           <th style="padding:8px 6px;width:32px"><input type="checkbox" id="bulkSelectAll" onchange="jnBulkToggleAll(this)"></th>
           <th style="padding:8px 6px;color:var(--ink3);font-size:10.5px;text-transform:uppercase">Job</th>
+          <th style="padding:8px 6px;color:var(--ink3);font-size:10.5px;text-transform:uppercase">Status</th>
           <th style="padding:8px 6px;color:var(--ink3);font-size:10.5px;text-transform:uppercase">Location</th>
           <th style="padding:8px 6px;color:var(--ink3);font-size:10.5px;text-transform:uppercase">Category</th>
-          <th style="padding:8px 6px;color:var(--ink3);font-size:10.5px;text-transform:uppercase">Remote</th>
+          <th style="padding:8px 6px;color:var(--ink3);font-size:10.5px;text-transform:uppercase">Source</th>
           <th style="padding:8px 6px;color:var(--ink3);font-size:10.5px;text-transform:uppercase">Salary</th>
           <th style="padding:8px 6px;color:var(--ink3);font-size:10.5px;text-transform:uppercase">Posted</th>
           <th style="padding:8px 6px;color:var(--ink3);font-size:10.5px;text-transform:uppercase">Actions</th>
         </tr></thead>
-        <tbody>${rowsHtml || `<tr><td colspan="8" style="padding:20px;text-align:center;color:var(--ink3)">No jobs match these filters</td></tr>`}</tbody>
+        <tbody>${rowsHtml || `<tr><td colspan="9" style="padding:20px;text-align:center;color:var(--ink3)">No jobs match these filters</td></tr>`}</tbody>
       </table>
     </div>
 
@@ -232,6 +278,7 @@ export async function renderJobsListContent(env, params) {
       var checked = document.querySelectorAll('.bulk-row-check:checked').length;
       if (!checked) return;
       if (action === 'delete' && !confirm('Permanently delete ' + checked + ' job' + (checked === 1 ? '' : 's') + '? This cannot be undone.')) return;
+      if (action === 'archive' && !confirm('Archive ' + checked + ' job' + (checked === 1 ? '' : 's') + '? Archived jobs are removed from public listings and permanently deleted after 30 days.')) return;
       if (action === 'set_job_type') {
         document.getElementById('bulkJobTypeField').value = document.getElementById('bulkJobTypeSelect').value;
       }
