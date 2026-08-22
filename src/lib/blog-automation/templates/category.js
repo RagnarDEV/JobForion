@@ -4,7 +4,7 @@
 // read live from D1 at generation time; nothing is invented.
 
 import { escapeHtml, slugify, categorySalaryStats } from '../../entities.js';
-import { JOB_TYPE_SORT_SQL } from '../../../config/constants.js';
+import { JOB_TYPE_SORT_SQL, PUBLIC_JOB_STATUS_SQL } from '../../../config/constants.js';
 import { getCategoryCandidates } from '../data-analyzer.js';
 
 export const id = 'category';
@@ -22,7 +22,7 @@ export async function render(env, candidate, settings, base) {
   const companiesPerArticle = parseInt(settings.blog_auto_companies_per_article || '6', 10);
 
   const { results: jobs } = await env.DB.prepare(
-    `SELECT * FROM jobs WHERE LOWER(title) LIKE ? ORDER BY ${JOB_TYPE_SORT_SQL} ASC, id DESC LIMIT ?`
+    `SELECT * FROM jobs WHERE LOWER(title) LIKE ? AND ${PUBLIC_JOB_STATUS_SQL} ORDER BY ${JOB_TYPE_SORT_SQL} ASC, id DESC LIMIT ?`
   ).bind(`%${c.key}%`, Math.max(jobsPerArticle, 20)).all();
 
   const companyCounts = new Map();
