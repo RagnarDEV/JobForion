@@ -826,5 +826,29 @@ export async function ensureAccountTables(env) {
   // than waiting for it to show up as a slow query later.
   await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_visits_path ON visits(path)`).run();
 
+  // ── Database & Performance (Stage 7) ──────────────────────────────
+  // Composite (company_id, status) replaces the old single-column
+  // idx_jobs_company_id: every real query filtering on company_id ALSO
+  // filters on status in the same WHERE (company-jobs dashboard page,
+  // COMPANY_JOB_MATCH_SQL in lib/companies.js) — a composite index serves
+  // both that combined filter AND plain company_id-only lookups via
+  // left-prefix matching, so keeping the old single-column index around
+  // too would just be redundant write overhead on every INSERT/UPDATE
+  // for no read benefit. DROP is safe here: an index is a derived lookup
+  // structure, dropping and recreating it never touches the underlying
+  // row data.
+  await env.DB.prepare(`DROP INDEX IF EXISTS idx_jobs_company_id`).run();
+  await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_jobs_company_status ON jobs(company_id, status)`).run();
+  // Exact-match company lookups (lib/entities.js's jobsByCompany +
+  // companySnapshot, both `WHERE company = ?`) — these predate the real
+  // `companies` table/company_id and still run on every company profile
+  // page view for provider-synced jobs (which have no company_id, only
+  // the free-text name). NOT a composite with status: the two current
+  // callers either already scope status separately in the same WHERE
+  // (SQLite can still use just the company prefix efficiently) or don't
+  // filter status at all, so a plain single-column index is the correct,
+  // simpler choice here — not every index needs to be composite.
+  await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_jobs_company ON jobs(company)`).run();
+
   accountSchemaEnsured = true;
 }
