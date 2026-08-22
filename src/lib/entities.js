@@ -13,7 +13,7 @@
 // pages, but flagged for a future proper geo-normalization pass.
 // ════════════════════════════════════════════════════════════════
 
-import { JOB_TYPE_SORT_SQL } from '../config/constants.js';
+import { JOB_TYPE_SORT_SQL, PUBLIC_JOB_STATUS_SQL } from '../config/constants.js';
 import { getOverrides, applyDirectoryOverrides } from './directory-overrides.js';
 import { canonicalizeRegion } from './geo-data.js';
 
@@ -107,7 +107,7 @@ export function slugify(str) {
 export async function listCompanies(env, { limit = 200 } = {}) {
   const { results } = await env.DB.prepare(
     `SELECT company, COUNT(*) c FROM (
-       SELECT company FROM jobs WHERE company IS NOT NULL AND company != '' ORDER BY id DESC LIMIT 8000
+       SELECT company FROM jobs WHERE company IS NOT NULL AND company != '' AND ${PUBLIC_JOB_STATUS_SQL} ORDER BY id DESC LIMIT 8000
      )
      WHERE LOWER(company) NOT IN (SELECT company_lower FROM hidden_companies)
      GROUP BY company ORDER BY c DESC LIMIT ?`
@@ -122,7 +122,7 @@ export async function findCompanyBySlug(env, slug) {
 
 export async function jobsByCompany(env, companyName, { limit = 100 } = {}) {
   const { results } = await env.DB.prepare(
-    `SELECT * FROM jobs WHERE company = ? ORDER BY ${JOB_TYPE_SORT_SQL} ASC, id DESC LIMIT ?`
+    `SELECT * FROM jobs WHERE company = ? AND ${PUBLIC_JOB_STATUS_SQL} ORDER BY ${JOB_TYPE_SORT_SQL} ASC, id DESC LIMIT ?`
   ).bind(companyName, limit).all();
   return results || [];
 }
@@ -152,7 +152,7 @@ function splitLocation(location) {
 // deliberately can't do since they're the public-facing view.
 export async function listCountriesRaw(env) {
   const { results } = await env.DB.prepare(
-    `SELECT location, COUNT(*) c FROM jobs WHERE location IS NOT NULL AND location != '' GROUP BY location`
+    `SELECT location, COUNT(*) c FROM jobs WHERE location IS NOT NULL AND location != '' AND ${PUBLIC_JOB_STATUS_SQL} GROUP BY location`
   ).all();
   const map = new Map();
   for (const row of results || []) {
@@ -189,14 +189,14 @@ export async function jobsByRegion(env, regionNames, { limit = 100 } = {}) {
   const conditions = names.map(() => '(location = ? OR location LIKE ?)').join(' OR ');
   const binds = names.flatMap(n => [n, `%, ${n}`]);
   const { results } = await env.DB.prepare(
-    `SELECT * FROM jobs WHERE (${conditions}) ORDER BY ${JOB_TYPE_SORT_SQL} ASC, id DESC LIMIT ?`
+    `SELECT * FROM jobs WHERE (${conditions}) AND ${PUBLIC_JOB_STATUS_SQL} ORDER BY ${JOB_TYPE_SORT_SQL} ASC, id DESC LIMIT ?`
   ).bind(...binds, limit).all();
   return results || [];
 }
 
 export async function listCitiesRaw(env) {
   const { results } = await env.DB.prepare(
-    `SELECT location, COUNT(*) c FROM jobs WHERE location IS NOT NULL AND location != '' GROUP BY location`
+    `SELECT location, COUNT(*) c FROM jobs WHERE location IS NOT NULL AND location != '' AND ${PUBLIC_JOB_STATUS_SQL} GROUP BY location`
   ).all();
   const map = new Map();
   for (const row of results || []) {
@@ -228,7 +228,7 @@ export async function jobsByCity(env, cityNames, { limit = 100 } = {}) {
   const conditions = names.map(() => '(location = ? OR location LIKE ?)').join(' OR ');
   const binds = names.flatMap(n => [n, `${n},%`]);
   const { results } = await env.DB.prepare(
-    `SELECT * FROM jobs WHERE (${conditions}) ORDER BY ${JOB_TYPE_SORT_SQL} ASC, id DESC LIMIT ?`
+    `SELECT * FROM jobs WHERE (${conditions}) AND ${PUBLIC_JOB_STATUS_SQL} ORDER BY ${JOB_TYPE_SORT_SQL} ASC, id DESC LIMIT ?`
   ).bind(...binds, limit).all();
   return results || [];
 }
@@ -244,7 +244,7 @@ export async function listSkillsRaw(env) {
   try {
     const { results } = await env.DB.prepare(
       `SELECT value AS skill, COUNT(*) c FROM (
-         SELECT skills FROM jobs WHERE skills IS NOT NULL AND skills != '' AND skills != '[]' ORDER BY id DESC LIMIT 5000
+         SELECT skills FROM jobs WHERE skills IS NOT NULL AND skills != '' AND skills != '[]' AND ${PUBLIC_JOB_STATUS_SQL} ORDER BY id DESC LIMIT 5000
        ), json_each(skills)
        GROUP BY value ORDER BY c DESC`
     ).all();
@@ -273,7 +273,7 @@ export async function jobsBySkill(env, skillNames, { limit = 100 } = {}) {
     const placeholders = names.map(() => '?').join(',');
     const { results } = await env.DB.prepare(
       `SELECT jobs.* FROM jobs, json_each(jobs.skills)
-       WHERE json_each.value IN (${placeholders}) ORDER BY ${JOB_TYPE_SORT_SQL} ASC, jobs.id DESC LIMIT ?`
+       WHERE json_each.value IN (${placeholders}) AND ${PUBLIC_JOB_STATUS_SQL} ORDER BY ${JOB_TYPE_SORT_SQL} ASC, jobs.id DESC LIMIT ?`
     ).bind(...names, limit).all();
     return results || [];
   } catch (e) {
@@ -295,7 +295,7 @@ export async function salaryBandsByCategory(env, categoryOrder, categoryMeta) {
   const bands = [];
   for (const key of categoryOrder) {
     const { results } = await env.DB.prepare(
-      `SELECT salary FROM jobs WHERE LOWER(title) LIKE ? AND salary IS NOT NULL AND salary != ''`
+      `SELECT salary FROM jobs WHERE LOWER(title) LIKE ? AND salary IS NOT NULL AND salary != '' AND ${PUBLIC_JOB_STATUS_SQL}`
     ).bind(`%${key}%`).all();
     const ranges = (results || []).map(r => parseSalaryRange(r.salary)).filter(Boolean);
     if (!ranges.length) { bands.push({ key, label: categoryMeta[key].label, count: 0 }); continue; }
@@ -330,7 +330,7 @@ export async function categorySalaryStats(env, categoryKey) {
   try {
     const { results } = await env.DB.prepare(
       `SELECT salary FROM (
-         SELECT salary FROM jobs WHERE LOWER(title) LIKE ? AND salary IS NOT NULL AND salary != '' ORDER BY id DESC LIMIT 3000
+         SELECT salary FROM jobs WHERE LOWER(title) LIKE ? AND salary IS NOT NULL AND salary != '' AND ${PUBLIC_JOB_STATUS_SQL} ORDER BY id DESC LIMIT 3000
        )`
     ).bind(`%${categoryKey}%`).all();
     const ranges = (results || []).map(r => parseSalaryRange(r.salary)).filter(Boolean);
@@ -347,7 +347,7 @@ export async function categorySalaryStats(env, categoryKey) {
 export async function companySnapshot(env, companyName) {
   try {
     const { results } = await env.DB.prepare(
-      `SELECT COUNT(*) c, MIN(created_at) first_seen FROM jobs WHERE company = ?`
+      `SELECT COUNT(*) c, MIN(created_at) first_seen FROM jobs WHERE company = ? AND ${PUBLIC_JOB_STATUS_SQL}`
     ).bind(companyName).all();
     const row = results?.[0];
     return { openPositions: row?.c || 0, firstSeen: row?.first_seen || null };
