@@ -12,7 +12,7 @@ import { csrfField } from '../lib/accounts/csrf.js';
 import { escapeHtml } from '../lib/entities.js';
 import { listCompanyMembers } from '../lib/companies.js';
 import { BASE_URL } from '../config/constants.js';
-import { CATEGORY_ORDER, CATEGORY_META } from '../config/constants.js';
+import { CATEGORY_ORDER, CATEGORY_META, JOB_STATUS_META, POSTING_STATUS_META } from '../config/constants.js';
 import {
   iconLayoutDashboard, iconBuilding, iconBriefcase, iconPlus, iconUsers,
 } from '../assets/icons.js';
@@ -186,28 +186,96 @@ export async function renderCompanyProfilePage(user, company, ctx, { csrfToken, 
 }
 
 // ── Jobs ────────────────────────────────────────────────────────
-export async function renderCompanyJobsPage(env, user, company, ctx) {
+const JOB_TAB_STATUSES = ['', 'pending', 'draft', 'active', 'rejected', 'paused', 'closed', 'expired', 'archived'];
+const JOB_TAB_LABELS = { '': 'All', pending: 'Pending', draft: 'Draft', active: 'Published', rejected: 'Rejected', paused: 'Paused', closed: 'Closed', expired: 'Expired', archived: 'Archived' };
+
+export async function renderCompanyJobsPage(env, user, company, ctx, statusFilter = '', csrfToken = '') {
+  // job_postings (pre-approval: draft/pending/rejected) and jobs
+  // (post-approval: active/paused/closed/expired/archived) are two
+  // different tables with disjoint status vocabularies (see
+  // JOB_STATUS_META vs POSTING_STATUS_META in config/constants.js) — the
+  // tab filter has to route to the right table rather than one combined
+  // query. 'active' here means "Published" in the tab label (see
+  // constants.js's comment on why the stored value stays 'active').
+  const wantsPostings = statusFilter === '' || ['pending', 'draft', 'rejected'].includes(statusFilter);
+  const wantsJobs = statusFilter === '' || ['active', 'paused', 'closed', 'expired', 'archived'].includes(statusFilter);
+  const postingsWhere = statusFilter && wantsPostings && statusFilter !== '' ? `AND status = ?` : `AND status != 'approved'`;
+  const jobsWhere = statusFilter && wantsJobs ? `AND status = ?` : '';
+
   const [{ results: liveJobs }, { results: pendingJobs }] = await Promise.all([
-    env.DB.prepare(`SELECT * FROM jobs WHERE company_id = ? ORDER BY id DESC LIMIT 100`).bind(company.id).all(),
-    env.DB.prepare(`SELECT * FROM job_postings WHERE company_id = ? AND status != 'approved' ORDER BY id DESC LIMIT 50`).bind(company.id).all(),
+    wantsJobs
+      ? env.DB.prepare(`SELECT * FROM jobs WHERE company_id = ? ${jobsWhere} ORDER BY id DESC LIMIT 100`).bind(...(jobsWhere ? [company.id, statusFilter] : [company.id])).all()
+      : Promise.resolve({ results: [] }),
+    wantsPostings
+      ? env.DB.prepare(`SELECT * FROM job_postings WHERE company_id = ? ${postingsWhere} ORDER BY id DESC LIMIT 50`).bind(...(postingsWhere.includes('?') ? [company.id, statusFilter] : [company.id])).all()
+      : Promise.resolve({ results: [] }),
   ]);
+
+  // Views + applications in two flat bulk queries instead of one query
+  // per job (plan §30's explicit N+1 warning) — this stays exactly two
+  // queries whether the company has 3 jobs or 300.
+  const jobIds = (liveJobs || []).map(j => j.id);
+  let viewsByPath = {}, appsByJobId = {};
+  if (jobIds.length) {
+    const placeholders = jobIds.map(() => '?').join(',');
+    const jobPaths = jobIds.map(id => `/job/${id}`);
+    const [{ results: viewRows }, { results: appRows }] = await Promise.all([
+      env.DB.prepare(`SELECT path, COUNT(*) c FROM visits WHERE path IN (${placeholders}) GROUP BY path`).bind(...jobPaths).all(),
+      env.DB.prepare(`SELECT job_id, COUNT(*) c FROM applications WHERE job_id IN (${placeholders}) GROUP BY job_id`).bind(...jobIds).all(),
+    ]);
+    viewsByPath = Object.fromEntries((viewRows || []).map(r => [r.path, r.c]));
+    appsByJobId = Object.fromEntries((appRows || []).map(r => [r.job_id, r.c]));
+  }
+
+  const tabsHtml = `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">
+    ${JOB_TAB_STATUSES.map(s => `<a href="/company/jobs${s ? '?status=' + s : ''}" class="dash-btn ${statusFilter === s ? 'dash-btn-primary' : ''}" style="padding:7px 14px;font-size:12.5px">${JOB_TAB_LABELS[s]}</a>`).join('')}
+  </div>`;
+
+  const jobActionsHtml = (j) => {
+    const btn = (action, label) => `<form method="POST" action="/company/jobs/${j.id}/${action}" style="display:inline">${csrfField(csrfToken)}<button class="dash-btn-sm" type="submit">${label}</button></form>`;
+    const parts = [`<a href="/job/${j.id}" target="_blank" class="dash-btn-sm">View</a>`];
+    if (j.status === 'active') parts.push(btn('pause', 'Pause'), btn('close', 'Close'));
+    else if (j.status === 'paused') parts.push(btn('resume', 'Resume'), btn('close', 'Close'));
+    else if (j.status === 'closed') parts.push(btn('resume', 'Resume'));
+    if (['active', 'paused', 'closed', 'expired'].includes(j.status)) parts.push(btn('archive', 'Archive'));
+    return parts.join('');
+  };
+
+  const liveRows = (liveJobs || []).length ? (liveJobs || []).map(j => {
+    const meta = JOB_STATUS_META[j.status] || { label: j.status, color: 'var(--ink3)' };
+    return `<div class="dash-row" style="flex-wrap:wrap;gap:8px">
+      <div style="flex:1;min-width:200px"><div class="dash-row-main">${escapeHtml(j.title)}</div><div class="dash-row-sub">${escapeHtml(j.location || 'Remote')}${j.salary ? ' · ' + escapeHtml(j.salary) : ''} · Updated ${new Date(j.updated_at || j.created_at).toLocaleDateString()}</div></div>
+      <div style="display:flex;align-items:center;gap:14px;font-size:11.5px;color:var(--ink3)">
+        <span>👁 ${viewsByPath['/job/' + j.id] || 0} views</span>
+        <span>📋 ${appsByJobId[j.id] || 0} applications</span>
+        <span class="status-badge" style="background:${meta.color}22;color:${meta.color}">${meta.label}</span>
+      </div>
+      <div style="display:flex;gap:6px">${jobActionsHtml(j)}</div>
+    </div>`;
+  }).join('') : `<div class="dash-empty">No jobs in this view. <a href="/company/post-job" style="color:var(--brand)">Post your first job</a>.</div>`;
+
+  const pendingRows = (pendingJobs || []).length ? (pendingJobs || []).map(p => {
+    const meta = POSTING_STATUS_META[p.status] || { label: p.status, color: 'var(--ink3)' };
+    return `<div class="dash-row">
+      <div><div class="dash-row-main">${escapeHtml(p.title)}</div><div class="dash-row-sub">Submitted ${new Date(p.created_at).toLocaleDateString()}${p.status === 'rejected' && p.rejection_reason ? ' · ' + escapeHtml(p.rejection_reason) : ''}</div></div>
+      <span class="status-badge" style="background:${meta.color}22;color:${meta.color}">${meta.label}</span>
+    </div>`;
+  }).join('') : `<div class="dash-empty">Nothing here.</div>`;
+
+  const showPendingCard = wantsPostings;
+  const showLiveCard = wantsJobs;
 
   const content = `
     ${companySwitcher(ctx.companies, company.id)}
-    <div class="dash-card">
-      <div class="dash-card-title">Pending Review ${pendingJobs?.length ? `(${pendingJobs.length})` : ''}</div>
-      ${(pendingJobs || []).length ? pendingJobs.map(p => `<div class="dash-row">
-        <div><div class="dash-row-main">${escapeHtml(p.title)}</div><div class="dash-row-sub">Submitted ${new Date(p.created_at).toLocaleDateString()}</div></div>
-        <span class="status-badge ${p.status === 'rejected' ? 'status-rejected' : 'status-pending'}">${p.status === 'rejected' ? 'Rejected' : 'Pending Review'}</span>
-      </div>`).join('') : `<div class="dash-empty">Nothing pending review.</div>`}
-    </div>
-    <div class="dash-card">
-      <div class="dash-card-title">Published Jobs (${(liveJobs || []).length})</div>
-      ${(liveJobs || []).length ? liveJobs.map(j => `<div class="dash-row">
-        <div><div class="dash-row-main"><a href="/job/${j.id}" style="color:inherit">${escapeHtml(j.title)}</a></div><div class="dash-row-sub">${escapeHtml(j.location || 'Remote')}${j.salary ? ' · ' + escapeHtml(j.salary) : ''}</div></div>
-        <span class="status-badge status-active">${escapeHtml(j.status)}</span>
-      </div>`).join('') : `<div class="dash-empty">No published jobs yet. <a href="/company/post-job" style="color:var(--brand)">Post your first job</a>.</div>`}
-    </div>`;
+    ${tabsHtml}
+    ${showPendingCard ? `<div class="dash-card">
+      <div class="dash-card-title">${statusFilter ? JOB_TAB_LABELS[statusFilter] : 'Pending Review'} ${pendingJobs?.length ? `(${pendingJobs.length})` : ''}</div>
+      ${pendingRows}
+    </div>` : ''}
+    ${showLiveCard ? `<div class="dash-card">
+      <div class="dash-card-title">${statusFilter ? JOB_TAB_LABELS[statusFilter] : 'Published Jobs'} (${(liveJobs || []).length})</div>
+      ${liveRows}
+    </div>` : ''}`;
   return wrap('jobs', 'Jobs', `${(liveJobs || []).length} published · ${(pendingJobs || []).length} pending`, content, user, ctx, `<a href="/company/post-job" class="dash-btn dash-btn-primary">+ Post a Job</a>`);
 }
 
