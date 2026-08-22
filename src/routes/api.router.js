@@ -3,6 +3,7 @@
 // submissions, manual sync trigger, and a tiny debug endpoint.
 
 import { syncJobs } from '../db/sync.js';
+import { PROVIDERS } from '../providers/index.js';
 import { checkRateLimit } from '../lib/rate-limit.js';
 import { JOB_TYPE_SORT_SQL, PUBLIC_JOB_STATUS_SQL } from '../config/constants.js';
 import { resolveRawNames } from '../lib/directory-overrides.js';
@@ -218,11 +219,25 @@ export async function handleApiRoute(url, request, env) {
       return new Response(JSON.stringify({ success: false, error: 'Too many sync requests. Please wait a few minutes.' }), { status: 429, headers: { "Content-Type": "application/json" } });
     }
 
+    // Manual single-provider sync (plan §13/§21): the "Sync Now" button
+    // on each provider card in pages/admin/sources.js posts here with
+    // ?provider=greenhouse instead of triggering a full all-providers
+    // run — same auth gate, same rate limit, same PROVIDERS registry
+    // lookup already used everywhere else, so an unknown/mistyped
+    // provider id is caught before syncJobs() even runs a query.
+    const onlyProvider = url.searchParams.get('provider') || null;
+    if (onlyProvider && !PROVIDERS[onlyProvider]) {
+      const msg = `Unknown provider "${onlyProvider}"`;
+      if (request.method === 'POST') return new Response(null, { status: 302, headers: { 'Location': `/admin/sources?flash=${encodeURIComponent(msg)}` } });
+      return new Response(JSON.stringify({ success: false, error: msg }), { status: 400, headers: { "Content-Type": "application/json" } });
+    }
+
     try {
-      const result = await syncJobs(env);
+      const result = await syncJobs(env, { onlyProvider });
       if (request.method === 'POST') {
-        await logActivity(env, 'sync_run', 'manual trigger', `+${result.inserted} jobs, ${(result.errors || []).length} errors`);
-        return new Response(null, { status: 302, headers: { 'Location': '/admin' } });
+        const label = onlyProvider ? `manual trigger (${onlyProvider})` : 'manual trigger';
+        await logActivity(env, 'sync_run', label, `+${result.inserted} jobs, ${(result.errors || []).length} errors`);
+        return new Response(null, { status: 302, headers: { 'Location': onlyProvider ? `/admin/sources?flash=${encodeURIComponent(`${onlyProvider}: +${result.inserted} jobs`)}` : '/admin' } });
       }
       return new Response(JSON.stringify({ success: true, ...result }), { headers: { "Content-Type": "application/json" } });
     } catch (e) {
