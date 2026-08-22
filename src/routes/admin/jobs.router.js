@@ -7,7 +7,7 @@
 
 import { verifyAdminCookie } from '../../auth/admin-auth.js';
 import { renderAdminLogin } from '../../pages/admin.js';
-import { renderJobsListContent, renderJobEditContent, renderDuplicatesContent } from '../../pages/admin/jobs.js';
+import { renderJobsListContent, renderJobEditContent, renderDuplicatesContent, buildJobsFilterSql } from '../../pages/admin/jobs.js';
 import { adminShell } from '../../pages/admin/shell.js';
 import { JOB_TYPE_META } from '../../config/constants.js';
 import { getSettings } from '../../lib/settings.js';
@@ -16,6 +16,50 @@ import { errorPage } from './error-page.js';
 import { parseSalary } from '../../lib/salary.js';
 
 export async function handleAdminJobsRoute(url, request, env, base) {
+  // ── CSV Export (plan §22) — admin-only, respects whatever filters are
+  // currently active in the query string (shares buildJobsFilterSql with
+  // the list page so the two can never disagree about what "current
+  // filters" means). Capped at 5000 rows in one export; anything beyond
+  // that should be narrowed with filters first rather than pulling the
+  // entire table into memory in one Worker invocation.
+  if (url.pathname === '/admin/jobs/export' && request.method === 'GET') {
+    try {
+      const ok = await verifyAdminCookie(env, request.headers.get('Cookie'));
+      if (!ok) return new Response('Unauthorized', { status: 401 });
+      const { whereSql, binds } = buildJobsFilterSql(url.searchParams);
+      const { results } = await env.DB.prepare(
+        `SELECT id,title,company,location,remote_type,employment_type,seniority,salary,status,source,source_type,job_type,featured,created_at,updated_at,expires_at,url FROM jobs ${whereSql} ORDER BY id DESC LIMIT 5000`
+      ).bind(...binds).all();
+
+      // RFC 4180 quoting + a defense against "CSV/formula injection": if a
+      // field's first character is one Excel/Sheets treats as a formula
+      // trigger (=,+,-,@), a leading tab is prepended so it's imported as
+      // inert text instead of executed as a formula when someone opens
+      // this export — the same mitigation OWASP recommends for any
+      // user-influenced CSV export (job titles/company names here
+      // ultimately come from external providers or employer submissions,
+      // so they're not trusted input).
+      const csvCell = (v) => {
+        let s = v === null || v === undefined ? '' : String(v);
+        if (/^[=+\-@]/.test(s)) s = '\t' + s;
+        if (/[",\n\r]/.test(s)) s = '"' + s.replace(/"/g, '""') + '"';
+        return s;
+      };
+      const header = ['ID', 'Title', 'Company', 'Location', 'Remote Type', 'Employment Type', 'Seniority', 'Salary', 'Status', 'Source', 'Source Type', 'Job Type', 'Featured', 'Created', 'Updated', 'Expires', 'Apply URL'];
+      const lines = [header.map(csvCell).join(',')];
+      for (const j of results || []) {
+        lines.push([j.id, j.title, j.company, j.location, j.remote_type, j.employment_type, j.seniority, j.salary, j.status, j.source, j.source_type, j.job_type, j.featured ? 'Yes' : 'No', j.created_at, j.updated_at, j.expires_at, j.url].map(csvCell).join(','));
+      }
+      await logActivity(env, 'jobs_exported_csv', `${(results || []).length} rows`);
+      return new Response(lines.join('\r\n'), {
+        headers: {
+          'Content-Type': 'text/csv; charset=utf-8',
+          'Content-Disposition': `attachment; filename="jobforion-jobs-${new Date().toISOString().slice(0, 10)}.csv"`,
+        },
+      });
+    } catch (e) { return errorPage(e); }
+  }
+
   if (url.pathname === '/admin/postings/approve' && request.method === 'POST') {
     try {
       const ok = await verifyAdminCookie(env, request.headers.get('Cookie'));
@@ -51,7 +95,7 @@ export async function handleAdminJobsRoute(url, request, env, base) {
             // salary sort, and salary_min search filter all work
             // identically to a synced one.
             const parsedSalary = parseSalary(p.salary);
-            await env.DB.prepare(
+            const insertResult = await env.DB.prepare(
               `INSERT OR IGNORE INTO jobs (title,company,location,url,description,salary,remote_type,skills,seniority,employment_type,job_handle,source,source_type,company_id,submitted_by_user_id,salary_min_usd,salary_max_usd,status,updated_at,expires_at)
                VALUES (?,?,?,?,?,?,?,?,?,?,?,'manual','employer',?,?,?,?,'active',CURRENT_TIMESTAMP,datetime('now','+45 days'))`
             ).bind(
@@ -60,10 +104,20 @@ export async function handleAdminJobsRoute(url, request, env, base) {
               p.company_id || null, p.user_id || null, parsedSalary.annualMinUsd, parsedSalary.annualMaxUsd
             ).run();
             await env.DB.prepare("UPDATE job_postings SET status='approved' WHERE id = ?").bind(id).run();
+            // Duplicate Detection (plan §11): jobs.url is UNIQUE, so
+            // INSERT OR IGNORE silently matches zero rows when this exact
+            // apply URL already belongs to another job (provider-synced
+            // or a previously-approved posting) — the posting is still
+            // marked 'approved' (from the employer's point of view it
+            // genuinely was), but the audit log makes the "why didn't a
+            // new job appear" case visible to whoever approved it instead
+            // of it looking like approval silently did nothing.
+            const wasDuplicate = !insertResult.meta?.changes;
+            await logActivity(env, 'posting_approved', p.title, { companyId: p.company_id || undefined, duplicateUrl: wasDuplicate || undefined });
           } catch (e) { /* keep posting pending rather than crash the whole request */ }
         }
       }
-      return new Response(null, { status: 302, headers: { 'Location': '/admin' } });
+      return new Response(null, { status: 302, headers: { 'Location': `/admin?flash=${encodeURIComponent('Posting approved')}` } });
     } catch (e) { return errorPage(e); }
   }
 
@@ -73,8 +127,70 @@ export async function handleAdminJobsRoute(url, request, env, base) {
       if (!ok) return new Response('Unauthorized', { status: 401 });
       const form = await request.formData();
       const id = form.get('id');
-      if (id) await env.DB.prepare("UPDATE job_postings SET status='rejected' WHERE id = ?").bind(id).run();
-      return new Response(null, { status: 302, headers: { 'Location': '/admin' } });
+      // Rejection reason (plan §10) — a fixed dropdown reason plus an
+      // optional free-text note, concatenated into one column rather than
+      // two, since nothing downstream (company jobs page, this admin
+      // list) needs to distinguish them separately.
+      const reasonCode = (form.get('reason') || '').toString().slice(0, 60);
+      const reasonNote = (form.get('reason_note') || '').toString().trim().slice(0, 300);
+      const reason = [reasonCode, reasonNote].filter(Boolean).join(' — ') || null;
+      if (id) {
+        await env.DB.prepare("UPDATE job_postings SET status='rejected', rejection_reason = ? WHERE id = ?").bind(reason, id).run();
+        await logActivity(env, 'posting_rejected', String(id), { reason: reasonCode || undefined });
+      }
+      return new Response(null, { status: 302, headers: { 'Location': `/admin?flash=${encodeURIComponent('Posting rejected')}` } });
+    } catch (e) { return errorPage(e); }
+  }
+
+  // ── Bulk approve/reject for job_postings (plan §8) — separate from
+  // the /admin/jobs/bulk handler above since job_postings and jobs are
+  // different tables with different status vocabularies (see
+  // POSTING_STATUS_META vs JOB_STATUS_META). Approving in bulk reuses
+  // the exact same per-row insert logic as the single approve handler
+  // above (duplicate-URL detection included) rather than a fast-path
+  // batch INSERT, since each posting needs its own parseSalary() call
+  // and its own INSERT OR IGNORE dedupe check against jobs.url.
+  if (url.pathname === '/admin/postings/bulk' && request.method === 'POST') {
+    try {
+      const ok = await verifyAdminCookie(env, request.headers.get('Cookie'));
+      if (!ok) return new Response('Unauthorized', { status: 401 });
+      const form = await request.formData();
+      const action = (form.get('bulk_action') || '').toString();
+      const ids = form.getAll('ids').map(v => parseInt(v.toString(), 10)).filter(n => Number.isInteger(n) && n > 0).slice(0, 200);
+      if (!ids.length || !['approve', 'reject'].includes(action)) {
+        return new Response(null, { status: 302, headers: { 'Location': `/admin?flash=${encodeURIComponent('No postings selected')}` } });
+      }
+
+      let changed = 0;
+      if (action === 'reject') {
+        const reasonCode = (form.get('reason') || 'Other').toString().slice(0, 60);
+        const placeholders = ids.map(() => '?').join(',');
+        const r = await env.DB.prepare(`UPDATE job_postings SET status='rejected', rejection_reason = ? WHERE id IN (${placeholders}) AND status = 'pending'`).bind(reasonCode, ...ids).run();
+        changed = r.meta?.changes || 0;
+        await logActivity(env, 'postings_bulk_rejected', `${changed} postings`, { reason: reasonCode });
+      } else {
+        for (const id of ids) {
+          try {
+            const { results } = await env.DB.prepare("SELECT * FROM job_postings WHERE id = ? AND status = 'pending'").bind(id).all();
+            const p = results[0];
+            if (!p) continue;
+            const parsedSalary = parseSalary(p.salary);
+            await env.DB.prepare(
+              `INSERT OR IGNORE INTO jobs (title,company,location,url,description,salary,remote_type,skills,seniority,employment_type,job_handle,source,source_type,company_id,submitted_by_user_id,salary_min_usd,salary_max_usd,status,updated_at,expires_at)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,'manual','employer',?,?,?,?,'active',CURRENT_TIMESTAMP,datetime('now','+45 days'))`
+            ).bind(
+              p.title, p.company, p.location || 'Remote', p.url, p.description || '', p.salary || '', p.remote_type || 'fully_remote',
+              p.skills || '[]', p.seniority || '', p.employment_type || 'full_time', '',
+              p.company_id || null, p.user_id || null, parsedSalary.annualMinUsd, parsedSalary.annualMaxUsd
+            ).run();
+            await env.DB.prepare("UPDATE job_postings SET status='approved' WHERE id = ?").bind(id).run();
+            changed++;
+          } catch (e) { /* one bad posting must not abort the rest of the batch */ }
+        }
+        await logActivity(env, 'postings_bulk_approved', `${changed} postings`);
+      }
+
+      return new Response(null, { status: 302, headers: { 'Location': `/admin?flash=${encodeURIComponent(`${changed} posting${changed === 1 ? '' : 's'} ${action === 'approve' ? 'approved' : 'rejected'}`)}` } });
     } catch (e) { return errorPage(e); }
   }
 
@@ -238,6 +354,22 @@ export async function handleAdminJobsRoute(url, request, env, base) {
         }
         flashMsg = `Set ${changed} job${changed === 1 ? '' : 's'} to ${jobType}`;
         await logActivity(env, 'job_type_bulk_changed', `${changed} jobs → ${jobType}`);
+      } else if (['pause', 'resume', 'close', 'archive', 'restore'].includes(action)) {
+        // Bulk status transitions (plan §8/§25) — reuses the exact same
+        // status vocabulary as db/cleanup.js's lifecycle and the
+        // company-facing pause/resume/close/archive actions in
+        // routes/company.router.js, so a job bulk-paused here behaves
+        // identically to one a company paused themselves (same
+        // PUBLIC_JOB_STATUS_SQL exclusion, same eventual cleanup timeline
+        // once archived).
+        const newStatus = action === 'restore' ? 'active' : action === 'resume' ? 'active' : action + 'd';
+        for (const chunk of chunks) {
+          const placeholders = chunk.map(() => '?').join(',');
+          const r = await env.DB.prepare(`UPDATE jobs SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id IN (${placeholders})`).bind(newStatus, ...chunk).run();
+          changed += r.meta?.changes || 0;
+        }
+        flashMsg = `${changed} job${changed === 1 ? '' : 's'} → ${newStatus}`;
+        await logActivity(env, 'jobs_bulk_status_changed', `${changed} jobs → ${newStatus} (manual selection)`);
       } else {
         return new Response(null, { status: 302, headers: { 'Location': `${redirect}${sep}flash=${encodeURIComponent('Unknown bulk action')}` } });
       }
