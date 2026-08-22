@@ -58,6 +58,21 @@ export const JOB_TYPE_ORDER = ['Sponsored', 'Premium', 'Featured', 'Free'];
 // needs to change in this one place. Falls back to the 'Free' priority
 // (3) for any unexpected/legacy value via the ELSE branch, so a bad or
 // missing job_type never breaks sorting.
+// Database & Performance (Stage 7) — every column on `jobs` EXCEPT
+// `description`, for queries that render a job as a CARD/ROW rather than
+// a full detail page. Card renderers (components/job-card.js's
+// jobCardSSR/jobRowMini) never touch job.description, and it's easily
+// the single largest column on the row (often several KB of raw
+// text/HTML per job) — selecting it across a 20-50 row LISTING query
+// pulls that payload from D1 to the Worker for zero benefit. The single
+// job detail page (routes/pages.router.js) still uses a plain
+// `SELECT *`, since that IS where the description is actually rendered.
+// Kept as one exported list (rather than duplicating the column names in
+// 6 different files) so adding a new jobs column later only means
+// updating db/schema.js AND this one line — not six SELECT statements
+// that would silently omit the new field until noticed.
+export const JOB_LISTING_COLUMNS = 'id,title,company,location,url,salary,remote_type,skills,seniority,employment_type,job_handle,created_at,featured,updated_at,expires_at,source,status,job_type,job_type_note,salary_min_usd,salary_max_usd,company_id,source_type,submitted_by_user_id';
+
 export const JOB_TYPE_SORT_SQL = "CASE job_type WHEN 'Sponsored' THEN 0 WHEN 'Premium' THEN 1 WHEN 'Featured' THEN 2 ELSE 3 END";
 
 // ════════════════════════════════════════════════════════════════
