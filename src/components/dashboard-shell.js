@@ -14,6 +14,7 @@ import { escapeHtml } from '../lib/entities.js';
 export function dashboardShell({ activeId, navItems, title, subtitle, content, headerActions = '', switchPill = '' }) {
   return `
 <div class="page" style="max-width:1180px;padding-top:20px">
+  <div id="dash-toast-host" style="position:fixed;bottom:18px;right:18px;z-index:999"></div>
   ${switchPill}
   <nav class="dash-mobile-nav">
     ${navItems.map(n => `<a href="${n.href}" class="${n.id === activeId ? 'active' : ''}">${n.icon({ size: 13 })} ${escapeHtml(n.label)}</a>`).join('')}
@@ -33,7 +34,29 @@ export function dashboardShell({ activeId, navItems, title, subtitle, content, h
       ${content}
     </main>
   </div>
-</div>`;
+</div>
+<script>
+// Same "?flash=message" -> toast pattern as the admin shell
+// (pages/admin/shell.js) — a POST action redirects here with a short
+// status message instead of rendering its own success/error page, and
+// this reads it off the URL once, shows it, then strips it so a page
+// refresh doesn't re-show a stale toast.
+(function(){
+  var params = new URLSearchParams(window.location.search);
+  var flash = params.get('flash');
+  if (!flash) return;
+  var host = document.getElementById('dash-toast-host');
+  var el = document.createElement('div');
+  el.textContent = flash;
+  el.style.cssText = 'background:var(--ink);color:#fff;font-size:13px;font-weight:600;padding:11px 16px;border-radius:10px;box-shadow:0 16px 40px rgba(18,22,43,.2);opacity:0;transform:translateY(8px);transition:all .25s;max-width:320px';
+  host.appendChild(el);
+  requestAnimationFrame(function(){ el.style.opacity='1'; el.style.transform='translateY(0)'; });
+  setTimeout(function(){ el.style.opacity='0'; }, 3200);
+  params.delete('flash');
+  var clean = window.location.pathname + (params.toString() ? '?' + params.toString() : '');
+  window.history.replaceState({}, '', clean);
+})();
+</script>`;
 }
 
 // Shown at the top of both dashboards when a user has BOTH a Job Seeker
