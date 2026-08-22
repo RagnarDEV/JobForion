@@ -6,7 +6,7 @@
 // an orphaned, unmanageable row.
 
 import { slugify } from './entities.js';
-import { JOB_TYPE_SORT_SQL } from '../config/constants.js';
+import { JOB_TYPE_SORT_SQL, PUBLIC_JOB_STATUS_SQL } from '../config/constants.js';
 
 // Job-matching condition shared by every "jobs that belong to this real
 // company" query below. A job belongs to a real company either because it
@@ -15,7 +15,10 @@ import { JOB_TYPE_SORT_SQL } from '../config/constants.js';
 // whose free-text `company` name matches — this is what makes an existing
 // Greenhouse/Lever job "just work" under a company's new profile page the
 // moment an admin verifies that company, with zero backfill needed.
-const COMPANY_JOB_MATCH_SQL = `(jobs.company_id = ? OR (jobs.company_id IS NULL AND LOWER(jobs.company) = LOWER(?)))`;
+// PUBLIC_JOB_STATUS_SQL is baked in here (not left to each caller) since
+// every current consumer of this constant is public-facing (the company
+// profile page) — a paused/closed/expired job must not show there either.
+const COMPANY_JOB_MATCH_SQL = `(jobs.company_id = ? OR (jobs.company_id IS NULL AND LOWER(jobs.company) = LOWER(?))) AND ${PUBLIC_JOB_STATUS_SQL}`;
 
 async function uniqueCompanySlug(env, name, excludeId = null) {
   const base = slugify(name) || 'company';
@@ -166,7 +169,7 @@ export async function listPublicCompanies(env, { q = '', country = '', industry 
 
   const { results } = await env.DB.prepare(
     `SELECT c.*,
-       (SELECT COUNT(*) FROM jobs WHERE jobs.company_id = c.id OR (jobs.company_id IS NULL AND LOWER(jobs.company) = LOWER(c.name))) as job_count
+       (SELECT COUNT(*) FROM jobs WHERE (jobs.company_id = c.id OR (jobs.company_id IS NULL AND LOWER(jobs.company) = LOWER(c.name))) AND ${PUBLIC_JOB_STATUS_SQL}) as job_count
      FROM companies c WHERE ${whereSql}
      ORDER BY c.featured DESC, c.verified DESC, job_count DESC, c.name ASC
      LIMIT ? OFFSET ?`
