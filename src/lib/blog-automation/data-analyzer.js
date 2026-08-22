@@ -17,6 +17,7 @@
 
 import { getCategories } from '../categories.js';
 import { listCompanies, listSkills, listCountries } from '../entities.js';
+import { PUBLIC_JOB_STATUS_SQL } from '../../config/constants.js';
 
 export async function getCategoryCandidates(env, minJobs) {
   const categories = await getCategories(env);
@@ -24,7 +25,7 @@ export async function getCategoryCandidates(env, minJobs) {
   for (const c of categories) {
     try {
       const { results } = await env.DB.prepare(
-        `SELECT COUNT(*) c FROM jobs WHERE LOWER(title) LIKE ?`
+        `SELECT COUNT(*) c FROM jobs WHERE LOWER(title) LIKE ? AND ${PUBLIC_JOB_STATUS_SQL}`
       ).bind(`%${c.key}%`).all();
       const count = results?.[0]?.c || 0;
       if (count >= minJobs) out.push({ key: c.key, label: c.label, emoji: c.emoji, color: c.color, count });
@@ -52,7 +53,7 @@ export async function getCompanyCandidates(env, minJobs) {
 
 export async function getTotalActiveJobs(env) {
   try {
-    const { results } = await env.DB.prepare('SELECT COUNT(*) c FROM jobs').all();
+    const { results } = await env.DB.prepare(`SELECT COUNT(*) c FROM jobs WHERE ${PUBLIC_JOB_STATUS_SQL}`).all();
     return results?.[0]?.c || 0;
   } catch (e) { return 0; }
 }
@@ -60,7 +61,7 @@ export async function getTotalActiveJobs(env) {
 export async function getNewJobsSince(env, days = 7) {
   try {
     const { results } = await env.DB.prepare(
-      `SELECT COUNT(*) c FROM jobs WHERE created_at >= datetime('now','-' || ? || ' day')`
+      `SELECT COUNT(*) c FROM jobs WHERE created_at >= datetime('now','-' || ? || ' day') AND ${PUBLIC_JOB_STATUS_SQL}`
     ).bind(days).all();
     return results?.[0]?.c || 0;
   } catch (e) { return 0; }
@@ -68,7 +69,7 @@ export async function getNewJobsSince(env, days = 7) {
 
 export async function getNewestJobs(env, limit = 14) {
   try {
-    const { results } = await env.DB.prepare(`SELECT * FROM jobs ORDER BY id DESC LIMIT ?`).bind(limit).all();
+    const { results } = await env.DB.prepare(`SELECT * FROM jobs WHERE ${PUBLIC_JOB_STATUS_SQL} ORDER BY id DESC LIMIT ?`).bind(limit).all();
     return results || [];
   } catch (e) { return []; }
 }
@@ -79,7 +80,7 @@ export async function getNewestJobs(env, limit = 14) {
 export async function getTopPayingJobs(env, limit = 10) {
   try {
     const { results } = await env.DB.prepare(
-      `SELECT * FROM jobs WHERE salary_min_usd IS NOT NULL AND salary_min_usd > 0
+      `SELECT * FROM jobs WHERE salary_min_usd IS NOT NULL AND salary_min_usd > 0 AND ${PUBLIC_JOB_STATUS_SQL}
        ORDER BY salary_max_usd DESC, salary_min_usd DESC LIMIT ?`
     ).bind(limit).all();
     return results || [];
