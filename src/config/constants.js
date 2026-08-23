@@ -88,8 +88,18 @@ export const JOB_SORT_OPTIONS = {
   relevance: { label: 'Relevance', sql: `${JOB_TYPE_SORT_SQL} ASC, featured DESC, id DESC` },
   newest: { label: 'Newest', sql: 'id DESC' },
   oldest: { label: 'Oldest', sql: 'id ASC' },
-  updated: { label: 'Recently Updated', sql: 'updated_at DESC' },
-  salary: { label: 'Highest Salary', sql: 'salary_max_usd DESC, salary_min_usd DESC' },
+  // Advanced Pagination (Stage 9): both of these were missing a
+  // deterministic tiebreaker — `updated_at DESC` alone ties for every job
+  // touched by the SAME sync run (all stamped with one CURRENT_TIMESTAMP),
+  // and `salary_max_usd DESC, salary_min_usd DESC` ties for every job
+  // with no salary data at all (both NULL) or an identical range. With
+  // OFFSET-based pagination, an unstable sort on ties means the SAME row
+  // can appear on two different pages, or a row can be skipped entirely,
+  // depending on what order SQLite happens to return tied rows in on a
+  // given execution — appending `id DESC` (unique, monotonic) as the
+  // final tiebreaker makes both fully deterministic across requests.
+  updated: { label: 'Recently Updated', sql: 'updated_at DESC, id DESC' },
+  salary: { label: 'Highest Salary', sql: 'salary_max_usd DESC, salary_min_usd DESC, id DESC' },
 };
 
 // ════════════════════════════════════════════════════════════════
