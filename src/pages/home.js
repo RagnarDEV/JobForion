@@ -174,12 +174,36 @@ export async function renderMainHTML(env, base, user = null) {
                 <input type="number" id="fSalaryMin" placeholder="e.g. 80000" min="0" step="5000" oninput="debounceFilterChange()">
               </label>
               <label class="filter-field">
+                <span>Max Salary (USD/yr)</span>
+                <input type="number" id="fSalaryMax" placeholder="e.g. 150000" min="0" step="5000" oninput="debounceFilterChange()">
+              </label>
+              <label class="filter-field">
                 <span>Posted Within</span>
                 <select id="fDays" onchange="onFilterChange()">
                   <option value="">Any time</option>
                   <option value="1">Last 24 hours</option>
+                  <option value="3">Last 3 days</option>
                   <option value="7">Last 7 days</option>
+                  <option value="14">Last 14 days</option>
                   <option value="30">Last 30 days</option>
+                </select>
+              </label>
+              <label class="filter-field">
+                <span>Source</span>
+                <select id="fSourceType" onchange="onFilterChange()">
+                  <option value="">Any</option>
+                  <option value="employer">Direct from Employer</option>
+                  <option value="provider">Aggregated</option>
+                </select>
+              </label>
+              <label class="filter-field">
+                <span>Sort By</span>
+                <select id="fSort" onchange="onFilterChange()">
+                  <option value="relevance">Relevance</option>
+                  <option value="newest">Newest</option>
+                  <option value="updated">Recently Updated</option>
+                  <option value="salary">Highest Salary</option>
+                  <option value="oldest">Oldest</option>
                 </select>
               </label>
             </div>
@@ -645,7 +669,10 @@ async function loadJobs(){
   if(adv.employ)p.set('employment_type',adv.employ);
   if(adv.seniority)p.set('seniority',adv.seniority);
   if(adv.salaryMin)p.set('salary_min',adv.salaryMin);
+  if(adv.salaryMax)p.set('salary_max',adv.salaryMax);
   if(adv.days)p.set('days',adv.days);
+  if(adv.sourceType)p.set('source_type',adv.sourceType);
+  if(adv.sort&&adv.sort!=='relevance')p.set('sort',adv.sort);
   if(adv.country)p.set('country',adv.country);
   if(adv.skill)p.set('skill',adv.skill);
   if(adv.company)p.set('company',adv.company);
@@ -655,7 +682,7 @@ async function loadJobs(){
     jobs=data.jobs||[];total=data.total||0;
     document.getElementById('resultsCount').innerHTML=\`<strong>\${total.toLocaleString()}</strong> jobs found\${cat?' in <strong>'+(CAT_META[cat]?CAT_META[cat].label:cat)+'</strong>':''}\${adv.country?' in <strong>'+esc(adv.country)+'</strong>':''}\${adv.skill?' with <strong>'+esc(adv.skill)+'</strong>':''}\${adv.company?' at <strong>'+esc(adv.company)+'</strong>':''}\${srch?' for "<strong>'+srch+'</strong>"':''}\`;
     if(!jobs.length){
-      document.getElementById('jobsList').innerHTML=\`<div class="empty"><div class="e-icon">\${ICONS.searchLg}</div><h3>No jobs found</h3><p>Try different keywords or clear filters</p></div>\`;
+      document.getElementById('jobsList').innerHTML=\`<div class="empty"><div class="e-icon">\${ICONS.searchLg}</div><h3>No jobs found</h3><p>Try a different keyword, remove a filter, or widen the location.</p><button onclick="clearFilters()" class="filters-clear-btn" style="display:inline-flex;margin-top:12px">Clear all filters</button></div>\`;
       return;
     }
     renderJobsList();
@@ -724,7 +751,12 @@ function toggleFiltersPanel(){
   document.getElementById('filtersToggleBtn').classList.toggle('active');
 }
 function updateFiltersBadge(){
-  const count=(cat?1:0)+Object.values(adv).filter(v=>v).length;
+  // adv.sort defaults to 'relevance' once the Sort dropdown exists in the
+  // DOM — that's a no-op choice, not an active filter, so it's excluded
+  // from the count (otherwise the badge would always show "1" the moment
+  // someone opens the filters panel, even with nothing actually filtered).
+  const activeAdvCount=Object.entries(adv).filter(([k,v])=>v&&!(k==='sort'&&v==='relevance')).length;
+  const count=(cat?1:0)+activeAdvCount;
   const badge=document.getElementById('filtersCountBadge');
   const clearBtn=document.getElementById('filtersClearBtn');
   if(count>0){badge.style.display='inline-block';badge.textContent=count;clearBtn.style.display='inline';}
@@ -736,6 +768,8 @@ function onFilterChange(){
   adv.employ=document.getElementById('fEmploy').value;
   adv.seniority=document.getElementById('fSeniority').value;
   adv.days=document.getElementById('fDays').value;
+  adv.sourceType=document.getElementById('fSourceType').value;
+  adv.sort=document.getElementById('fSort').value;
   pg=1;
   updateFiltersBadge();
   loadJobs();
@@ -745,6 +779,7 @@ function debounceFilterChange(){
   clearTimeout(filterDebT);
   filterDebT=setTimeout(()=>{
     adv.salaryMin=document.getElementById('fSalaryMin').value;
+    adv.salaryMax=document.getElementById('fSalaryMax').value;
     pg=1;
     updateFiltersBadge();
     loadJobs();
@@ -752,7 +787,8 @@ function debounceFilterChange(){
 }
 function clearFilters(){
   cat='';adv={};
-  ['fCategory','fRemote','fEmploy','fSeniority','fDays','fSalaryMin'].forEach(id=>{document.getElementById(id).value='';});
+  ['fCategory','fRemote','fEmploy','fSeniority','fDays','fSalaryMin','fSalaryMax','fSourceType'].forEach(id=>{document.getElementById(id).value='';});
+  document.getElementById('fSort').value='relevance';
   pg=1;
   updateFiltersBadge();
   loadJobs();

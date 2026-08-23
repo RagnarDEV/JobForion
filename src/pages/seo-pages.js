@@ -392,9 +392,14 @@ export async function renderSkillDetail(env, base, slug, user = null) {
 export async function renderSearchPage(env, base, query, user = null) {
   const { settings, categoryMap, categoryOrder, cardStyles, categoryBundle, footerPages, menuPages, navButtons } = await loadPageContext(env);
   const q = decodeURIComponent(query || '').trim();
+  const qLower = q.toLowerCase();
+  // Same field coverage as /api/jobs' keyword search (Stage 8) — a
+  // search term that only appears in a job's skills list or description
+  // (not literally in the title/company/location) used to return zero
+  // results here even though a genuinely relevant job existed.
   const { results } = await env.DB.prepare(
-    `SELECT ${JOB_LISTING_COLUMNS} FROM jobs WHERE (LOWER(title) LIKE ? OR LOWER(company) LIKE ? OR LOWER(location) LIKE ?) AND ${PUBLIC_JOB_STATUS_SQL} ORDER BY ${JOB_TYPE_SORT_SQL} ASC, id DESC LIMIT 50`
-  ).bind(`%${q.toLowerCase()}%`, `%${q.toLowerCase()}%`, `%${q.toLowerCase()}%`).all();
+    `SELECT ${JOB_LISTING_COLUMNS} FROM jobs WHERE (LOWER(title) LIKE ? OR LOWER(company) LIKE ? OR LOWER(location) LIKE ? OR LOWER(description) LIKE ? OR EXISTS (SELECT 1 FROM json_each(jobs.skills) je WHERE LOWER(je.value) LIKE ?)) AND ${PUBLIC_JOB_STATUS_SQL} ORDER BY ${JOB_TYPE_SORT_SQL} ASC, id DESC LIMIT 50`
+  ).bind(`%${qLower}%`, `%${qLower}%`, `%${qLower}%`, `%${qLower}%`, `%${qLower}%`).all();
   const hasResults = (results || []).length > 0;
   const { html: bc, jsonLd: bcSchema } = buildBreadcrumb(base, [{ name: `Search: ${q}`, path: `/search/${query}` }]);
   // SECURITY: q comes directly from the URL path (decodeURIComponent), so
