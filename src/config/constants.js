@@ -76,6 +76,23 @@ export const JOB_LISTING_COLUMNS = 'id,title,company,location,url,salary,remote_
 export const JOB_TYPE_SORT_SQL = "CASE job_type WHEN 'Sponsored' THEN 0 WHEN 'Premium' THEN 1 WHEN 'Featured' THEN 2 ELSE 3 END";
 
 // ════════════════════════════════════════════════════════════════
+// SORT (Advanced Search, Stage 8 — originally added for /admin/jobs in
+// Stage 5, now shared with the public /api/jobs so both surfaces offer
+// the exact same options with zero risk of drifting apart). A fixed
+// allow-list of (label -> real ORDER BY clause) pairs — the query string
+// only ever carries the LABEL key ('newest', 'salary', ...), never a raw
+// column name, so there is no way for a crafted `?sort=` value to inject
+// arbitrary SQL into ORDER BY.
+// ════════════════════════════════════════════════════════════════
+export const JOB_SORT_OPTIONS = {
+  relevance: { label: 'Relevance', sql: `${JOB_TYPE_SORT_SQL} ASC, featured DESC, id DESC` },
+  newest: { label: 'Newest', sql: 'id DESC' },
+  oldest: { label: 'Oldest', sql: 'id ASC' },
+  updated: { label: 'Recently Updated', sql: 'updated_at DESC' },
+  salary: { label: 'Highest Salary', sql: 'salary_max_usd DESC, salary_min_usd DESC' },
+};
+
+// ════════════════════════════════════════════════════════════════
 // JOB STATUS LIFECYCLE (Job Management, Stage 5) — single source of
 // truth, same pattern as JOB_TYPE_SORT_SQL above.
 //
