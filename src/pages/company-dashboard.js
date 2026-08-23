@@ -189,7 +189,9 @@ export async function renderCompanyProfilePage(user, company, ctx, { csrfToken, 
 const JOB_TAB_STATUSES = ['', 'pending', 'draft', 'active', 'rejected', 'paused', 'closed', 'expired', 'archived'];
 const JOB_TAB_LABELS = { '': 'All', pending: 'Pending', draft: 'Draft', active: 'Published', rejected: 'Rejected', paused: 'Paused', closed: 'Closed', expired: 'Expired', archived: 'Archived' };
 
-export async function renderCompanyJobsPage(env, user, company, ctx, statusFilter = '', csrfToken = '') {
+const COMPANY_JOBS_PAGE_SIZE = 20;
+
+export async function renderCompanyJobsPage(env, user, company, ctx, statusFilter = '', csrfToken = '', page = 1) {
   // job_postings (pre-approval: draft/pending/rejected) and jobs
   // (post-approval: active/paused/closed/expired/archived) are two
   // different tables with disjoint status vocabularies (see
@@ -201,15 +203,30 @@ export async function renderCompanyJobsPage(env, user, company, ctx, statusFilte
   const wantsJobs = statusFilter === '' || ['active', 'paused', 'closed', 'expired', 'archived'].includes(statusFilter);
   const postingsWhere = statusFilter && wantsPostings && statusFilter !== '' ? `AND status = ?` : `AND status != 'approved'`;
   const jobsWhere = statusFilter && wantsJobs ? `AND status = ?` : '';
+  // Advanced Pagination (Stage 9) — the live-jobs list was previously a
+  // flat LIMIT 100 with no way to see a 101st job; a company genuinely
+  // running that many simultaneous listings would have older ones
+  // silently invisible with no error or indication why. Pending
+  // postings are left at their existing flat LIMIT 50 — that list is
+  // inherently short-lived (jobs leave it within ~24h once reviewed —
+  // see Job Management, Stage 5), so paginating it adds UI complexity
+  // for a case that essentially never needs a page 2 in practice.
+  const safePage = Math.max(1, parseInt(page, 10) || 1);
+  const jobsOffset = (safePage - 1) * COMPANY_JOBS_PAGE_SIZE;
 
-  const [{ results: liveJobs }, { results: pendingJobs }] = await Promise.all([
+  const [{ results: liveJobs }, { results: jobsCountRows }, { results: pendingJobs }] = await Promise.all([
     wantsJobs
-      ? env.DB.prepare(`SELECT * FROM jobs WHERE company_id = ? ${jobsWhere} ORDER BY id DESC LIMIT 100`).bind(...(jobsWhere ? [company.id, statusFilter] : [company.id])).all()
+      ? env.DB.prepare(`SELECT * FROM jobs WHERE company_id = ? ${jobsWhere} ORDER BY id DESC LIMIT ${COMPANY_JOBS_PAGE_SIZE} OFFSET ${jobsOffset}`).bind(...(jobsWhere ? [company.id, statusFilter] : [company.id])).all()
       : Promise.resolve({ results: [] }),
+    wantsJobs
+      ? env.DB.prepare(`SELECT COUNT(*) c FROM jobs WHERE company_id = ? ${jobsWhere}`).bind(...(jobsWhere ? [company.id, statusFilter] : [company.id])).all()
+      : Promise.resolve({ results: [{ c: 0 }] }),
     wantsPostings
       ? env.DB.prepare(`SELECT * FROM job_postings WHERE company_id = ? ${postingsWhere} ORDER BY id DESC LIMIT 50`).bind(...(postingsWhere.includes('?') ? [company.id, statusFilter] : [company.id])).all()
       : Promise.resolve({ results: [] }),
   ]);
+  const jobsTotal = jobsCountRows?.[0]?.c || 0;
+  const jobsTotalPages = Math.max(1, Math.ceil(jobsTotal / COMPANY_JOBS_PAGE_SIZE));
 
   // Views + applications in two flat bulk queries instead of one query
   // per job (plan §30's explicit N+1 warning) — this stays exactly two
@@ -230,7 +247,6 @@ export async function renderCompanyJobsPage(env, user, company, ctx, statusFilte
   const tabsHtml = `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">
     ${JOB_TAB_STATUSES.map(s => `<a href="/company/jobs${s ? '?status=' + s : ''}" class="dash-btn ${statusFilter === s ? 'dash-btn-primary' : ''}" style="padding:7px 14px;font-size:12.5px">${JOB_TAB_LABELS[s]}</a>`).join('')}
   </div>`;
-
   const jobActionsHtml = (j) => {
     const btn = (action, label) => `<form method="POST" action="/company/jobs/${j.id}/${action}" style="display:inline">${csrfField(csrfToken)}<button class="dash-btn-sm" type="submit">${label}</button></form>`;
     const parts = [`<a href="/job/${j.id}" target="_blank" class="dash-btn-sm">View</a>`];
@@ -265,6 +281,17 @@ export async function renderCompanyJobsPage(env, user, company, ctx, statusFilte
   const showPendingCard = wantsPostings;
   const showLiveCard = wantsJobs;
 
+  // Simple Prev/Page N/Next pagination — same pattern as the public
+  // homepage (pages/home.js), server-rendered links (no client JS
+  // needed here since this is a plain admin-style dashboard page, not
+  // an AJAX SPA view) that preserve the current status tab.
+  const pageQs = (n) => `/company/jobs?${statusFilter ? `status=${statusFilter}&` : ''}page=${n}`;
+  const paginationHtml = jobsTotalPages > 1 ? `<div style="display:flex;justify-content:center;gap:8px;margin-top:14px">
+    ${safePage > 1 ? `<a href="${pageQs(safePage - 1)}" class="dash-btn">← Prev</a>` : `<span class="dash-btn" style="opacity:.4;pointer-events:none">← Prev</span>`}
+    <span class="dash-btn" style="pointer-events:none" aria-current="page">Page ${safePage} / ${jobsTotalPages}</span>
+    ${safePage < jobsTotalPages ? `<a href="${pageQs(safePage + 1)}" class="dash-btn">Next →</a>` : `<span class="dash-btn" style="opacity:.4;pointer-events:none">Next →</span>`}
+  </div>` : '';
+
   const content = `
     ${companySwitcher(ctx.companies, company.id)}
     ${tabsHtml}
@@ -273,10 +300,11 @@ export async function renderCompanyJobsPage(env, user, company, ctx, statusFilte
       ${pendingRows}
     </div>` : ''}
     ${showLiveCard ? `<div class="dash-card">
-      <div class="dash-card-title">${statusFilter ? JOB_TAB_LABELS[statusFilter] : 'Published Jobs'} (${(liveJobs || []).length})</div>
+      <div class="dash-card-title">${statusFilter ? JOB_TAB_LABELS[statusFilter] : 'Published Jobs'} (${jobsTotal})</div>
       ${liveRows}
+      ${paginationHtml}
     </div>` : ''}`;
-  return wrap('jobs', 'Jobs', `${(liveJobs || []).length} published · ${(pendingJobs || []).length} pending`, content, user, ctx, `<a href="/company/post-job" class="dash-btn dash-btn-primary">+ Post a Job</a>`);
+  return wrap('jobs', 'Jobs', `${jobsTotal} published · ${(pendingJobs || []).length} pending`, content, user, ctx, `<a href="/company/post-job" class="dash-btn dash-btn-primary">+ Post a Job</a>`);
 }
 
 // ── Post a Job ──────────────────────────────────────────────────
