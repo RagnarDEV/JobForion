@@ -5,7 +5,7 @@
 import { syncJobs } from '../db/sync.js';
 import { PROVIDERS } from '../providers/index.js';
 import { checkRateLimit } from '../lib/rate-limit.js';
-import { JOB_TYPE_SORT_SQL, PUBLIC_JOB_STATUS_SQL, JOB_LISTING_COLUMNS } from '../config/constants.js';
+import { JOB_TYPE_SORT_SQL, PUBLIC_JOB_STATUS_SQL, JOB_LISTING_COLUMNS, JOB_SORT_OPTIONS } from '../config/constants.js';
 import { resolveRawNames } from '../lib/directory-overrides.js';
 import { getSettings } from '../lib/settings.js';
 import { logActivity } from '../lib/activity-log.js';
@@ -132,12 +132,35 @@ export async function handleApiRoute(url, request, env) {
     const page = parseInt(url.searchParams.get("page") || "1");
     const limit = 20, offset = (page - 1) * limit;
     const category = url.searchParams.get("category") || "";
-    const search = url.searchParams.get("search") || "";
+    const search = url.searchParams.get("search") || url.searchParams.get("q") || ""; // `q` accepted as an alias (plan §6's example URL shape) without renaming the param the existing frontend already sends
     const remoteType = url.searchParams.get("remote_type") || "";
     const employType = url.searchParams.get("employment_type") || "";
     const seniority = url.searchParams.get("seniority") || "";
     const salaryMin = url.searchParams.get("salary_min") || "";
-    const days = url.searchParams.get("days") || "";
+    const salaryMax = url.searchParams.get("salary_max") || "";
+    // Date Posted (plan §5) — a fixed whitelist of day-counts, not an
+    // arbitrary integer straight from the query string. The value is
+    // still bound as a parameter either way (never string-concatenated
+    // into SQL), so this isn't a SQL-injection fix — it's a correctness
+    // one: an unvalidated `?days=` could otherwise be 0, negative, or a
+    // huge number that doesn't correspond to any of the UI's actual
+    // "Today / 3 / 7 / 14 / 30 days" options.
+    const ALLOWED_DAYS = new Set([1, 3, 7, 14, 30]);
+    const daysRaw = parseInt(url.searchParams.get("days") || "", 10);
+    const days = ALLOWED_DAYS.has(daysRaw) ? daysRaw : null;
+    // Source (plan §5/§22) — provider-synced vs employer-submitted vs
+    // admin-created, using the exact same source_type values Job
+    // Management (Stage 5) already writes to every row. Internal details
+    // (which SPECIFIC provider, source_job_id, submitted_by_user_id) are
+    // never exposed here — only this coarse, public-safe distinction.
+    const ALLOWED_SOURCE_TYPES = new Set(['provider', 'employer', 'admin']);
+    const sourceTypeRaw = (url.searchParams.get("source_type") || "").toLowerCase();
+    const sourceType = ALLOWED_SOURCE_TYPES.has(sourceTypeRaw) ? sourceTypeRaw : "";
+    // Sort (plan §8) — same JOB_SORT_OPTIONS allow-list Admin Job
+    // Management (Stage 5) uses; an unrecognized/absent value always
+    // falls back to 'relevance', never a raw column from the query string.
+    const sortKeyRaw = url.searchParams.get("sort") || "relevance";
+    const sortKey = JOB_SORT_OPTIONS[sortKeyRaw] ? sortKeyRaw : "relevance";
     // Country filter — same matching heuristic as jobsByRegion() in
     // lib/entities.js: location is either an exact match ("Germany") or
     // ends with ", <country>" ("Berlin, Germany"), since `location` is
@@ -153,12 +176,26 @@ export async function handleApiRoute(url, request, env) {
     const company = url.searchParams.get("company") || "";
     const conditions = [PUBLIC_JOB_STATUS_SQL], params = [];
     if (category) { conditions.push("LOWER(title) LIKE ?"); params.push(`%${category}%`); }
-    if (search) { conditions.push("(LOWER(title) LIKE ? OR LOWER(company) LIKE ?)"); params.push(`%${search.toLowerCase()}%`, `%${search.toLowerCase()}%`); }
+    if (search) {
+      // Keyword Search (plan §2/§4) — searches every field a candidate
+      // would actually expect a keyword match to come from: title,
+      // company, skills (JSON array — via json_each, same technique as
+      // the skill filter above), and description. Previously this only
+      // matched title/company, so a search for a specific technology
+      // that only appeared in the skills list or job description (not
+      // literally in the title) returned zero results even though a
+      // clearly relevant job existed.
+      const s = search.toLowerCase();
+      conditions.push(`(LOWER(title) LIKE ? OR LOWER(company) LIKE ? OR LOWER(description) LIKE ? OR EXISTS (SELECT 1 FROM json_each(jobs.skills) je WHERE LOWER(je.value) LIKE ?))`);
+      params.push(`%${s}%`, `%${s}%`, `%${s}%`, `%${s}%`);
+    }
     if (remoteType) { conditions.push("remote_type = ?"); params.push(remoteType); }
     if (employType) { conditions.push("employment_type = ?"); params.push(employType); }
     if (seniority) { conditions.push("LOWER(seniority) LIKE ?"); params.push(`%${seniority.toLowerCase()}%`); }
     if (salaryMin) { conditions.push("salary_max_usd >= ?"); params.push(parseInt(salaryMin) * 1000); }
-    if (days) { conditions.push("created_at >= datetime('now', '-' || ? || ' days')"); params.push(parseInt(days)); }
+    if (salaryMax) { conditions.push("salary_min_usd <= ?"); params.push(parseInt(salaryMax) * 1000); }
+    if (days) { conditions.push("created_at >= datetime('now', '-' || ? || ' days')"); params.push(days); }
+    if (sourceType) { conditions.push("source_type = ?"); params.push(sourceType); }
     if (country) {
       // See lib/directory-overrides.js: `country` here is the DISPLAY
       // name a user clicked in the filter panel, which may differ from
@@ -184,13 +221,35 @@ export async function handleApiRoute(url, request, env) {
     }
     if (company) { conditions.push("company = ?"); params.push(company); }
     const where = conditions.length ? " WHERE " + conditions.join(" AND ") : "";
+
+    // Search Relevance (plan §4) — the simplest effective strategy per
+    // the plan's own guidance, not a scoring engine: when a keyword is
+    // active AND the user hasn't explicitly picked a different sort, tier
+    // matches by WHERE the keyword hit (title > skills > company) ahead
+    // of the existing job_type/featured tiering, instead of every match
+    // being treated as equally relevant. An explicit sort choice (Newest,
+    // Highest Salary, ...) always wins outright — a searcher who picks
+    // "Newest" wants newest first, not relevance-then-newest.
+    let orderBySql = JOB_SORT_OPTIONS[sortKey].sql;
+    const orderParams = [];
+    if (search && sortKey === 'relevance') {
+      const s = search.toLowerCase();
+      orderBySql = `CASE
+        WHEN LOWER(title) LIKE ? THEN 0
+        WHEN EXISTS (SELECT 1 FROM json_each(jobs.skills) je2 WHERE LOWER(je2.value) LIKE ?) THEN 1
+        WHEN LOWER(company) LIKE ? THEN 2
+        ELSE 3
+      END ASC, ${orderBySql}`;
+      orderParams.push(`%${s}%`, `%${s}%`, `%${s}%`);
+    }
+
     const [{ results }, { results: cr }, verifiedCompanySet] = await Promise.all([
-      env.DB.prepare(`SELECT ${JOB_LISTING_COLUMNS} FROM jobs${where} ORDER BY ${JOB_TYPE_SORT_SQL} ASC, featured DESC, id DESC LIMIT ${limit} OFFSET ${offset}`).bind(...params).all(),
+      env.DB.prepare(`SELECT ${JOB_LISTING_COLUMNS} FROM jobs${where} ORDER BY ${orderBySql} LIMIT ${limit} OFFSET ${offset}`).bind(...params, ...orderParams).all(),
       env.DB.prepare(`SELECT COUNT(*) as total FROM jobs${where}`).bind(...params).all(),
       getVerifiedCompanyNameSet(env), // 60s-cached, see lib/companies.js — drives the "✓ Verified" badge client-side (plan §8)
     ]);
     const jobsWithVerified = (results || []).map(j => ({ ...j, is_verified: verifiedCompanySet.has((j.company || '').toLowerCase()) }));
-    return new Response(JSON.stringify({ jobs: jobsWithVerified, total: cr[0]?.total || 0, page }), { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } });
+    return new Response(JSON.stringify({ jobs: jobsWithVerified, total: cr[0]?.total || 0, page, sort: sortKey }), { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } });
   }
 
   if (url.pathname === '/api/sync') {
