@@ -85,19 +85,29 @@ export async function renderAdminUsersContent(env, params) {
 export async function renderAdminCompanyAccountsContent(env, params) {
   const statusFilter = params.get('status') || '';
   const q = (params.get('q') || '').trim();
+  const page = Math.max(1, parseInt(params.get('page') || '1', 10) || 1);
+  const offset = (page - 1) * PAGE_SIZE;
   const where = [];
   const binds = [];
   if (statusFilter) { where.push('c.status = ?'); binds.push(statusFilter); }
   if (q) { where.push('LOWER(c.name) LIKE ?'); binds.push(`%${q.toLowerCase().slice(0, 100)}%`); }
   const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
 
-  const { results: companies } = await env.DB.prepare(
-    `SELECT c.*, u.email as creator_email,
-       (SELECT COUNT(*) FROM company_members WHERE company_id = c.id) as member_count,
-       (SELECT COUNT(*) FROM jobs WHERE company_id = c.id) as job_count
-     FROM companies c LEFT JOIN users u ON u.id = c.created_by_user_id
-     ${whereSql} ORDER BY c.created_at DESC LIMIT 100`
-  ).bind(...binds).all();
+  const [{ results: companies }, { results: totalRows }] = await Promise.all([
+    env.DB.prepare(
+      `SELECT c.*, u.email as creator_email,
+         (SELECT COUNT(*) FROM company_members WHERE company_id = c.id) as member_count,
+         (SELECT COUNT(*) FROM jobs WHERE company_id = c.id) as job_count
+       FROM companies c LEFT JOIN users u ON u.id = c.created_by_user_id
+       ${whereSql} ORDER BY c.created_at DESC LIMIT ${PAGE_SIZE} OFFSET ${offset}`
+    ).bind(...binds).all(),
+    // Advanced Pagination (Stage 9) — this list previously had a flat
+    // LIMIT 100 with no page 2 at all; once past 100 real companies,
+    // the rest were silently invisible here with no indication why.
+    env.DB.prepare(`SELECT COUNT(*) c FROM companies c ${whereSql}`).bind(...binds).all(),
+  ]);
+  const total = totalRows?.[0]?.c || 0;
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   const { results: pendingCountRows } = await env.DB.prepare(`SELECT COUNT(*) c FROM companies WHERE status = 'pending'`).all();
   const pendingCount = pendingCountRows?.[0]?.c || 0;
@@ -135,15 +145,20 @@ export async function renderAdminCompanyAccountsContent(env, params) {
         ${q ? `<a href="/admin/accounts/companies?${qs({ q: '' })}" class="adm-btn">Clear</a>` : ''}
       </form>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <a href="/admin/accounts/companies?${qs({ status: '' })}" class="adm-btn ${!statusFilter ? 'adm-btn-primary' : ''}">All</a>
-        <a href="/admin/accounts/companies?${qs({ status: 'pending' })}" class="adm-btn ${statusFilter === 'pending' ? 'adm-btn-primary' : ''}">Pending</a>
-        <a href="/admin/accounts/companies?${qs({ status: 'active' })}" class="adm-btn ${statusFilter === 'active' ? 'adm-btn-primary' : ''}">Verified</a>
-        <a href="/admin/accounts/companies?${qs({ status: 'rejected' })}" class="adm-btn ${statusFilter === 'rejected' ? 'adm-btn-primary' : ''}">Rejected</a>
-        <a href="/admin/accounts/companies?${qs({ status: 'suspended' })}" class="adm-btn ${statusFilter === 'suspended' ? 'adm-btn-primary' : ''}">Suspended</a>
+        <a href="/admin/accounts/companies?${qs({ status: '', page: '' })}" class="adm-btn ${!statusFilter ? 'adm-btn-primary' : ''}">All</a>
+        <a href="/admin/accounts/companies?${qs({ status: 'pending', page: '' })}" class="adm-btn ${statusFilter === 'pending' ? 'adm-btn-primary' : ''}">Pending</a>
+        <a href="/admin/accounts/companies?${qs({ status: 'active', page: '' })}" class="adm-btn ${statusFilter === 'active' ? 'adm-btn-primary' : ''}">Verified</a>
+        <a href="/admin/accounts/companies?${qs({ status: 'rejected', page: '' })}" class="adm-btn ${statusFilter === 'rejected' ? 'adm-btn-primary' : ''}">Rejected</a>
+        <a href="/admin/accounts/companies?${qs({ status: 'suspended', page: '' })}" class="adm-btn ${statusFilter === 'suspended' ? 'adm-btn-primary' : ''}">Suspended</a>
       </div>
     </div>
     <div class="adm-card">
       ${rows || `<div class="adm-empty">No companies found${statusFilter ? ` with status "${escapeHtml(statusFilter)}"` : ''}${q ? ` matching "${escapeHtml(q)}"` : ''}.</div>`}
     </div>
+    ${totalPages > 1 ? `<div style="display:flex;justify-content:center;gap:8px;margin-top:16px">
+      ${page > 1 ? `<a class="adm-btn" href="/admin/accounts/companies?${qs({ page: String(page - 1) })}">← Prev</a>` : ''}
+      <span class="adm-btn" style="cursor:default" aria-current="page">Page ${page} of ${totalPages}</span>
+      ${page < totalPages ? `<a class="adm-btn" href="/admin/accounts/companies?${qs({ page: String(page + 1) })}">Next →</a>` : ''}
+    </div>` : ''}
   </div>`;
 }
