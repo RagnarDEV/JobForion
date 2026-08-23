@@ -129,7 +129,17 @@ export async function handleApiRoute(url, request, env) {
         headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*", "Retry-After": String((rl.retryAfterMinutes || 1) * 60) },
       });
     }
-    const page = parseInt(url.searchParams.get("page") || "1");
+    // Page Size (plan §11/§26) — `limit` is a fixed constant, never read
+    // from the query string at all, so a crafted `?limit=999999` has
+    // nothing to attach to. `page` IS user-controlled and must be
+    // clamped server-side regardless of what the frontend already does
+    // client-side (Stage 9's clientside clamp in pages/home.js is a UX
+    // nicety, not a security boundary) — a negative/zero/absurdly large
+    // page must never reach a raw OFFSET calculation. There's no hard
+    // upper bound on how deep a page can go (that's a performance
+    // consideration reviewed in Stage 7, not a correctness one), just a
+    // floor of 1 and a guard against non-numeric input.
+    const page = Math.max(1, parseInt(url.searchParams.get("page") || "1", 10) || 1);
     const limit = 20, offset = (page - 1) * limit;
     const category = url.searchParams.get("category") || "";
     const search = url.searchParams.get("search") || url.searchParams.get("q") || ""; // `q` accepted as an alias (plan §6's example URL shape) without renaming the param the existing frontend already sends
@@ -249,7 +259,18 @@ export async function handleApiRoute(url, request, env) {
       getVerifiedCompanyNameSet(env), // 60s-cached, see lib/companies.js — drives the "✓ Verified" badge client-side (plan §8)
     ]);
     const jobsWithVerified = (results || []).map(j => ({ ...j, is_verified: verifiedCompanySet.has((j.company || '').toLowerCase()) }));
-    return new Response(JSON.stringify({ jobs: jobsWithVerified, total: cr[0]?.total || 0, page, sort: sortKey }), { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } });
+    const totalCount = cr[0]?.total || 0;
+    // Additive response fields (plan §25) — `jobs`/`total`/`page`/`sort`
+    // are unchanged from before Stage 9, so any existing caller of this
+    // endpoint keeps working with zero changes; totalPages/hasNext/
+    // hasPrev just save every consumer from re-deriving
+    // Math.ceil(total/limit) themselves (pages/home.js already did this
+    // client-side and is left as-is rather than forced to switch).
+    const totalPages = Math.max(1, Math.ceil(totalCount / limit));
+    return new Response(JSON.stringify({
+      jobs: jobsWithVerified, total: totalCount, page, sort: sortKey,
+      totalPages, hasNext: page < totalPages, hasPrev: page > 1,
+    }), { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } });
   }
 
   if (url.pathname === '/api/sync') {
