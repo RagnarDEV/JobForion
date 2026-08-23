@@ -659,10 +659,9 @@ function renderJobsList(){
   }).join('');
 }
 
-async function loadJobs(){
-  document.getElementById('jobsList').innerHTML=renderSkeletons();
-  document.getElementById('pagination').innerHTML='';
-  const p=new URLSearchParams({page:pg});
+function buildQueryParams(){
+  const p=new URLSearchParams();
+  p.set('page',pg);
   if(cat)p.set('category',cat);
   if(srch)p.set('search',srch);
   if(adv.remote)p.set('remote_type',adv.remote);
@@ -676,10 +675,68 @@ async function loadJobs(){
   if(adv.country)p.set('country',adv.country);
   if(adv.skill)p.set('skill',adv.skill);
   if(adv.company)p.set('company',adv.company);
+  return p;
+}
+
+// Advanced Pagination (Stage 9) — URL State + Browser Navigation. Every
+// filter/search/sort/page change was previously kept ONLY in JS memory:
+// the address bar never changed, so refreshing, sharing the link, or
+// using Back/Forward all silently lost the current search entirely and
+// landed back on the plain unfiltered homepage. updateUrlBar() mirrors
+// the exact state loadJobs() just fetched into the address bar (page=1
+// omitted for a clean default URL); pushHistory=true is used ONLY for
+// an actual page-to-page navigation (Next/Prev/page number), since that
+// is the one action a user genuinely expects the Back button to step
+// through — a filter/search/sort change instead REPLACES the current
+// history entry, so idly adjusting five filters in a row doesn't require
+// mashing Back five times to escape.
+function updateUrlBar(pushHistory){
+  const p=buildQueryParams();
+  if(p.get('page')==='1')p.delete('page');
+  const qs=p.toString();
+  const newUrl=window.location.pathname+(qs?'?'+qs:'');
+  if(newUrl===window.location.pathname+window.location.search)return;
+  if(pushHistory)history.pushState({jnSearch:true},'',newUrl);
+  else history.replaceState({jnSearch:true},'',newUrl);
+}
+
+// Reads state BACK out of the URL — used on first load (so a shared/
+// refreshed link actually restores the filtered view instead of the
+// plain homepage) and on popstate (Back/Forward). Also syncs the actual
+// form controls' displayed values, not just the in-memory cat/adv
+// object, since a restored filter that doesn't visually show up as
+// selected in its dropdown would look like the search silently failed.
+function applyStateFromUrl(){
+  const p=new URLSearchParams(window.location.search);
+  cat=p.get('category')||'';
+  srch=p.get('search')||'';
+  pg=Math.max(1,parseInt(p.get('page')||'1',10)||1);
+  adv={
+    remote:p.get('remote_type')||'', employ:p.get('employment_type')||'',
+    seniority:p.get('seniority')||'', salaryMin:p.get('salary_min')||'',
+    salaryMax:p.get('salary_max')||'', days:p.get('days')||'',
+    sourceType:p.get('source_type')||'', sort:p.get('sort')||'relevance',
+    country:p.get('country')||'', skill:p.get('skill')||'', company:p.get('company')||'',
+  };
+  const setVal=(id,v)=>{const el=document.getElementById(id);if(el)el.value=v;};
+  setVal('fCategory',cat); setVal('searchInput',srch); setVal('fRemote',adv.remote);
+  setVal('fEmploy',adv.employ); setVal('fSeniority',adv.seniority); setVal('fSalaryMin',adv.salaryMin);
+  setVal('fSalaryMax',adv.salaryMax); setVal('fDays',adv.days); setVal('fSourceType',adv.sourceType);
+  setVal('fSort',adv.sort);
+  document.querySelectorAll('.chip[data-cat]').forEach(el=>el.classList.toggle('active',el.dataset.cat===cat));
+  updateFiltersBadge();
+  return p.toString().length>0; // true if the URL actually carried any search state
+}
+
+async function loadJobs(pushHistory){
+  document.getElementById('jobsList').innerHTML=renderSkeletons();
+  document.getElementById('pagination').innerHTML='';
+  const p=buildQueryParams();
   try{
     const res=await fetch('/api/jobs?'+p);
     const data=await res.json();
     jobs=data.jobs||[];total=data.total||0;
+    updateUrlBar(!!pushHistory);
     document.getElementById('resultsCount').innerHTML=\`<strong>\${total.toLocaleString()}</strong> jobs found\${cat?' in <strong>'+(CAT_META[cat]?CAT_META[cat].label:cat)+'</strong>':''}\${adv.country?' in <strong>'+esc(adv.country)+'</strong>':''}\${adv.skill?' with <strong>'+esc(adv.skill)+'</strong>':''}\${adv.company?' at <strong>'+esc(adv.company)+'</strong>':''}\${srch?' for "<strong>'+srch+'</strong>"':''}\`;
     if(!jobs.length){
       document.getElementById('jobsList').innerHTML=\`<div class="empty"><div class="e-icon">\${ICONS.searchLg}</div><h3>No jobs found</h3><p>Try a different keyword, remove a filter, or widen the location.</p><button onclick="clearFilters()" class="filters-clear-btn" style="display:inline-flex;margin-top:12px">Clear all filters</button></div>\`;
@@ -793,16 +850,16 @@ function clearFilters(){
   updateFiltersBadge();
   loadJobs();
 }
-function goPage(p){pg=p;loadJobs();window.scrollTo({top:0,behavior:'smooth'});}
+function goPage(p){pg=p;loadJobs(true);window.scrollTo({top:0,behavior:'smooth'});}
 
 function renderPagination(){
   const el=document.getElementById('pagination');
   if(!el)return;
   const tp=Math.ceil(total/20);
   el.innerHTML=tp>1?\`
-    <button class="page-btn" onclick="goPage(\${pg-1})" \${pg===1?'disabled':''}>← Prev</button>
-    <span class="page-info">Page \${pg} / \${tp}</span>
-    <button class="page-btn" onclick="goPage(\${pg+1})" \${pg===tp?'disabled':''}>Next →</button>\`:'';
+    <button class="page-btn" onclick="goPage(\${pg-1})" \${pg===1?'disabled':''} aria-label="Previous page">← Prev</button>
+    <span class="page-info" aria-current="page">Page \${pg} / \${tp}</span>
+    <button class="page-btn" onclick="goPage(\${pg+1})" \${pg===tp?'disabled':''} aria-label="Next page">Next →</button>\`:'';
 }
 
 // bind actions on the server-rendered initial cards too, and fill in
@@ -810,7 +867,21 @@ function renderPagination(){
 // but pagination needs the live "total" count known only after render)
 document.addEventListener('DOMContentLoaded',()=>{
   savedIds.forEach(id=>{const b=document.getElementById('sb-'+id);if(b)b.classList.add('saved');});
-  renderPagination();
+  // If the URL was opened WITH search state (shared link, refresh, or a
+  // Back/Forward landing here), the server-side render above only ever
+  // produced the plain unfiltered top-20 — re-fetch client-side with the
+  // restored filters applied. A plain "/" with no params skips this
+  // extra request entirely, keeping the original fast first paint.
+  if(applyStateFromUrl())loadJobs(false);
+  else renderPagination();
+});
+// Browser Back/Forward (plan Stage 9) — re-read whatever state the
+// browser just navigated to and reload results to match, WITHOUT
+// pushing yet another history entry (that would fight the browser's own
+// navigation stack).
+window.addEventListener('popstate',()=>{
+  applyStateFromUrl();
+  loadJobs(false);
 });
 </script>
 </body>
