@@ -174,7 +174,8 @@ export async function handleCompanyRoute(url, request, env, base) {
   // ── Jobs ──
   if (url.pathname === '/company/jobs' && request.method === 'GET') {
     const statusFilter = url.searchParams.get('status') || '';
-    return new Response(await renderCompanyJobsPage(env, user, company, ctx, statusFilter, csrfToken), { headers: HTML });
+    const page = url.searchParams.get('page') || '1';
+    return new Response(await renderCompanyJobsPage(env, user, company, ctx, statusFilter, csrfToken, page), { headers: HTML });
   }
 
   // Pause / Resume / Close / Archive — all four are pure status
