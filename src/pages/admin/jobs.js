@@ -3,23 +3,17 @@
 // copy-link, preview, duplicate-detection (manual review, never auto-delete),
 // and stale-job cleanup (configurable age threshold, confirmed before running).
 
-import { BASE_URL, JOB_TYPE_META, JOB_TYPE_ORDER, JOB_TYPE_SORT_SQL, JOB_STATUS_META, JOB_STATUS_ORDER, REJECTION_REASONS } from '../../config/constants.js';
+import { BASE_URL, JOB_TYPE_META, JOB_TYPE_ORDER, JOB_TYPE_SORT_SQL, JOB_STATUS_META, JOB_STATUS_ORDER, REJECTION_REASONS, JOB_SORT_OPTIONS } from '../../config/constants.js';
 import { getCategories } from '../../lib/categories.js';
 import { ensureTable } from '../../db/schema.js';
 import { escapeHtml } from '../../lib/entities.js';
 
 const PAGE_SIZE = 30;
-// Sorting (plan §19): a fixed allow-list of (label -> real ORDER BY
-// clause) pairs — the query string only ever carries the LABEL key
-// ('newest', 'salary', ...), never a raw column name, so there is no way
-// for a crafted `?sort=` value to inject arbitrary SQL into ORDER BY.
-const SORT_OPTIONS = {
-  relevance: { label: 'Relevance', sql: `${JOB_TYPE_SORT_SQL} ASC, featured DESC, id DESC` },
-  newest: { label: 'Newest', sql: 'id DESC' },
-  oldest: { label: 'Oldest', sql: 'id ASC' },
-  updated: { label: 'Recently Updated', sql: "updated_at DESC" },
-  salary: { label: 'Highest Salary', sql: 'salary_max_usd DESC, salary_min_usd DESC' },
-};
+// Sorting (plan §19, Stage 5): now defined once in config/constants.js
+// as JOB_SORT_OPTIONS and shared with the public /api/jobs (Stage 8) —
+// SORT_OPTIONS here is just a local alias so the rest of this file
+// doesn't need renaming.
+const SORT_OPTIONS = JOB_SORT_OPTIONS;
 
 // `categoryOrder`/`categoryMap` are optional — default to empty (no
 // category column shown) only if a caller somehow forgets to pass them;
