@@ -19,6 +19,7 @@ import { cleanupStaleJobs } from './db/cleanup.js';
 import { BASE_URL } from './config/constants.js';
 import { getSettings } from './lib/settings.js';
 import { renderMaintenancePage } from './pages/maintenance.js';
+import { renderNotFoundPage } from './pages/public-content.js';
 import { runBlogGeneration } from './lib/blog-automation/generator.js';
 import { runBlogExpirationCleanup } from './lib/blog-automation/expiration.js';
 import { runJobAlertsDispatch } from './lib/job-alerts-dispatcher.js';
@@ -182,7 +183,7 @@ export default {
     const apiResponse = await handleApiRoute(url, request, env);
     if (apiResponse) return withSecurityHeaders(apiResponse);
 
-    return withSecurityHeaders(new Response('Not found', { status: 404 }));
+    return withSecurityHeaders(new Response(await renderNotFoundPage(base, env), { status: 404, headers: { 'Content-Type': 'text/html; charset=utf-8' } }));
   },
 
   async scheduled(event, env, ctx) {

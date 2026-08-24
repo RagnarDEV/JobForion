@@ -26,7 +26,7 @@ const SLUG_PATTERN = /^[a-z][a-z0-9-]{1,49}$/;
 // be clever with regexes, so it's obvious at a glance what's protected.
 export const RESERVED_SLUGS = new Set([
   'admin', 'api', 'job', 'jobs', 'blog', 'categories', 'companies', 'skills',
-  'countries', 'search', 'sitemap.xml', 'sitemap-static.xml', 'feed.rss',
+  'countries', 'search', 'remote-jobs', 'resources', 'sitemap.xml', 'sitemap-static.xml', 'feed.rss',
   'robots.txt', 'manifest.json', 'favicon.ico', 'favicon.svg',
   'favicon-16.png', 'favicon-32.png', 'apple-touch-icon.png', 'icon-512.png',
 ]);

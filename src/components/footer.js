@@ -29,8 +29,8 @@ export function footerHtml(base, settings, footerPages) {
         ${socialMarkup ? `<div class="sf-social">${socialMarkup}</div>` : ''}
       </div>
       <div class="sf-col"><div class="sf-col-title">For job seekers</div><a href="/">Browse jobs</a><a href="/companies">Companies hiring</a><a href="/categories">Job categories</a><a href="/skills">Browse by skill</a><a href="/countries">Browse by country</a></div>
-      <div class="sf-col"><div class="sf-col-title">For employers</div><button class="footer-action" type="button" onclick="openPostJobModal()">Post a job</button><a href="/company/dashboard">Employer dashboard</a><a href="/company/create">Create company profile</a><a href="/blog">Employer resources</a></div>
-      <div class="sf-col"><div class="sf-col-title">Resources</div><a href="/blog">Career blog</a><a href="/feed.rss">RSS feed</a><a href="/sitemap.xml">Sitemap</a><a href="/privacy">Privacy &amp; trust</a></div>
+      <div class="sf-col"><div class="sf-col-title">For employers</div><button class="footer-action" type="button" onclick="openPostJobModal()">Post a job</button><a href="/company/dashboard">Employer dashboard</a><a href="/company/create">Create company profile</a><a href="/resources">Employer resources</a></div>
+      <div class="sf-col"><div class="sf-col-title">Resources</div><a href="/resources">Resource hub</a><a href="/blog">Career blog</a><a href="/feed.rss">RSS feed</a><a href="/sitemap.xml">Sitemap</a><a href="/privacy">Privacy &amp; trust</a></div>
       <div class="sf-col"><div class="sf-col-title">Company</div>${pages.map(p => `<a href="/${escapeHtml(p.slug)}">${escapeHtml(p.title)}</a>`).join('') || '<span style="color:var(--navy-ink2);font-size:11px">No pages yet</span>'}</div>
     </div>
     <div class="sf-bottom"><span>© ${year} ${siteName}. All rights reserved.</span><span>Built for the remote-first workforce.</span></div>

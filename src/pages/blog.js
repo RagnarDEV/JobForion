@@ -1,4 +1,5 @@
-// src/pages/blog.js
+// Public blog renderers. Content comes exclusively from the existing Blog CMS;
+// post.body remains trusted rich-editor HTML, while metadata is escaped.
 
 import { baseLayout } from '../layout/base-layout.js';
 import { getPosts } from '../lib/blog-cms.js';
@@ -7,80 +8,73 @@ import { escapeHtml } from '../lib/entities.js';
 import { getSettings, SETTINGS_DEFAULTS } from '../lib/settings.js';
 import { getCategories } from '../lib/categories.js';
 import { getAdSlotsConfig, DEFAULT_AD_CONFIG } from '../lib/ad-slots.js';
-import { getFooterPages } from '../lib/pages-cms.js';
+import { getFooterPages, getMenuPages } from '../lib/pages-cms.js';
+import { getNavButtons } from '../lib/nav-buttons.js';
+import { buildBreadcrumb } from '../lib/breadcrumbs.js';
+import { PUBLIC_PAGE_CSS, publicPageHeader } from '../components/public-page.js';
+import { iconFileText, iconArrowRight } from '../assets/icons.js';
 
-// `env` optional — see loadCategoryData's own comment for the pattern.
-async function loadFooterPages(env) {
-  return env ? await getFooterPages(env) : null;
+async function loadPublicContext(env) {
+  if (!env) return { categories: null, footerPages: null, menuPages: null, navButtons: null };
+  const [categories, footerPages, menuPages, navButtons] = await Promise.all([
+    getCategories(env), getFooterPages(env), getMenuPages(env), getNavButtons(env),
+  ]);
+  return {
+    categories: { order: categories.map(c => c.key), map: Object.fromEntries(categories.map(c => [c.key, { label: c.label, emoji: c.emoji, color: c.color }])) },
+    footerPages, menuPages, navButtons,
+  };
 }
 
-// Builds the `{order, map}` shape baseLayout() expects for the dynamic
-// "Post a Job" category dropdown. `env` optional — see renderBlogIndex.
-async function loadCategoryData(env) {
-  if (!env) return null;
-  const categories = await getCategories(env);
-  return { order: categories.map(c => c.key), map: Object.fromEntries(categories.map(c => [c.key, { label: c.label, emoji: c.emoji, color: c.color }])) };
+function safeImageUrl(value) {
+  const url = String(value || '').trim();
+  return /^(https?:\/\/|\/(?!\/))[^\s"'<>]+$/i.test(url) ? escapeHtml(url) : '';
 }
 
-// `env` is optional (backward compatible with any caller that only has
-// `base`) — when provided, settings/categories/posts are all fetched
-// from D1. Posts now come from lib/blog-cms.js (see that file) instead
-// of the old hardcoded BLOG_POSTS array — title/excerpt/category are
-// admin-form-submitted text so they're escaped here (defense in depth;
-// only `post.body` is intentionally raw HTML — see the security note
-// in components/rich-editor.js for why that's still safe).
+function postHref(post) {
+  return `/blog/${encodeURIComponent(String(post.slug || post.id || ''))}`;
+}
+
+function dateText(value) {
+  if (!value) return '';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? '' : date.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+}
+
+function blogCard(post) {
+  const image = safeImageUrl(post.cover_image_url);
+  return `<a class="public-card blog-card" href="${escapeHtml(postHref(post))}">${image ? `<img class="blog-card-cover" src="${image}" alt="${escapeHtml(post.title)}" loading="lazy">` : '<div class="blog-card-cover" aria-hidden="true"></div>'}<span class="blog-card-body"><span class="public-eyebrow">${escapeHtml(post.category || 'General')}</span><h2>${escapeHtml(post.title)}</h2>${post.excerpt ? `<p>${escapeHtml(post.excerpt)}</p>` : ''}<span class="public-card-meta"><small>${escapeHtml(dateText(post.published_at))}${post.read_time ? ` · ${escapeHtml(post.read_time)}` : ''}</small><b class="public-card-arrow" aria-hidden="true">→</b></span></span></a>`;
+}
+
 export async function renderBlogIndex(base, env, user = null) {
   const settings = env ? await getSettings(env) : SETTINGS_DEFAULTS;
-  const categories = await loadCategoryData(env);
+  const { categories, footerPages, menuPages, navButtons } = await loadPublicContext(env);
   const posts = env ? await getPosts(env) : [];
   const adConfig = env ? await getAdSlotsConfig(env) : DEFAULT_AD_CONFIG;
   const adsEnabled = settings.ads_enabled !== '0';
-  const footerPages = await loadFooterPages(env);
-  const siteName = escapeHtml(settings.site_name);
-  const content = `
-<div class="page">
-  <div class="breadcrumb"><a href="/">${siteName}</a><span>›</span><span>Blog</span></div>
-  <h1 style="font-family:'Plus Jakarta Sans',sans-serif;font-size:28px;font-weight:700;margin-bottom:8px;color:var(--ink)">📝 Career Blog</h1>
-  <p style="color:var(--ink2);font-size:14px;margin-bottom:24px">Insights and career advice for remote job seekers.</p>
-  ${adSlot('blog-index-top', '', adConfig, adsEnabled)}
-  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px;margin-top:20px">
-    ${posts.map(p => `
-      <a href="/blog/${escapeHtml(p.slug || p.id)}" style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:20px;display:block;transition:all .25s;text-decoration:none;box-shadow:var(--shadow)" onmouseover="this.style.borderColor='var(--brand)';this.style.transform='translateY(-2px)'" onmouseout="this.style.borderColor='var(--border)';this.style.transform='none'">
-        ${p.cover_image_url ? `<img src="${escapeHtml(p.cover_image_url)}" alt="" style="width:100%;height:130px;object-fit:cover;border-radius:9px;margin-bottom:12px" loading="lazy">` : ''}
-        <div style="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--brand);margin-bottom:10px">${escapeHtml(p.category || 'General')}</div>
-        <div style="font-size:15px;font-weight:700;margin-bottom:8px;line-height:1.4;color:var(--ink)">${escapeHtml(p.title)}</div>
-        <div style="font-size:13px;color:var(--ink3);line-height:1.65;margin-bottom:14px">${escapeHtml(p.excerpt || '')}</div>
-        <div style="font-size:11px;color:var(--ink3);display:flex;gap:12px"><span>📅 ${p.published_at ? new Date(p.published_at).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : ''}</span><span>⏱ ${escapeHtml(p.read_time || '')}</span></div>
-      </a>`).join('') || '<div class="empty"><div class="e-icon">📭</div><h3>No articles yet</h3></div>'}
-  </div>
-</div>`;
-  return baseLayout(`Career Blog — ${settings.site_name}`, 'Career insights for remote job seekers.', `${base}/blog`, '', content,
-    `<script type="application/ld+json">${JSON.stringify({ "@context": "https://schema.org", "@type": "Blog", "name": `${settings.site_name} Career Blog`, "url": `${base}/blog` })}</script>`,
-    'index, follow', settings, categories, footerPages, null, null, user);
+  const { html: bc, jsonLd: bcSchema } = buildBreadcrumb(base, [{ name: 'Blog', path: '/blog' }]);
+  const cards = posts.map(blogCard).join('');
+  const content = `<div class="page public-page blog-page">${PUBLIC_PAGE_CSS}${publicPageHeader({ breadcrumb: bc, eyebrow: 'JOBFORION JOURNAL', title: 'Career guidance for the next move', description: 'Practical insights and remote-work advice from the JobForion editorial feed.' })}${adSlot('blog-index-top', 'blog-ad', adConfig, adsEnabled)}<section class="public-section blog-hero" aria-labelledby="blog-articles"><div class="public-section-heading"><div><h2 id="blog-articles">Latest articles</h2><p>Published posts from the existing Blog CMS.</p></div></div><div class="public-card-grid">${cards || '<div class="empty blog-empty"><div class="e-icon">📭</div><h3>No articles yet</h3><p>Published articles will appear here when they are available.</p></div>'}</div></section><div class="public-callout"><div><h2>Ready to search?</h2><p>Move from advice to action with the live JobForion job directory.</p></div><a class="public-primary-link" href="/jobs">Browse jobs →</a></div></div>`;
+  const schema = `<script type="application/ld+json">${JSON.stringify({ '@context': 'https://schema.org', '@type': 'Blog', name: `${settings.site_name} Career Blog`, url: `${base}/blog` })}</script>`;
+  return baseLayout(`Career Blog — ${settings.site_name}`, 'Career insights and remote-work advice for job seekers.', `${base}/blog`, '', content, schema + bcSchema, 'index, follow', settings, categories, footerPages, menuPages, navButtons, user);
 }
 
 export async function renderArticlePage(post, base, env, user = null) {
   const settings = env ? await getSettings(env) : SETTINGS_DEFAULTS;
-  const categories = await loadCategoryData(env);
+  const { categories, footerPages, menuPages, navButtons } = await loadPublicContext(env);
+  const posts = env ? await getPosts(env) : [];
   const adConfig = env ? await getAdSlotsConfig(env) : DEFAULT_AD_CONFIG;
   const adsEnabled = settings.ads_enabled !== '0';
-  const canonical = `${base}/blog/${post.slug || post.id}`;
+  const canonical = `${base}/blog/${encodeURIComponent(String(post.slug || post.id || ''))}`;
   const publishedDate = post.published_at ? new Date(post.published_at).toISOString().split('T')[0] : '';
-  const schema = JSON.stringify({ "@context": "https://schema.org", "@type": "Article", "headline": post.title, "description": post.excerpt, "datePublished": publishedDate, "author": { "@type": "Organization", "name": settings.site_name }, "url": canonical });
-  const content = `
-<div class="page-sm">
-  <a href="/blog" class="back-link">← Back to Blog</a>
-  <div class="article-cat">${escapeHtml(post.category || 'General')}</div>
-  <h1 class="article-title">${escapeHtml(post.title)}</h1>
-  <div class="article-meta"><span>📅 ${post.published_at ? new Date(post.published_at).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : ''}</span><span>⏱ ${escapeHtml(post.read_time || '')}</span><span>✍️ ${escapeHtml(settings.site_name)} Team</span></div>
-  ${post.cover_image_url ? `<img src="${escapeHtml(post.cover_image_url)}" alt="" style="width:100%;max-height:360px;object-fit:cover;border-radius:14px;margin-bottom:22px">` : ''}
-  <div class="article-body">${post.body}</div>
-  ${(post.tags || []).length ? `<div style="margin-top:20px;display:flex;flex-wrap:wrap;gap:6px">${post.tags.map(t => `<span class="skill-tag">${escapeHtml(t)}</span>`).join('')}</div>` : ''}
-  ${adSlot('blog-article-footer', 'margin-top:28px', adConfig, adsEnabled)}
-  <div style="margin-top:28px;display:flex;gap:10px;flex-wrap:wrap">
-    <a href="/blog" class="back-link" style="margin-bottom:0">← Back to Blog</a>
-    <a href="/" style="display:inline-flex;align-items:center;gap:7px;background:var(--ink);color:#fff;padding:9px 18px;border-radius:10px;font-size:13px;font-weight:700;text-decoration:none">Browse Remote Jobs →</a>
-  </div>
-</div>`;
-  return baseLayout(`${post.title} — ${settings.site_name} Blog`, post.excerpt, canonical, '', content, `<script type="application/ld+json">${schema}</script>`, 'index, follow', settings, categories, null, null, null, user);
+  const currentIndex = posts.findIndex(item => String(item.id) === String(post.id) || (item.slug && item.slug === post.slug));
+  const related = posts.filter(item => String(item.id) !== String(post.id) && item.slug !== post.slug)
+    .sort((a, b) => (a.category === post.category ? -1 : 0) - (b.category === post.category ? -1 : 0)).slice(0, 3);
+  const newerPost = currentIndex > 0 ? posts[currentIndex - 1] : null;
+  const olderPost = currentIndex >= 0 ? posts[currentIndex + 1] : null;
+  const { html: bc, jsonLd: bcSchema } = buildBreadcrumb(base, [{ name: 'Blog', path: '/blog' }, { name: post.title, path: `/blog/${post.slug || post.id}` }]);
+  const schema = JSON.stringify({ '@context': 'https://schema.org', '@type': 'Article', headline: post.title, description: post.excerpt || '', datePublished: publishedDate, author: { '@type': 'Organization', name: settings.site_name }, url: canonical, ...(safeImageUrl(post.cover_image_url) ? { image: safeImageUrl(post.cover_image_url) } : {}) });
+  const image = safeImageUrl(post.cover_image_url);
+  const tags = Array.isArray(post.tags) ? post.tags : [];
+  const content = `<div class="page public-page article-page">${PUBLIC_PAGE_CSS}${publicPageHeader({ breadcrumb: bc, eyebrow: post.category || 'CAREER ARTICLE', title: post.title, description: post.excerpt || '' })}<div class="article-meta"><span>${escapeHtml(dateText(post.published_at))}</span>${post.read_time ? `<span>${escapeHtml(post.read_time)}</span>` : ''}<span>By ${escapeHtml(settings.site_name)} Team</span></div>${image ? `<img class="article-cover" src="${image}" alt="${escapeHtml(post.title)}">` : ''}<article class="article-body">${post.body || '<p>This article does not have published body content yet.</p>'}</article>${tags.length ? `<div class="article-tags" aria-label="Article tags">${tags.map(tag => `<span class="article-tag">${escapeHtml(tag)}</span>`).join('')}</div>` : ''}${adSlot('blog-article-footer', 'blog-ad', adConfig, adsEnabled)}${related.length ? `<section class="public-section" aria-labelledby="related-articles"><div class="public-section-heading"><div><h2 id="related-articles">Related articles</h2><p>Other published posts from the Blog CMS.</p></div></div><div class="public-card-grid">${related.map(blogCard).join('')}</div></section>` : ''}${newerPost || olderPost ? `<nav class="article-nav" aria-label="Article navigation">${newerPost ? `<a href="${escapeHtml(postHref(newerPost))}"><small>Newer article</small><strong>${escapeHtml(newerPost.title)}</strong></a>` : '<span></span>'}${olderPost ? `<a href="${escapeHtml(postHref(olderPost))}"><small>Older article</small><strong>${escapeHtml(olderPost.title)}</strong></a>` : '<span></span>'}</nav>` : ''}<div class="public-callout"><div><h2>Keep exploring JobForion</h2><p>Search current roles or read more from the editorial feed.</p></div><div class="public-page-header-actions"><a class="public-primary-link" href="/jobs">Browse jobs ${iconArrowRight({ size: 14 })}</a><a class="public-primary-link" href="/blog">All articles ${iconFileText({ size: 14 })}</a></div></div></div>`;
+  return baseLayout(`${post.title} — ${settings.site_name} Blog`, post.excerpt || 'JobForion career article.', canonical, '', content, `<script type="application/ld+json">${schema}</script>${bcSchema}`, 'index, follow', settings, categories, footerPages, menuPages, navButtons, user);
 }

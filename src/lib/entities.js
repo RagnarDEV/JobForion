@@ -178,20 +178,28 @@ export async function findCountryBySlug(env, slug) {
   return countries.find(c => c.slug === slug) || null;
 }
 
-export async function jobsByRegion(env, regionNames, { limit = 100 } = {}) {
+export async function jobsByRegion(env, regionNames, { limit = 100, offset = 0 } = {}) {
   // Accepts either a single region string (legacy call shape) or an
   // array of raw names (see the rawNames note on applyDirectoryOverrides
   // in lib/directory-overrides.js — required so a renamed/merged country
   // still matches the original, un-renamed text stored in jobs.location).
   const names = (Array.isArray(regionNames) ? regionNames : [regionNames]).filter(Boolean);
   if (!names.length) return [];
-  // matches on the trailing "region" segment of location (country/state heuristic)
   const conditions = names.map(() => '(location = ? OR location LIKE ?)').join(' OR ');
   const binds = names.flatMap(n => [n, `%, ${n}`]);
   const { results } = await env.DB.prepare(
-    `SELECT ${JOB_LISTING_COLUMNS} FROM jobs WHERE (${conditions}) AND ${PUBLIC_JOB_STATUS_SQL} ORDER BY ${JOB_TYPE_SORT_SQL} ASC, id DESC LIMIT ?`
-  ).bind(...binds, limit).all();
+    `SELECT ${JOB_LISTING_COLUMNS} FROM jobs WHERE (${conditions}) AND ${PUBLIC_JOB_STATUS_SQL} ORDER BY ${JOB_TYPE_SORT_SQL} ASC, id DESC LIMIT ? OFFSET ?`
+  ).bind(...binds, limit, offset).all();
   return results || [];
+}
+
+export async function countJobsByRegion(env, regionNames) {
+  const names = (Array.isArray(regionNames) ? regionNames : [regionNames]).filter(Boolean);
+  if (!names.length) return 0;
+  const conditions = names.map(() => '(location = ? OR location LIKE ?)').join(' OR ');
+  const binds = names.flatMap(n => [n, `%, ${n}`]);
+  const { results } = await env.DB.prepare(`SELECT COUNT(*) AS c FROM jobs WHERE (${conditions}) AND ${PUBLIC_JOB_STATUS_SQL}`).bind(...binds).all();
+  return Number(results?.[0]?.c || 0);
 }
 
 export async function listCitiesRaw(env) {
@@ -266,18 +274,29 @@ export async function findSkillBySlug(env, slug) {
   return skills.find(s => s.slug === slug) || null;
 }
 
-export async function jobsBySkill(env, skillNames, { limit = 100 } = {}) {
+export async function jobsBySkill(env, skillNames, { limit = 100, offset = 0 } = {}) {
   const names = (Array.isArray(skillNames) ? skillNames : [skillNames]).filter(Boolean);
   if (!names.length) return [];
   try {
     const placeholders = names.map(() => '?').join(',');
     const { results } = await env.DB.prepare(
-      `SELECT ${JOB_LISTING_COLUMNS} FROM jobs, json_each(jobs.skills)
-       WHERE json_each.value IN (${placeholders}) AND ${PUBLIC_JOB_STATUS_SQL} ORDER BY ${JOB_TYPE_SORT_SQL} ASC, jobs.id DESC LIMIT ?`
-    ).bind(...names, limit).all();
+      `SELECT ${JOB_LISTING_COLUMNS.split(',').map(column => `jobs.${column}`).join(',')} FROM jobs, json_each(jobs.skills)
+       WHERE json_each.value IN (${placeholders}) AND ${PUBLIC_JOB_STATUS_SQL} ORDER BY ${JOB_TYPE_SORT_SQL} ASC, jobs.id DESC LIMIT ? OFFSET ?` ).bind(...names, limit, offset).all();
     return results || [];
   } catch (e) {
     return [];
+  }
+}
+
+export async function countJobsBySkill(env, skillNames) {
+  const names = (Array.isArray(skillNames) ? skillNames : [skillNames]).filter(Boolean);
+  if (!names.length) return 0;
+  try {
+    const placeholders = names.map(() => '?').join(',');
+    const { results } = await env.DB.prepare(`SELECT COUNT(DISTINCT jobs.id) AS c FROM jobs, json_each(jobs.skills) WHERE json_each.value IN (${placeholders}) AND ${PUBLIC_JOB_STATUS_SQL}`).bind(...names).all();
+    return Number(results?.[0]?.c || 0);
+  } catch (e) {
+    return 0;
   }
 }
 

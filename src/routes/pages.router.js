@@ -4,6 +4,7 @@
 
 import { renderJobPage } from '../pages/job-page.js';
 import { renderBlogIndex, renderArticlePage } from '../pages/blog.js';
+import { renderResourcesHub, renderInformationalPage } from '../pages/public-content.js';
 import { renderStaticPage } from '../pages/static-pages.js';
 import { renderMainHTML } from '../pages/home.js';
 import { getPostById, getPostBySlug, wasAutoPostSlug } from '../lib/blog-cms.js';
@@ -131,6 +132,8 @@ export async function handlePagesRoute(url, request, env, base) {
 
   if (url.pathname === '/blog') return new Response(await renderBlogIndex(base, env, user), { headers: { "Content-Type": "text/html; charset=utf-8" } });
 
+  if (url.pathname === '/resources') return new Response(await renderResourcesHub(base, env, user), { headers: { "Content-Type": "text/html; charset=utf-8" } });
+
   const blogMatch = url.pathname.match(/^\/blog\/([a-z0-9-]+)$/);
   if (blogMatch) {
     // Old shared/indexed URLs are purely numeric ids (/blog/1 .. /blog/6);
@@ -147,6 +150,14 @@ export async function handlePagesRoute(url, request, env, base) {
   if (url.pathname === '/') {
     const html = await renderMainHTML(env, base, user);
     return new Response(html, { headers: { "Content-Type": "text/html; charset=utf-8" } });
+  }
+
+  // Built-in public information views use the CMS page when an admin has
+  // populated the slug, otherwise they render the capability-led fallback.
+  const informationalMatch = url.pathname.match(/^\/(about|how-it-works|contact)$/);
+  if (informationalMatch) {
+    const html = await renderInformationalPage(informationalMatch[1], base, env, user);
+    if (html) return new Response(html, { headers: { "Content-Type": "text/html; charset=utf-8" } });
   }
 
   // ── CMS pages catch-all (Privacy/Terms/Disclaimer + any admin-created

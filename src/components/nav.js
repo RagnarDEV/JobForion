@@ -29,9 +29,9 @@ export function navHtml(settings, menuPages = [], navButtons = [], user = null) 
   <div class="nav-links">
     <a href="/" class="nav-link">Find jobs</a>
     <a href="/companies" class="nav-link">Companies</a>
-    <a href="/?remote_type=fully_remote" class="nav-link">Remote jobs</a>
+    <a href="/remote-jobs" class="nav-link">Remote jobs</a>
     <a href="/categories" class="nav-link">Categories</a>
-    <a href="/blog" class="nav-link">Resources</a>
+    <a href="/resources" class="nav-link">Resources</a>
     ${extraLinks}
     <a href="${user ? '/user/saved-jobs' : '/login?next=%2Fuser%2Fsaved-jobs'}" class="nav-link">${iconBookmark({ size: 14 })} Saved jobs</a>
     ${authLinksHtml(user, false)}
@@ -55,10 +55,10 @@ export function mobileHeaderHtml(settings, menuPages = [], navButtons = [], user
 <div class="mob-menu" id="mobMenu" aria-label="Mobile navigation">
   <a href="/">${iconSearch({ size: 16 })} Find jobs</a>
   <a href="/companies">${iconBuilding({ size: 16 })} Companies</a>
-  <a href="/?remote_type=fully_remote">${iconGlobe({ size: 16 })} Remote jobs</a>
+  <a href="/remote-jobs">${iconGlobe({ size: 16 })} Remote jobs</a>
   <a href="/categories">${iconFolder({ size: 16 })} Categories</a>
   <a href="${user ? '/user/saved-jobs' : '/login?next=%2Fuser%2Fsaved-jobs'}">${iconBookmark({ size: 16 })} Saved jobs</a>
-  <a href="/blog">${iconFileText({ size: 16 })} Resources</a>
+  <a href="/resources">${iconFileText({ size: 16 })} Resources</a>
   <a href="/privacy">${iconLock({ size: 16 })} Privacy</a>
   ${extraMenuItems}
   ${authLinksHtml(user, true)}

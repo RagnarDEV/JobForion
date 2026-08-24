@@ -22,8 +22,8 @@ import { logoImgHtml, jobCardSSR, directoryGridHtml } from '../components/job-ca
 import { companyCardHtml, companyCardStyles, companyEmptyState } from '../components/company-card.js';
 import {
   listCompanies, findCompanyBySlug,
-  listSkills, findSkillBySlug, jobsBySkill,
-  listCountries, findCountryBySlug, jobsByRegion,
+  listSkills, findSkillBySlug, jobsBySkill, countJobsBySkill,
+  listCountries, findCountryBySlug, jobsByRegion, countJobsByRegion,
   escapeHtml,
 } from '../lib/entities.js';
 import { countryFlag } from '../lib/country-flags.js';
@@ -43,7 +43,8 @@ import {
   listPublicCompanies, countPublicCompanies, getPublicCompanyBySlug, jobsForCompanyEntity, countJobsForCompanyEntity,
   getVerifiedCompanyNameSet, listDistinctIndustries, listDistinctCompanyCountries,
 } from '../lib/companies.js';
-import { iconGlobe, iconLink, iconMapPin, iconUsers, iconBuilding, iconArrowRight, iconBriefcase, iconBadgeCheck } from '../assets/icons.js';
+import { iconGlobe, iconLink, iconMapPin, iconUsers, iconBuilding, iconArrowRight, iconBriefcase, iconBadgeCheck, iconSearch, iconFolder, iconFileText } from '../assets/icons.js';
+import { PUBLIC_PAGE_CSS, publicPageHeader, publicCard } from '../components/public-page.js';
 
 // Shared by every function below: resolves site settings + the dynamic
 // category list + card-style tiers (as both an ordered array and a
@@ -209,38 +210,75 @@ export async function renderJobsIndex(env, base, user = null, filters = {}) {
   return baseLayout(`Browse Remote Jobs — ${settings.site_name}`, description, `${base}/jobs`, '', content, '', 'index, follow', settings, categoryBundle, footerPages, menuPages, navButtons, user);
 }
 
+// ── /remote-jobs ──
+export async function renderRemoteJobsLanding(env, base, user = null, filters = {}) {
+  const { settings, categories, categoryMap, categoryOrder, cardStyles, categoryBundle, footerPages, menuPages, navButtons } = await loadPageContext(env);
+  const remoteWhere = `${PUBLIC_JOB_STATUS_SQL} AND remote_type = ?`;
+  const pageSize = 12;
+  const requestedPage = Math.max(1, Math.min(500, parseInt(filters.page || '1', 10) || 1));
+  const [{ results: countRows }, { results: companyRows }] = await Promise.all([
+    env.DB.prepare(`SELECT COUNT(*) AS c FROM jobs WHERE ${remoteWhere}`).bind('fully_remote').all(),
+    env.DB.prepare(`SELECT company, COUNT(*) AS c FROM jobs WHERE ${remoteWhere} AND company IS NOT NULL AND company != '' GROUP BY company ORDER BY c DESC, company ASC LIMIT 6`).bind('fully_remote').all(),
+  ]);
+  const total = Number(countRows?.[0]?.c || 0);
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const page = Math.min(requestedPage, totalPages);
+  const { results: jobs } = await env.DB.prepare(`SELECT ${JOB_LISTING_COLUMNS} FROM jobs WHERE ${remoteWhere} ORDER BY ${JOB_TYPE_SORT_SQL} ASC, id DESC LIMIT ? OFFSET ?`).bind('fully_remote', pageSize, (page - 1) * pageSize).all();
+  const jobsHtml = await jobsListHtml(env, jobs || [], categoryMap, categoryOrder, cardStyles, `<div class="empty"><div class="e-icon">📭</div><h3>No fully remote jobs available</h3><p>Try the full Jobs directory to explore hybrid and on-site roles as well.</p><a class="public-primary-link" href="/jobs">Browse all jobs →</a></div>`);
+  const pageLink = n => `/remote-jobs${n > 1 ? `?page=${n}` : ''}`;
+  const pagination = totalPages > 1 ? `<nav class="jobs-directory-pagination" aria-label="Remote jobs pagination">${page > 1 ? `<a class="page-btn" href="${pageLink(page - 1)}">← Previous</a>` : '<span class="page-btn disabled">← Previous</span>'}<span class="page-number-list">${Array.from({ length: totalPages }, (_, i) => i + 1).slice(Math.max(0, page - 3), Math.min(totalPages, page + 2)).map(n => `<a class="page-number${n === page ? ' active' : ''}"${n === page ? ' aria-current="page"' : ''} href="${pageLink(n)}">${n}</a>`).join('')}</span>${page < totalPages ? `<a class="page-btn" href="${pageLink(page + 1)}">Next →</a>` : '<span class="page-btn disabled">Next →</span>'}</nav>` : '';
+  const categoryCards = (categories || []).slice(0, 6).map(category => publicCard({ href: `/jobs?remote_type=fully_remote&category=${encodeURIComponent(category.key)}`, icon: category.emoji || '•', title: category.label, meta: 'Remote roles' })).join('');
+  const companyCards = (companyRows || []).map(row => publicCard({ href: `/jobs?remote_type=fully_remote&company=${encodeURIComponent(row.company)}`, icon: iconBuilding({ size: 18 }), title: row.company, meta: 'Fully remote roles', count: row.c })).join('');
+  const resourceCards = [
+    publicCard({ href: '/blog', icon: iconFileText({ size: 18 }), title: 'Career blog', description: 'Practical guidance for your remote search.', meta: 'Read resources' }),
+    publicCard({ href: '/skills', icon: iconSearch({ size: 18 }), title: 'Browse by skill', description: 'See skills connected to live listings.', meta: 'Explore skills' }),
+    publicCard({ href: '/countries', icon: iconGlobe({ size: 18 }), title: 'Browse locations', description: 'Discover where remote teams are hiring.', meta: 'Explore locations' }),
+  ].join('');
+  const { html: bc, jsonLd: bcSchema } = buildBreadcrumb(base, [{ name: 'Remote Jobs', path: '/remote-jobs' }]);
+  const content = `<div class="page public-page">${PUBLIC_PAGE_CSS}${publicPageHeader({ breadcrumb: bc, eyebrow: 'REMOTE-FIRST SEARCH', title: 'Find your next remote opportunity', description: `${total.toLocaleString()} fully remote jobs are available in the current JobForion listings.` , actions: `<a class="public-primary-link" href="/jobs?remote_type=fully_remote">Search all remote jobs →</a>` })}<section class="public-section" aria-labelledby="remote-latest"><div class="public-section-heading"><div><h2 id="remote-latest">Latest fully remote jobs</h2><p>Real active listings from the current backend.</p></div><a href="/jobs?remote_type=fully_remote">View all remote jobs →</a></div>${jobsHtml}${pagination}</section>${categoryCards ? `<section class="public-section" aria-labelledby="remote-categories"><div class="public-section-heading"><div><h2 id="remote-categories">Popular remote categories</h2><p>Start with a discipline that matches your search.</p></div></div><div class="public-card-grid">${categoryCards}</div></section>` : ''}${companyCards ? `<section class="public-section" aria-labelledby="remote-companies"><div class="public-section-heading"><div><h2 id="remote-companies">Companies hiring remotely</h2><p>Based on active fully remote listings.</p></div></div><div class="public-card-grid">${companyCards}</div></section>` : ''}<section class="public-section" aria-labelledby="remote-resources"><div class="public-section-heading"><div><h2 id="remote-resources">Useful resources</h2><p>Keep your search focused and informed.</p></div></div><div class="public-card-grid resources-grid">${resourceCards}</div></section></div>`;
+  const schema = ldJsonTag(collectionPageSchema(`Remote Jobs — ${settings.site_name}`, 'Discover active fully remote opportunities, categories, companies, and career resources.', `${base}/remote-jobs`));
+  const robots = total >= MIN_JOBS_FOR_INDEXING && page === 1 ? 'index, follow' : 'noindex, follow';
+  return baseLayout(`Remote Jobs — ${settings.site_name}`, `Find ${total.toLocaleString()} active fully remote opportunities on ${settings.site_name}.`, `${base}/remote-jobs`, '', content, schema + bcSchema, robots, settings, categoryBundle, footerPages, menuPages, navButtons, user);
+}
+
 // ── /categories ──
 export async function renderCategoriesIndex(env, base, user = null) {
   const { settings, categoryOrder, categoryMap, categoryBundle, footerPages, menuPages, navButtons } = await loadPageContext(env);
   const { html: bc, jsonLd: bcSchema } = buildBreadcrumb(base, [{ name: 'Categories', path: '/categories' }]);
-  const content = `<div class="page">${bc}
-    <h1 style="font-family:'Plus Jakarta Sans',sans-serif;font-size:26px;font-weight:700;margin-bottom:8px;color:var(--ink)">Browse Jobs by Category</h1>
-    <p style="color:var(--ink2);font-size:14px;margin-bottom:24px">Explore remote roles grouped by discipline.</p>
-    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px">
-      ${categoryOrder.map(k => `<a href="/categories/${k}" style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:18px;text-decoration:none;display:flex;align-items:center;gap:10px;transition:all .2s" onmouseover="this.style.borderColor='var(--brand)'" onmouseout="this.style.borderColor='var(--border)'">
-        <span style="font-size:22px">${categoryMap[k].emoji}</span><span style="font-size:14px;font-weight:700;color:var(--ink)">${escapeHtml(categoryMap[k].label)}</span>
-      </a>`).join('')}
-    </div>
-  </div>`;
+  const cards = categoryOrder.map(key => publicCard({
+    href: `/categories/${encodeURIComponent(key)}`,
+    icon: categoryMap[key]?.emoji || '•',
+    title: categoryMap[key]?.label || key,
+    description: `Explore open remote roles in ${String(categoryMap[key]?.label || key).toLowerCase()}.`,
+    meta: 'View open jobs',
+  })).join('');
+  const content = `<div class="page public-page">${PUBLIC_PAGE_CSS}${publicPageHeader({ breadcrumb: bc, eyebrow: 'EXPLORE BY CATEGORY', title: 'Explore jobs by category', description: 'Browse real remote opportunities grouped by the disciplines and categories managed in JobForion.' })}<section class="public-card-grid" aria-label="Job categories">${cards || `<div class="empty"><div class="e-icon">📭</div><h3>No categories available</h3><p>Categories will appear after they are configured.</p></div>`}</section><div class="public-callout"><div><h2>Ready to search?</h2><p>Use the complete Jobs directory to combine category, location, salary, and remote filters.</p></div><a class="public-primary-link" href="/jobs">Browse all jobs →</a></div></div>`;
   const schema = ldJsonTag(collectionPageSchema(`Job Categories — ${settings.site_name}`, 'Browse remote jobs by category.', `${base}/categories`));
-  return baseLayout(`Browse Remote Jobs by Category — ${settings.site_name}`, 'Explore curated remote job listings grouped by discipline: development, design, marketing, data, DevOps, management and writing.', `${base}/categories`, '', content, schema + bcSchema, 'index, follow', settings, categoryBundle, footerPages, menuPages, navButtons, user);
+  return baseLayout(`Browse Remote Jobs by Category — ${settings.site_name}`, 'Explore remote job listings grouped by the live categories configured in JobForion.', `${base}/categories`, '', content, schema + bcSchema, 'index, follow', settings, categoryBundle, footerPages, menuPages, navButtons, user);
 }
 
-export async function renderCategoryDetail(env, base, key, user = null) {
+export async function renderCategoryDetail(env, base, key, user = null, filters = {}) {
   const { settings, categoryMap, categoryOrder, cardStyles, categoryBundle, footerPages, menuPages, navButtons } = await loadPageContext(env);
   const meta = categoryMap[key];
   if (!meta) return null;
-  const { results } = await env.DB.prepare(`SELECT ${JOB_LISTING_COLUMNS} FROM jobs WHERE LOWER(title) LIKE ? AND ${PUBLIC_JOB_STATUS_SQL} ORDER BY ${JOB_TYPE_SORT_SQL} ASC, id DESC LIMIT 60`).bind(`%${key}%`).all();
+  const pageSize = 20;
+  const requestedPage = Math.max(1, Math.min(500, parseInt(filters.page || '1', 10) || 1));
+  const categoryLike = `%${key.toLowerCase()}%`;
+  const { results: countRows } = await env.DB.prepare(`SELECT COUNT(*) AS c FROM jobs WHERE LOWER(title) LIKE ? AND ${PUBLIC_JOB_STATUS_SQL}`).bind(categoryLike).all();
+  const total = Number(countRows?.[0]?.c || 0);
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const page = Math.min(requestedPage, totalPages);
+  const { results: jobs } = await env.DB.prepare(`SELECT ${JOB_LISTING_COLUMNS} FROM jobs WHERE LOWER(title) LIKE ? AND ${PUBLIC_JOB_STATUS_SQL} ORDER BY ${JOB_TYPE_SORT_SQL} ASC, id DESC LIMIT ${pageSize} OFFSET ${(page - 1) * pageSize}`).bind(categoryLike).all();
   const { html: bc, jsonLd: bcSchema } = buildBreadcrumb(base, [{ name: 'Categories', path: '/categories' }, { name: meta.label, path: `/categories/${key}` }]);
-  const jobsHtml = await jobsListHtml(env, results, categoryMap, categoryOrder, cardStyles, '<div class="empty"><div class="e-icon">📭</div><h3>No jobs in this category yet</h3></div>');
-  const content = `<div class="page">${bc}
-    <h1 style="font-family:'Plus Jakarta Sans',sans-serif;font-size:26px;font-weight:700;margin-bottom:8px;color:var(--ink)">${meta.emoji} ${escapeHtml(meta.label)} Remote Jobs</h1>
-    <p style="color:var(--ink2);font-size:14px;margin-bottom:24px">${(results || []).length} open remote ${escapeHtml(meta.label.toLowerCase())} positions, updated hourly.</p>
-    ${jobsHtml}
-  </div>`;
-  const desc = truncateDescription(`Browse ${(results || []).length} remote ${meta.label.toLowerCase()} jobs updated hourly. Filter by seniority, salary, and location on ${settings.site_name}.`);
-  const schema = ldJsonTag(itemListSchema((results || []).slice(0, 20).map(j => ({ url: `${base}/job/${j.id}` }))));
-  return baseLayout(`${meta.label} Remote Jobs — ${settings.site_name}`, desc, `${base}/categories/${key}`, '', content, schema + bcSchema, 'index, follow', settings, categoryBundle, footerPages, menuPages, navButtons, user);
+  const jobsHtml = await jobsListHtml(env, jobs, categoryMap, categoryOrder, cardStyles, `<div class="empty"><div class="e-icon">📭</div><h3>No jobs in this category yet</h3><p>Browse the full Jobs directory to explore other active roles.</p><a class="public-primary-link" href="/jobs?category=${encodeURIComponent(key)}">Browse all jobs →</a></div>`);
+  const pageLink = n => `/categories/${encodeURIComponent(key)}${n > 1 ? `?page=${n}` : ''}`;
+  const pagination = totalPages > 1 ? `<nav class="jobs-directory-pagination" aria-label="Category jobs pagination">${page > 1 ? `<a class="page-btn" href="${pageLink(page - 1)}">← Previous</a>` : '<span class="page-btn disabled">← Previous</span>'}<span class="page-number-list">${Array.from({ length: totalPages }, (_, i) => i + 1).slice(Math.max(0, page - 3), Math.min(totalPages, page + 2)).map(n => `<a class="page-number${n === page ? ' active' : ''}"${n === page ? ' aria-current="page"' : ''} href="${pageLink(n)}">${n}</a>`).join('')}</span>${page < totalPages ? `<a class="page-btn" href="${pageLink(page + 1)}">Next →</a>` : '<span class="page-btn disabled">Next →</span>'}</nav>` : '';
+  const related = categoryOrder.filter(other => other !== key).slice(0, 4).map(other => publicCard({ href: `/categories/${encodeURIComponent(other)}`, icon: categoryMap[other]?.emoji || '•', title: categoryMap[other]?.label || other, meta: 'Explore category' })).join('');
+  const content = `<div class="page public-page">${PUBLIC_PAGE_CSS}${publicPageHeader({ breadcrumb: bc, eyebrow: 'CATEGORY JOBS', title: `${meta.emoji || ''} ${meta.label} jobs`, description: `${total.toLocaleString()} active opportunities matched to this category.` })}<div class="public-callout"><div><h2>Refine your search</h2><p>Use the shared Jobs directory to filter this category by remote type, employment, salary, location, and seniority.</p></div><a class="public-primary-link" href="/jobs?category=${encodeURIComponent(key)}">Open job filters →</a></div><section class="public-section" aria-labelledby="category-open-jobs"><div class="public-section-heading"><div><h2 id="category-open-jobs">Latest ${escapeHtml(meta.label)} roles</h2><p>${total.toLocaleString()} active listing${total === 1 ? '' : 's'} from the current backend.</p></div></div>${jobsHtml}${pagination}</section>${related ? `<section class="public-section" aria-labelledby="related-categories"><div class="public-section-heading"><h2 id="related-categories">Explore more categories</h2></div><div class="public-card-grid">${related}</div></section>` : ''}</div>`;
+  const desc = truncateDescription(`Browse ${total} remote ${meta.label.toLowerCase()} jobs on ${settings.site_name}. Use the full Jobs directory to refine by salary, location, and seniority.`);
+  const schema = ldJsonTag(itemListSchema((jobs || []).slice(0, 20).map(j => ({ url: `${base}/job/${j.id}` }))));
+  const robots = total >= MIN_JOBS_FOR_INDEXING && page === 1 ? 'index, follow' : 'noindex, follow';
+  return baseLayout(`${meta.label} Remote Jobs — ${settings.site_name}`, desc, `${base}/categories/${key}`, '', content, schema + bcSchema, robots, settings, categoryBundle, footerPages, menuPages, navButtons, user);
 }
 
 // ── /companies ──
@@ -460,35 +498,33 @@ export async function renderCountriesIndex(env, base, user = null) {
   const { settings, categoryBundle, footerPages, menuPages, navButtons } = await loadPageContext(env);
   const countries = await listCountries(env, { limit: 200 });
   const { html: bc, jsonLd: bcSchema } = buildBreadcrumb(base, [{ name: 'Countries', path: '/countries' }]);
-  const content = `<div class="page">${bc}
-    <h1 style="font-family:'Plus Jakarta Sans',sans-serif;font-size:26px;font-weight:700;margin-bottom:8px;color:var(--ink)">Browse Remote Jobs by Country</h1>
-    <p style="color:var(--ink2);font-size:14px;margin-bottom:24px">${countries.length} countries and regions with active remote listings on ${escapeHtml(settings.site_name)}.</p>
-    ${directoryGridHtml(countries, '/countries', (c) => `<span aria-hidden="true">${countryFlag(c.name)}</span> `)}
-  </div>`;
+  const cards = countries.map(country => publicCard({ href: `/countries/${encodeURIComponent(country.slug)}`, icon: countryFlag(country.name), title: country.name, description: 'Explore active remote opportunities in this location.', meta: 'Open roles', count: country.count })).join('');
+  const content = `<div class="page public-page">${PUBLIC_PAGE_CSS}${publicPageHeader({ breadcrumb: bc, eyebrow: 'BROWSE LOCATIONS', title: 'Discover remote jobs around the world', description: `${countries.length} countries and regions represented by active listings in the current JobForion data.` })}<section class="public-card-grid" aria-label="Countries and regions">${cards || `<div class="empty"><div class="e-icon">📭</div><h3>No locations available</h3><p>Locations will appear after the next job sync.</p></div>`}</section></div>`;
   const schema = ldJsonTag(collectionPageSchema(`Countries — ${settings.site_name}`, 'Browse remote jobs by country or region.', `${base}/countries`));
-  return baseLayout(`Browse Remote Jobs by Country — ${settings.site_name}`, `Explore remote job listings across ${countries.length} countries and regions, updated hourly on ${settings.site_name}.`, `${base}/countries`, '', content, schema + bcSchema, 'index, follow', settings, categoryBundle, footerPages, menuPages, navButtons, user);
+  return baseLayout(`Browse Remote Jobs by Country — ${settings.site_name}`, `Explore the ${countries.length} countries and regions represented in current remote listings on ${settings.site_name}.`, `${base}/countries`, '', content, schema + bcSchema, 'index, follow', settings, categoryBundle, footerPages, menuPages, navButtons, user);
 }
 
-export async function renderCountryDetail(env, base, slug, user = null) {
+export async function renderCountryDetail(env, base, slug, user = null, filters = {}) {
   const { settings, categoryMap, categoryOrder, cardStyles, categoryBundle, footerPages, menuPages, navButtons } = await loadPageContext(env);
   const country = await findCountryBySlug(env, slug);
   if (!country) return null;
-  const jobs = await jobsByRegion(env, country.rawNames || country.name, { limit: 60 });
+  const pageSize = 20;
+  const requestedPage = Math.max(1, Math.min(500, parseInt(filters.page || '1', 10) || 1));
+  const rawNames = country.rawNames || country.name;
+  const total = await countJobsByRegion(env, rawNames);
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const page = Math.min(requestedPage, totalPages);
+  const jobs = await jobsByRegion(env, rawNames, { limit: pageSize, offset: (page - 1) * pageSize });
   const { html: bc, jsonLd: bcSchema } = buildBreadcrumb(base, [{ name: 'Countries', path: '/countries' }, { name: country.name, path: `/countries/${slug}` }]);
-  // SECURITY: country.name is derived from jobs.location, which ultimately
-  // traces back to external provider data — escape before rendering.
   const safeName = escapeHtml(country.name);
   const flag = countryFlag(country.name);
-  const jobsHtml = await jobsListHtml(env, jobs, categoryMap, categoryOrder, cardStyles, '<div class="empty"><div class="e-icon">📭</div><h3>No open jobs in this location yet</h3></div>');
-  const content = `<div class="page">${bc}
-    <h1 style="font-family:'Plus Jakarta Sans',sans-serif;font-size:26px;font-weight:700;margin-bottom:8px;color:var(--ink)">${flag} Remote Jobs in ${safeName}</h1>
-    <p style="color:var(--ink2);font-size:14px;margin-bottom:24px">${jobs.length} open remote position${jobs.length === 1 ? '' : 's'} located in or hiring from ${safeName}.</p>
-    ${jobsHtml}
-  </div>`;
-  const desc = truncateDescription(`Browse ${jobs.length} remote jobs in ${country.name}. Updated hourly on ${settings.site_name}.`);
+  const jobsHtml = await jobsListHtml(env, jobs, categoryMap, categoryOrder, cardStyles, `<div class="empty"><div class="e-icon">📭</div><h3>No open jobs in this location yet</h3><p>Browse the full Jobs directory to explore other active roles.</p><a class="public-primary-link" href="/jobs?country=${encodeURIComponent(country.name)}">Browse all jobs →</a></div>`);
+  const pageLink = n => `/countries/${encodeURIComponent(slug)}${n > 1 ? `?page=${n}` : ''}`;
+  const pagination = totalPages > 1 ? `<nav class="jobs-directory-pagination" aria-label="Location jobs pagination">${page > 1 ? `<a class="page-btn" href="${pageLink(page - 1)}">← Previous</a>` : '<span class="page-btn disabled">← Previous</span>'}<span class="page-number-list">${Array.from({ length: totalPages }, (_, i) => i + 1).slice(Math.max(0, page - 3), Math.min(totalPages, page + 2)).map(n => `<a class="page-number${n === page ? ' active' : ''}"${n === page ? ' aria-current="page"' : ''} href="${pageLink(n)}">${n}</a>`).join('')}</span>${page < totalPages ? `<a class="page-btn" href="${pageLink(page + 1)}">Next →</a>` : '<span class="page-btn disabled">Next →</span>'}</nav>` : '';
+  const content = `<div class="page public-page">${PUBLIC_PAGE_CSS}${publicPageHeader({ breadcrumb: bc, eyebrow: 'LOCATION JOBS', title: `${flag} Remote jobs in ${country.name}`, description: `${total.toLocaleString()} active opportunities located in or hiring from this region.` })}<div class="public-callout"><div><h2>Refine by more signals</h2><p>Use the shared Jobs search to combine this location with role, salary, employment, and remote filters.</p></div><a class="public-primary-link" href="/jobs?country=${encodeURIComponent(country.name)}">Open job filters →</a></div><section class="public-section" aria-labelledby="location-open-jobs"><div class="public-section-heading"><div><h2 id="location-open-jobs">Latest roles in ${safeName}</h2><p>${total.toLocaleString()} active listing${total === 1 ? '' : 's'} from the current backend.</p></div></div>${jobsHtml}${pagination}</section></div>`;
+  const desc = truncateDescription(`Browse ${total} remote jobs in ${country.name} on ${settings.site_name}. Filter the full directory by role, salary, and employment type.`);
   const schema = ldJsonTag(itemListSchema(jobs.slice(0, 20).map(j => ({ url: `${base}/job/${j.id}` }))));
-  // THIN CONTENT: see the identical note on renderCompanyDetail above.
-  const robots = jobs.length >= MIN_JOBS_FOR_INDEXING ? 'index, follow' : 'noindex, follow';
+  const robots = total >= MIN_JOBS_FOR_INDEXING && page === 1 ? 'index, follow' : 'noindex, follow';
   return baseLayout(`Remote Jobs in ${country.name} — ${settings.site_name}`, desc, `${base}/countries/${slug}`, '', content, schema + bcSchema, robots, settings, categoryBundle, footerPages, menuPages, navButtons, user);
 }
 
@@ -497,34 +533,33 @@ export async function renderSkillsIndex(env, base, user = null) {
   const { settings, categoryBundle, footerPages, menuPages, navButtons } = await loadPageContext(env);
   const skills = await listSkills(env, { limit: 200 });
   const { html: bc, jsonLd: bcSchema } = buildBreadcrumb(base, [{ name: 'Skills', path: '/skills' }]);
-  const content = `<div class="page">${bc}
-    <h1 style="font-family:'Plus Jakarta Sans',sans-serif;font-size:26px;font-weight:700;margin-bottom:8px;color:var(--ink)">Browse Remote Jobs by Skill</h1>
-    <p style="color:var(--ink2);font-size:14px;margin-bottom:24px">${skills.length} in-demand skills across current listings.</p>
-    ${directoryGridHtml(skills, '/skills')}
-  </div>`;
+  const cards = skills.map(skill => publicCard({ href: `/skills/${encodeURIComponent(skill.slug)}`, icon: iconSearch({ size: 18 }), title: skill.name, description: 'Find current roles that mention this skill.', meta: 'Related jobs', count: skill.count })).join('');
+  const content = `<div class="page public-page">${PUBLIC_PAGE_CSS}${publicPageHeader({ breadcrumb: bc, eyebrow: 'BROWSE BY SKILL', title: 'Find opportunities by skill', description: 'Explore skills found in live job listings and follow each one to its related opportunities.' })}<section class="public-card-grid" aria-label="Skills">${cards || `<div class="empty"><div class="e-icon">📭</div><h3>No skills available</h3><p>Skills will appear after jobs with structured skill data are synced.</p></div>`}</section></div>`;
   const schema = ldJsonTag(collectionPageSchema(`Skills — ${settings.site_name}`, 'Browse remote jobs by required skill.', `${base}/skills`));
-  return baseLayout(`Browse Remote Jobs by Skill — ${settings.site_name}`, `Explore ${skills.length} in-demand skills across current remote job listings on ${settings.site_name}.`, `${base}/skills`, '', content, schema + bcSchema, 'index, follow', settings, categoryBundle, footerPages, menuPages, navButtons, user);
+  return baseLayout(`Browse Remote Jobs by Skill — ${settings.site_name}`, `Explore skills found in current remote job listings on ${settings.site_name}.`, `${base}/skills`, '', content, schema + bcSchema, 'index, follow', settings, categoryBundle, footerPages, menuPages, navButtons, user);
 }
 
-export async function renderSkillDetail(env, base, slug, user = null) {
+export async function renderSkillDetail(env, base, slug, user = null, filters = {}) {
   const { settings, categoryMap, categoryOrder, cardStyles, categoryBundle, footerPages, menuPages, navButtons } = await loadPageContext(env);
   const skill = await findSkillBySlug(env, slug);
   if (!skill) return null;
-  const jobs = await jobsBySkill(env, skill.rawNames || skill.name, { limit: 60 });
+  const pageSize = 20;
+  const requestedPage = Math.max(1, Math.min(500, parseInt(filters.page || '1', 10) || 1));
+  const rawNames = skill.rawNames || skill.name;
+  const total = await countJobsBySkill(env, rawNames);
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const page = Math.min(requestedPage, totalPages);
+  const jobs = await jobsBySkill(env, rawNames, { limit: pageSize, offset: (page - 1) * pageSize });
   const { html: bc, jsonLd: bcSchema } = buildBreadcrumb(base, [{ name: 'Skills', path: '/skills' }, { name: skill.name, path: `/skills/${slug}` }]);
-  // SECURITY: skill.name is parsed from the jobs.skills JSON column,
-  // itself sourced from external providers — escape before rendering.
   const safeName = escapeHtml(skill.name);
-  const jobsHtml = await jobsListHtml(env, jobs, categoryMap, categoryOrder, cardStyles, '<div class="empty"><div class="e-icon">📭</div><h3>No jobs currently require this skill</h3></div>');
-  const content = `<div class="page">${bc}
-    <h1 style="font-family:'Plus Jakarta Sans',sans-serif;font-size:26px;font-weight:700;margin-bottom:8px;color:var(--ink)">Remote Jobs Requiring ${safeName}</h1>
-    <p style="color:var(--ink2);font-size:14px;margin-bottom:24px">${jobs.length} open remote positions listing ${safeName} as a required skill.</p>
-    ${jobsHtml}
-  </div>`;
-  const desc = truncateDescription(`Browse ${jobs.length} remote jobs requiring ${skill.name}. Updated hourly on ${settings.site_name}.`);
+  const jobsHtml = await jobsListHtml(env, jobs, categoryMap, categoryOrder, cardStyles, `<div class="empty"><div class="e-icon">📭</div><h3>No jobs currently require this skill</h3><p>Browse the full Jobs directory to explore other active roles.</p><a class="public-primary-link" href="/jobs?skill=${encodeURIComponent(skill.name)}">Browse all jobs →</a></div>`);
+  const pageLink = n => `/skills/${encodeURIComponent(slug)}${n > 1 ? `?page=${n}` : ''}`;
+  const pagination = totalPages > 1 ? `<nav class="jobs-directory-pagination" aria-label="Skill jobs pagination">${page > 1 ? `<a class="page-btn" href="${pageLink(page - 1)}">← Previous</a>` : '<span class="page-btn disabled">← Previous</span>'}<span class="page-number-list">${Array.from({ length: totalPages }, (_, i) => i + 1).slice(Math.max(0, page - 3), Math.min(totalPages, page + 2)).map(n => `<a class="page-number${n === page ? ' active' : ''}"${n === page ? ' aria-current="page"' : ''} href="${pageLink(n)}">${n}</a>`).join('')}</span>${page < totalPages ? `<a class="page-btn" href="${pageLink(page + 1)}">Next →</a>` : '<span class="page-btn disabled">Next →</span>'}</nav>` : '';
+  const relatedCategories = categoryOrder.slice(0, 4).map(key => publicCard({ href: `/categories/${encodeURIComponent(key)}`, icon: categoryMap[key]?.emoji || '•', title: categoryMap[key]?.label || key, meta: 'Explore category' })).join('');
+  const content = `<div class="page public-page">${PUBLIC_PAGE_CSS}${publicPageHeader({ breadcrumb: bc, eyebrow: 'SKILL JOBS', title: `Remote jobs requiring ${skill.name}`, description: `${total.toLocaleString()} active positions currently mention this skill.` })}<div class="public-callout"><div><h2>Search beyond this skill</h2><p>Combine skill, role, location, salary, and remote filters in the shared Jobs directory.</p></div><a class="public-primary-link" href="/jobs?skill=${encodeURIComponent(skill.name)}">Open job filters →</a></div><section class="public-section" aria-labelledby="skill-open-jobs"><div class="public-section-heading"><div><h2 id="skill-open-jobs">Latest ${safeName} roles</h2><p>${total.toLocaleString()} active listing${total === 1 ? '' : 's'} from the current backend.</p></div></div>${jobsHtml}${pagination}</section><section class="public-section" aria-labelledby="related-skill-categories"><div class="public-section-heading"><h2 id="related-skill-categories">Explore categories</h2></div><div class="public-card-grid">${relatedCategories}</div></section></div>`;
+  const desc = truncateDescription(`Browse ${total} remote jobs requiring ${skill.name} on ${settings.site_name}. Explore current opportunities and refine the full directory.`);
   const schema = ldJsonTag(itemListSchema(jobs.slice(0, 20).map(j => ({ url: `${base}/job/${j.id}` }))));
-  // THIN CONTENT: see the identical note on renderCompanyDetail above.
-  const robots = jobs.length >= MIN_JOBS_FOR_INDEXING ? 'index, follow' : 'noindex, follow';
+  const robots = total >= MIN_JOBS_FOR_INDEXING && page === 1 ? 'index, follow' : 'noindex, follow';
   return baseLayout(`Remote ${skill.name} Jobs — ${settings.site_name}`, desc, `${base}/skills/${slug}`, '', content, schema + bcSchema, robots, settings, categoryBundle, footerPages, menuPages, navButtons, user);
 }
 

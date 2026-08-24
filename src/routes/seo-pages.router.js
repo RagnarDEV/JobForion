@@ -8,7 +8,7 @@ import {
   renderCategoriesIndex, renderCategoryDetail,
   renderCompaniesIndex, renderCompanyDetail,
   renderSkillsIndex, renderSkillDetail,
-  renderCountriesIndex, renderCountryDetail,
+  renderCountriesIndex, renderCountryDetail, renderRemoteJobsLanding,
   renderSearchPage,
 } from '../pages/seo-pages.js';
 import { withCache, CACHE_PRESETS } from '../lib/cache.js';
@@ -24,6 +24,11 @@ export async function handleSeoPagesRoute(url, request, env, ctx, base) {
   // crawlable (or vice versa).
   const settings = await getSettings(env);
 
+  if (url.pathname === '/remote-jobs') {
+    const page = url.searchParams.get('page') || '';
+    return await withCache(ctx, request, CACHE_PRESETS.directory, async () => renderRemoteJobsLanding(env, base, null, { page }));
+  }
+
   if (url.pathname === '/jobs') {
     const filterKeys = ['q', 'search', 'category', 'remote_type', 'employment_type', 'seniority', 'country', 'skill', 'company', 'salary_min', 'salary_max', 'days', 'source_type', 'sort', 'page'];
     const filters = Object.fromEntries(filterKeys.map(key => [key, url.searchParams.get(key) || '']));
@@ -36,7 +41,7 @@ export async function handleSeoPagesRoute(url, request, env, ctx, base) {
   }
   const catMatch = url.pathname.match(/^\/categories\/([a-z][a-z0-9]{1,19})$/);
   if (catMatch) {
-    const html = await renderCategoryDetail(env, base, catMatch[1]);
+    const html = await renderCategoryDetail(env, base, catMatch[1], null, { page: url.searchParams.get('page') || '' });
     if (!html) return new Response('Not found', { status: 404 });
     return new Response(html, { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": CACHE_PRESETS.entity } });
   }
@@ -75,7 +80,7 @@ export async function handleSeoPagesRoute(url, request, env, ctx, base) {
   }
   const countryMatch = url.pathname.match(/^\/countries\/([a-z0-9-]+)$/);
   if (countryMatch) {
-    const html = await renderCountryDetail(env, base, countryMatch[1]);
+    const html = await renderCountryDetail(env, base, countryMatch[1], null, { page: url.searchParams.get('page') || '' });
     if (!html) return new Response('Country not found', { status: 404 });
     return new Response(html, { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": CACHE_PRESETS.entity } });
   }
@@ -87,7 +92,7 @@ export async function handleSeoPagesRoute(url, request, env, ctx, base) {
   }
   const skillMatch = url.pathname.match(/^\/skills\/([a-z0-9-]+)$/);
   if (skillMatch) {
-    const html = await renderSkillDetail(env, base, skillMatch[1]);
+    const html = await renderSkillDetail(env, base, skillMatch[1], null, { page: url.searchParams.get('page') || '' });
     if (!html) return new Response('Skill not found', { status: 404 });
     return new Response(html, { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": CACHE_PRESETS.entity } });
   }
