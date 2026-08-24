@@ -23,7 +23,7 @@ import { getNavButtons } from '../lib/nav-buttons.js';
 import { getEnabledHomepageSections } from '../lib/homepage-sections.js';
 import { categoryIconSvg } from '../lib/category-icons.js';
 import { getVerifiedCompanyNameSet } from '../lib/companies.js';
-import { iconSparkle, iconFlame, iconPin, iconMapPin, iconBookmark, iconLink, iconArrowRight, iconBadgeCheck, iconClock, iconGlobe, iconBuilding, iconSearch, iconCheck, iconInfo, iconAlertTriangle, iconFilter, iconChevronDown, iconSliders, iconLayoutGrid, iconX } from '../assets/icons.js';
+import { iconSparkle, iconFlame, iconPin, iconMapPin, iconBookmark, iconLink, iconArrowRight, iconBadgeCheck, iconClock, iconGlobe, iconBuilding, iconSearch, iconCheck, iconInfo, iconAlertTriangle, iconFilter, iconChevronDown, iconSliders, iconLayoutGrid, iconX, iconBell, iconFileText, iconPlus } from '../assets/icons.js';
 
 // Same icon markup used by the server-rendered cards (job-card.js) is
 // reused for client-rendered cards (search/filter/pagination results) by
@@ -110,147 +110,61 @@ export async function renderMainHTML(env, base, user = null) {
   // else only renders if an admin has switched it on.
   const sectionHtml = {
     hero: `
-    <div class="hero">
+    <section class="hero">
       <div class="hero-inner">
-        <h1 class="hero-title">${escapeHtml(settings.hero_title_line1)} <span class="hl">${escapeHtml(settings.hero_title_line2)}</span></h1>
-        <p class="hero-sub">${escapeHtml(settings.hero_subtitle)}</p>
-
+        <div class="hero-copy">
+          <div class="hero-eyebrow"><span class="hero-eyebrow-dot"></span> REMOTE-FIRST CAREERS</div>
+          <h1 class="hero-title">${escapeHtml(settings.hero_title_line1)}<br><span class="hl">${escapeHtml(settings.hero_title_line2)}</span></h1>
+          <p class="hero-sub">${escapeHtml(settings.hero_subtitle)}</p>
+        </div>
+        <div class="hero-visual" aria-hidden="true"><div class="hero-map-grid"></div><span class="hero-orbit orbit-a"></span><span class="hero-orbit orbit-b"></span><span class="hero-orbit orbit-c"></span><div class="hero-stat-card"><strong>${totalJobsCount ? totalJobsCount.toLocaleString() : '24,589'}<em>+</em></strong><small>Active jobs<br>Updated daily</small></div><div class="hero-people-card"><span>JD</span><span>AK</span><span>RS</span></div></div>
         <div class="search-card">
-          <div class="sc-row">
-            <span class="sc-icon">${iconSearch({ size: 17 })}</span>
-            <input type="text" class="sc-input" id="searchInput" placeholder="${escapeHtml(settings.hero_search_placeholder)}" oninput="debounceSearch(this.value)">
-            <button class="sc-slider-btn" id="filtersToggleBtn" onclick="toggleFiltersPanel()" aria-label="More filters" title="More filters">
-              ${iconSliders({ size: 16 })}
-              <span class="filters-count-badge" id="filtersCountBadge" style="display:none">0</span>
-            </button>
-          </div>
-          <div class="sc-row sc-row-select">
-            <span class="sc-icon">${iconLayoutGrid({ size: 16 })}</span>
-            <select class="sc-select" id="fCategory" onchange="onFilterChange()">
-              <option value="">All Categories</option>
-              ${categories.map(c => `<option value="${c.key}">${escapeHtml(c.label)}</option>`).join('')}
-            </select>
-            <span class="sc-chevron">${iconChevronDown({ size: 15 })}</span>
-          </div>
-          <button class="sc-search-btn" onclick="onFilterChange()">${escapeHtml(settings.hero_search_button_text)}</button>
+          <label class="sc-field"><span>Job title, keywords, or company</span><div class="sc-row"><span class="sc-icon">${iconSearch({ size: 17 })}</span><input type="text" class="sc-input" id="searchInput" placeholder="${escapeHtml(settings.hero_search_placeholder)}" oninput="debounceSearch(this.value)"></div></label>
+          <label class="sc-field"><span>Category</span><div class="sc-row sc-row-select"><span class="sc-icon">${iconLayoutGrid({ size: 16 })}</span><select class="sc-select" id="fCategory" onchange="onFilterChange()"><option value="">All categories</option>${categories.map(c => `<option value="${c.key}">${escapeHtml(c.label)}</option>`).join('')}</select><span class="sc-chevron">${iconChevronDown({ size: 15 })}</span></div></label>
+          <button class="sc-slider-btn" id="filtersToggleBtn" onclick="toggleFiltersPanel()" aria-label="More filters" title="More filters">${iconSliders({ size: 16 })}<span class="filters-count-badge" id="filtersCountBadge" style="display:none">0</span></button>
+          <button class="sc-search-btn" onclick="onFilterChange()">${iconSearch({ size: 15 })} ${escapeHtml(settings.hero_search_button_text)}</button>
         </div>
-
-        <div class="filters-toggle-row">
-          <button class="filters-clear-btn" id="filtersClearBtn" onclick="clearFilters()" style="display:none">${iconX({ size: 11 })} Clear all filters</button>
-        </div>
-        <div class="filters-panel" id="filtersPanel">
-          <div class="filters-panel-inner">
-            <div class="filters-grid">
-              <label class="filter-field">
-                <span>Remote Type</span>
-                <select id="fRemote" onchange="onFilterChange()">
-                  <option value="">Any</option>
-                  <option value="fully_remote">Fully Remote</option>
-                  <option value="hybrid">Hybrid</option>
-                  <option value="on_site">On-site</option>
-                </select>
-              </label>
-              <label class="filter-field">
-                <span>Employment</span>
-                <select id="fEmploy" onchange="onFilterChange()">
-                  <option value="">Any</option>
-                  <option value="full_time">Full-time</option>
-                  <option value="part_time">Part-time</option>
-                  <option value="contract">Contract</option>
-                </select>
-              </label>
-              <label class="filter-field">
-                <span>Seniority</span>
-                <select id="fSeniority" onchange="onFilterChange()">
-                  <option value="">Any</option>
-                  <option value="Junior">Junior</option>
-                  <option value="Mid">Mid-level</option>
-                  <option value="Senior">Senior</option>
-                  <option value="Lead">Lead</option>
-                </select>
-              </label>
-              <label class="filter-field">
-                <span>Min Salary (USD/yr)</span>
-                <input type="number" id="fSalaryMin" placeholder="e.g. 80000" min="0" step="5000" oninput="debounceFilterChange()">
-              </label>
-              <label class="filter-field">
-                <span>Max Salary (USD/yr)</span>
-                <input type="number" id="fSalaryMax" placeholder="e.g. 150000" min="0" step="5000" oninput="debounceFilterChange()">
-              </label>
-              <label class="filter-field">
-                <span>Posted Within</span>
-                <select id="fDays" onchange="onFilterChange()">
-                  <option value="">Any time</option>
-                  <option value="1">Last 24 hours</option>
-                  <option value="3">Last 3 days</option>
-                  <option value="7">Last 7 days</option>
-                  <option value="14">Last 14 days</option>
-                  <option value="30">Last 30 days</option>
-                </select>
-              </label>
-              <label class="filter-field">
-                <span>Source</span>
-                <select id="fSourceType" onchange="onFilterChange()">
-                  <option value="">Any</option>
-                  <option value="employer">Direct from Employer</option>
-                  <option value="provider">Aggregated</option>
-                </select>
-              </label>
-              <label class="filter-field">
-                <span>Sort By</span>
-                <select id="fSort" onchange="onFilterChange()">
-                  <option value="relevance">Relevance</option>
-                  <option value="newest">Newest</option>
-                  <option value="updated">Recently Updated</option>
-                  <option value="salary">Highest Salary</option>
-                  <option value="oldest">Oldest</option>
-                </select>
-              </label>
-            </div>
-          </div>
-        </div>
+        <div class="filters-toggle-row"><button class="filters-clear-btn" id="filtersClearBtn" onclick="clearFilters()" style="display:none">${iconX({ size: 11 })} Clear all filters</button></div>
+        <div class="filters-panel" id="filtersPanel"><div class="filters-panel-inner"><div class="filters-grid">
+          <label class="filter-field"><span>Remote type</span><select id="fRemote" onchange="onFilterChange()"><option value="">Any</option><option value="fully_remote">Fully remote</option><option value="hybrid">Hybrid</option><option value="on_site">On-site</option></select></label>
+          <label class="filter-field"><span>Employment</span><select id="fEmploy" onchange="onFilterChange()"><option value="">Any</option><option value="full_time">Full-time</option><option value="part_time">Part-time</option><option value="contract">Contract</option></select></label>
+          <label class="filter-field"><span>Seniority</span><select id="fSeniority" onchange="onFilterChange()"><option value="">Any</option><option value="Junior">Junior</option><option value="Mid">Mid-level</option><option value="Senior">Senior</option><option value="Lead">Lead</option></select></label>
+          <label class="filter-field"><span>Min salary (USD/yr)</span><input type="number" id="fSalaryMin" placeholder="e.g. 80000" min="0" step="5000" oninput="debounceFilterChange()"></label>
+          <label class="filter-field"><span>Max salary (USD/yr)</span><input type="number" id="fSalaryMax" placeholder="e.g. 150000" min="0" step="5000" oninput="debounceFilterChange()"></label>
+          <label class="filter-field"><span>Posted within</span><select id="fDays" onchange="onFilterChange()"><option value="">Any time</option><option value="1">Last 24 hours</option><option value="3">Last 3 days</option><option value="7">Last 7 days</option><option value="14">Last 14 days</option><option value="30">Last 30 days</select></label>
+          <label class="filter-field"><span>Source</span><select id="fSourceType" onchange="onFilterChange()"><option value="">Any</option><option value="employer">Direct from employer</option><option value="provider">Aggregated</option></select></label>
+          <label class="filter-field"><span>Sort by</span><select id="fSort" onchange="onFilterChange()"><option value="relevance">Relevance</option><option value="newest">Newest</option><option value="updated">Recently updated</option><option value="salary">Highest salary</option><option value="oldest">Oldest</option></select></label>
+        </div></div></div>
+        <div class="popular-searches"><strong>Popular searches:</strong><button onclick="setSearchAndGo('developer')">Developer</button><button onclick="setSearchAndGo('designer')">Designer</button><button onclick="setSearchAndGo('marketing')">Marketing</button><button onclick="setSearchAndGo('data analyst')">Data analyst</button></div>
       </div>
-    </div>`,
+    </section>`,
 
     featured_companies: topCompanies.length ? `
-    <div class="fc-strip">
-      <div class="fc-inner">
-        <div class="fc-label">Featured Remote Employers</div>
-        <div class="fc-logos">${topCompanies.slice(0, 6).map(c => `<a href="/companies/${slugify(c.name)}">${escapeHtml(c.name)}</a>`).join('')}</div>
-      </div>
-    </div>` : '',
+    <section class="fc-strip">
+      <div class="fc-inner"><div class="section-heading compact-heading"><div><p class="eyebrow">CURATED EMPLOYERS</p><h2>Top companies hiring now</h2></div><a class="text-button" href="/companies">View all companies ${iconArrowRight({ size: 14 })}</a></div>
+      <div class="fc-logos">${topCompanies.slice(0, 8).map(c => `<a class="company-tile" href="/companies/${slugify(c.name)}"><span class="company-mark">${escapeHtml((c.name || '?').slice(0, 1).toUpperCase())}</span><strong>${escapeHtml(c.name)}</strong><small>${Number(c.count || 0).toLocaleString()} open roles</small></a>`).join('')}</div></div>
+    </section>` : '',
 
     categories_grid: categories.length ? `
-    <div class="content-wrap" style="padding-bottom:0">
-      <div class="cg-title">Browse by Category</div>
-      <div class="cg-grid">
-        ${categories.slice(0, 12).map(c => {
-          const swatch = /^#[0-9a-fA-F]{6}$/.test(c.color || '') ? c.color : '#2563EB';
-          return `<a href="/categories/${c.key}" class="cg-item" style="--cat-color:${swatch}"><span class="cg-icon" style="background:${swatch}1a;color:${swatch}">${categoryIconSvg(c.key, { size: 18 })}</span><span class="cg-label">${escapeHtml(c.label)}</span></a>`;
-        }).join('')}
-      </div>
-    </div>` : '',
+    <section class="category-strip"><div class="content-wrap category-inner"><div class="cg-title">Browse by category</div><div class="cg-grid">
+      ${categories.slice(0, 8).map(c => { const swatch = /^#[0-9a-fA-F]{6}$/.test(c.color || '') ? c.color : '#6339E6'; return `<a href="/categories/${c.key}" class="cg-item" style="--cat-color:${swatch}"><span class="cg-icon" style="background:${swatch}1a;color:${swatch}">${categoryIconSvg(c.key, { size: 18 })}</span><span><strong class="cg-label">${escapeHtml(c.label)}</strong><small>Explore roles</small></span></a>`; }).join('')}
+    </div></div></section>` : '',
 
     job_listing: `
-    <div class="content-wrap">
-      <div class="results-hdr">
-        <div class="results-count" id="resultsCount" style="display:none"><strong>${initialTotal.toLocaleString()}</strong> jobs found</div>
-      </div>
+    <section class="content-wrap jobs-section"><div class="home-jobs-grid"><div class="home-jobs-column">
+      <div class="section-heading jobs-heading"><div><p class="eyebrow">FRESH FOR YOU</p><h2>Latest job opportunities</h2></div><a class="text-button" href="/">View all jobs ${iconArrowRight({ size: 14 })}</a></div>
+      <div class="job-tabs"><button class="active">All jobs</button><button>Remote</button><button>Full-time</button><button>Part-time</button><button>Contract</button></div>
+      <div class="results-hdr"><div class="results-count" id="resultsCount" style="display:none"><strong>${initialTotal.toLocaleString()}</strong> jobs found</div></div>
       ${adSlot('homepage-results-top', '', adConfig, adsEnabled)}
-      <div class="jobs-list" id="jobsList">${ssrJobsHtml}</div>
-      <div class="pagination" id="pagination"></div>
-    </div>`,
+      <div class="jobs-list" id="jobsList">${ssrJobsHtml}</div><div class="pagination" id="pagination"></div>
+    </div><aside class="home-sidebar">
+      <div class="side-card alert-card"><div class="side-card-icon">${iconBell({ size: 18 })}</div><h3>Job alerts</h3><p>Get new roles in your inbox. Set a clear search once and stay in the loop.</p><a class="side-button" href="/register">Create alert ${iconArrowRight({ size: 13 })}</a></div>
+      <div class="side-card resume-card"><div><p class="eyebrow">STAND OUT</p><h3>Boost your career</h3><p>Build a profile that helps the right companies find you.</p><a class="side-button light" href="/register">Complete profile ${iconArrowRight({ size: 13 })}</a></div><div class="resume-orbit"><span></span><span></span><span></span></div></div>
+      <div class="side-card resources-card"><h3>Career resources</h3><a href="/blog">${iconFileText({ size: 14 })}<span>Career advice</span>${iconArrowRight({ size: 13 })}</a><a href="/blog">${iconFileText({ size: 14 })}<span>Interview tips</span>${iconArrowRight({ size: 13 })}</a><a href="/skills">${iconFileText({ size: 14 })}<span>Browse by skill</span>${iconArrowRight({ size: 13 })}</a><a href="/countries">${iconFileText({ size: 14 })}<span>Remote by country</span>${iconArrowRight({ size: 13 })}</a></div>
+    </aside></div></section>`,
 
     cta_banner: `
-    <div class="content-wrap">
-      <div class="cta-banner">
-        <div>
-          <div class="cta-title">Hiring remotely?</div>
-          <div class="cta-sub">Reach thousands of qualified candidates \u2014 post your job in minutes.</div>
-        </div>
-        <button class="cta-btn" onclick="openPostJobModal()">+ Post a Job</button>
-      </div>
-    </div>`,
+    <section class="trust-strip"><div class="content-wrap trust-grid"><div><span class="trust-icon">⌁</span><p><strong>100% Remote Jobs</strong><small>Work from anywhere in the world</small></p></div><div><span class="trust-icon">✓</span><p><strong>Verified companies</strong><small>Teams you can trust</small></p></div><div><span class="trust-icon">✦</span><p><strong>Daily updates</strong><small>Fresh roles added every day</small></p></div><div><span class="trust-icon">◌</span><p><strong>Free for job seekers</strong><small>Search and apply for free</small></p></div></div></section><div class="content-wrap"><div class="cta-banner"><div><div class="cta-title">Hiring remotely?</div><div class="cta-sub">Reach qualified candidates and post your job in minutes.</div></div><button class="cta-btn" onclick="openPostJobModal()">${iconPlus({ size: 13 })} Post a job</button></div></div>`,
   };
   const homepageSectionsHtml = enabledSections.map(s => sectionHtml[s.key] || '').join('');
 
@@ -282,64 +196,14 @@ ${ICON_HEAD}
 <style>
 ${SHARED_CSS}
 
-/* ── HERO (navy → indigo gradient, bold headline, red CTA search) ── */
-.hero{padding:96px 24px 84px;background:linear-gradient(135deg,${settings.hero_gradient_start} 0%,${settings.hero_gradient_mid} 55%,${settings.hero_gradient_end} 100%);position:relative;overflow:hidden}
-.hero::before{content:'';position:absolute;inset:0;background:radial-gradient(ellipse 60% 50% at 80% 0%,rgba(255,255,255,.12),transparent 60%)}
-.hero-inner{max-width:1180px;margin:0 auto;position:relative}
-.hero-eyebrow{display:inline-flex;align-items:center;gap:7px;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.22);border-radius:20px;padding:5px 13px;font-size:12px;color:#fff;font-weight:700;margin-bottom:20px}
-.hero-eyebrow-dot{width:6px;height:6px;border-radius:50%;background:var(--green);animation:pulse-dot 2s infinite}
-.hero-title{font-family:'${heroFont.name}',sans-serif;font-size:54px;font-weight:800;letter-spacing:-1px;line-height:1.1;margin-bottom:20px;color:#fff;max-width:680px}
-.hero-title .hl{position:relative;display:inline-block}
-.hero-title .hl::after{content:'';position:absolute;left:0;right:0;bottom:2px;height:5px;background:var(--coral);border-radius:3px;opacity:.85;z-index:-1}
-.hero-sub{color:rgba(255,255,255,.85);font-size:16px;margin-bottom:28px;line-height:1.65;max-width:540px}
-/* ── UNIFIED SEARCH CARD (search + category + button stacked as one card) ── */
-.search-card{max-width:560px;background:#fff;border-radius:22px;padding:10px;box-shadow:0 16px 38px -10px rgba(24,48,196,.24);border:1px solid rgba(255,255,255,.7);margin-bottom:14px}
-.sc-row{display:flex;align-items:center;gap:10px;background:var(--surface2);border-radius:14px;padding:13px 16px;margin-bottom:8px;transition:box-shadow .2s ease}
-.sc-row:focus-within{box-shadow:0 0 0 2px var(--brand-soft) inset}
-.sc-icon{color:var(--ink3);flex-shrink:0;display:inline-flex}
-.sc-input{flex:1;min-width:0;background:transparent;border:none;padding:0;color:var(--ink);font-size:15px;font-family:inherit;outline:none}
-.sc-input::placeholder{color:var(--ink3)}
-.sc-slider-btn{position:relative;flex-shrink:0;width:32px;height:32px;border-radius:9px;border:none;background:var(--surface);color:var(--ink3);display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all .2s}
-.sc-slider-btn:hover{background:var(--brand-soft);color:var(--brand)}
-.sc-slider-btn.active{background:var(--brand);color:#fff}
-.sc-row-select{cursor:pointer}
-.sc-select{flex:1;min-width:0;background:transparent;border:none;padding:0;color:var(--ink);font-size:15px;font-weight:600;font-family:inherit;outline:none;appearance:none;-webkit-appearance:none;cursor:pointer}
-.sc-chevron{color:var(--ink3);flex-shrink:0;display:inline-flex;pointer-events:none}
-.sc-search-btn{width:100%;background:${settings.hero_search_button_color};color:#fff;border:none;border-radius:14px;padding:15px;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;transition:all .2s;margin-bottom:0}
-.sc-search-btn:hover{filter:brightness(1.08);box-shadow:0 8px 20px -4px rgba(0,0,0,.28)}
-.filters-count-badge{position:absolute;top:-3px;right:-3px;background:var(--coral);color:#fff;font-size:9px;font-weight:800;padding:1px 5px;border-radius:20px;line-height:1.5;min-width:14px;text-align:center;border:2px solid #fff}
-.filters-toggle-row{max-width:560px;display:flex;justify-content:flex-end;margin-top:-4px;margin-bottom:4px;min-height:20px}
-.filters-clear-btn{display:inline-flex;align-items:center;gap:4px;background:none;border:none;color:rgba(255,255,255,.8);font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;padding:2px 4px}
-.filters-clear-btn:hover{color:#fff}
-.filters-panel{max-width:560px;max-height:0;overflow:hidden;opacity:0;transition:max-height .32s ease,opacity .25s ease,margin-top .32s ease}
-.filters-panel.open{max-height:360px;opacity:1;margin-top:2px;margin-bottom:14px}
-.filters-panel-inner{background:#fff;border-radius:16px;padding:16px 18px;box-shadow:0 14px 34px -10px rgba(24,48,196,.22)}
-.filters-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px}
-.filter-field{display:flex;flex-direction:column;gap:6px}
-.filter-field span{font-size:10px;font-weight:700;color:var(--ink3);text-transform:uppercase;letter-spacing:.5px}
-.filter-field select,.filter-field input{background:var(--surface2);border:1.5px solid var(--border2);border-radius:9px;padding:9px 11px;font-size:13px;color:var(--ink);font-family:inherit;outline:none;transition:border-color .2s;width:100%}
-.filter-field select:focus,.filter-field input:focus{border-color:var(--brand)}
-@media(max-width:640px){
-  .search-card{max-width:100%}
-  .filters-toggle-row,.filters-panel{max-width:100%}
-  .filters-panel-inner{padding:14px 16px}
-  .filters-grid{grid-template-columns:1fr 1fr;gap:10px}
-}
-@media(max-width:400px){
-  .filters-grid{grid-template-columns:1fr}
-}
-.hero-stats{display:flex;gap:30px;flex-wrap:wrap}
-.hero-stat{display:flex;flex-direction:column}
-.hero-stat-num{font-family:'Plus Jakarta Sans',sans-serif;font-size:22px;font-weight:700;color:#fff;line-height:1.2}
-.hero-stat-label{font-size:11px;color:rgba(255,255,255,.65);font-weight:600;letter-spacing:.4px;text-transform:uppercase}
+/* ── HERO (light editorial surface with a purple decision path) ── */
+.hero{padding:66px 24px 84px;background:linear-gradient(116deg,#fff 0%,#fbfaff 55%,#f3efff 100%);position:relative;overflow:hidden;border-bottom:1px solid #f0edf8}
+.hero::before{content:'';position:absolute;inset:0;background:radial-gradient(ellipse 42% 80% at 82% 20%,rgba(117,75,236,.09),transparent 65%);pointer-events:none}.hero-inner{max-width:1150px;margin:0 auto;position:relative;min-height:390px}.hero-copy{position:relative;z-index:2;width:min(560px,55%);padding-top:11px}.hero-eyebrow{display:inline-flex;align-items:center;gap:7px;color:var(--brand);font-size:10px;font-weight:800;letter-spacing:1.1px;margin-bottom:15px}.hero-eyebrow-dot{width:6px;height:6px;border-radius:50%;background:var(--green);animation:pulse-dot 2s infinite}.hero-title{font-family:'${heroFont.name}',sans-serif;font-size:clamp(40px,4.4vw,57px);font-weight:800;letter-spacing:-2.3px;line-height:1.06;margin-bottom:17px;color:var(--ink);max-width:600px}.hero-title .hl{position:relative;display:inline-block;color:var(--brand)}.hero-title .hl::after{content:'';position:absolute;left:0;right:0;bottom:1px;height:5px;background:#cfc2ff;border-radius:3px;opacity:.7;z-index:-1}.hero-sub{color:#77748a;font-size:13px;margin-bottom:24px;line-height:1.8;max-width:450px}
+.hero-visual{position:absolute;right:-35px;top:0;width:560px;height:320px;pointer-events:none}.hero-map-grid{position:absolute;inset:24px 0 0 0;border-radius:50%;opacity:.62;background-image:radial-gradient(circle at 25% 35%,rgba(99,57,230,.75) 0 2px,transparent 3px),radial-gradient(circle at 54% 26%,rgba(99,57,230,.55) 0 2px,transparent 3px),radial-gradient(circle at 70% 62%,rgba(99,57,230,.65) 0 2px,transparent 3px),radial-gradient(circle at 37% 72%,rgba(99,57,230,.55) 0 2px,transparent 3px),radial-gradient(ellipse at center,transparent 0 47%,rgba(190,177,245,.2) 48% 49%,transparent 50%),radial-gradient(ellipse at center,transparent 0 58%,rgba(190,177,245,.16) 59% 60%,transparent 61%);transform:rotate(-13deg)}.hero-map-grid::after{content:'';position:absolute;inset:14% 9%;background:repeating-linear-gradient(0deg,transparent 0 17px,rgba(147,125,225,.08) 18px 19px),repeating-linear-gradient(90deg,transparent 0 20px,rgba(147,125,225,.08) 21px 22px);mask-image:radial-gradient(ellipse,#000 0 48%,transparent 72%);transform:rotate(10deg)}.hero-orbit{position:absolute;width:42px;height:42px;border-radius:50%;border:3px solid #fff;box-shadow:0 8px 18px rgba(42,30,99,.18);background:linear-gradient(135deg,#21457e,#8dd0e5)}.orbit-a{top:33px;right:135px}.orbit-b{bottom:36px;right:48px;background:linear-gradient(135deg,#c87579,#503771)}.orbit-c{top:112px;right:66px;background:linear-gradient(135deg,#d7aa91,#463b62)}.hero-stat-card{position:absolute;left:36px;top:56px;padding:13px 15px;background:rgba(255,255,255,.94);border:1px solid #ece8f9;border-radius:10px;box-shadow:0 14px 30px rgba(62,40,136,.1);display:grid;gap:3px}.hero-stat-card strong{font-family:'Space Grotesk',sans-serif;font-size:21px;line-height:1;color:#211c43}.hero-stat-card em{color:var(--brand);font-style:normal}.hero-stat-card small{font-size:8px;line-height:1.45;color:#858197}.hero-people-card{position:absolute;right:64px;top:165px;padding:7px;background:rgba(255,255,255,.92);border:1px solid #eeeaf9;border-radius:9px;display:flex}.hero-people-card span{width:25px;height:25px;margin-left:-4px;border:2px solid #fff;border-radius:50%;display:grid;place-items:center;color:#fff;background:#593fd4;font-size:7px;font-weight:800}.hero-people-card span:first-child{margin-left:0;background:#d17977}.hero-people-card span:last-child{background:#278092}
+.search-card{position:absolute;z-index:4;left:0;bottom:0;width:min(870px,86%);display:grid;grid-template-columns:1.35fr 1fr 42px 132px;gap:9px;align-items:end;padding:13px 15px;background:#fff;border:1px solid #ebe8f2;border-radius:10px;box-shadow:0 14px 34px rgba(48,31,121,.1)}.sc-field{display:grid;gap:5px;min-width:0}.sc-field>span{color:#5d596f;font-size:8px;font-weight:800}.sc-row{display:flex;align-items:center;gap:8px;height:38px;background:#fff;border:1px solid #e8e5ef;border-radius:6px;padding:0 10px;transition:box-shadow .18s}.sc-row:focus-within{box-shadow:0 0 0 2px var(--brand-soft)}.sc-icon{color:#8c879b;flex-shrink:0;display:inline-flex}.sc-input{flex:1;min-width:0;background:transparent;border:none;padding:0;color:var(--ink);font-size:10px;font-family:inherit;outline:none}.sc-input::placeholder{color:#9c98a9}.sc-slider-btn{position:relative;flex-shrink:0;width:38px;height:38px;border-radius:7px;border:1px solid #e8e5ef;background:#fff;color:#777286;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all .18s}.sc-slider-btn:hover,.sc-slider-btn.active{background:var(--brand-soft);border-color:#cabdf7;color:var(--brand)}.sc-row-select{cursor:pointer}.sc-select{flex:1;min-width:0;background:transparent;border:none;padding:0;color:var(--ink);font-size:10px;font-weight:600;font-family:inherit;outline:none;appearance:none;cursor:pointer}.sc-chevron{color:#8b8799;flex-shrink:0;display:inline-flex;pointer-events:none}.sc-search-btn{height:38px;display:inline-flex;align-items:center;justify-content:center;gap:6px;background:#6339e6;color:#fff;border:none;border-radius:7px;padding:0 13px;font-size:10px;font-weight:800;cursor:pointer;font-family:inherit;transition:all .18s;white-space:nowrap}.sc-search-btn:hover{filter:brightness(1.08);box-shadow:0 8px 18px rgba(99,57,230,.25)}.filters-count-badge{position:absolute;top:-4px;right:-4px;background:var(--coral);color:#fff;font-size:8px;font-weight:800;padding:1px 5px;border-radius:20px;line-height:1.5;min-width:13px;text-align:center;border:2px solid #fff}.filters-toggle-row{max-width:560px;display:flex;justify-content:flex-end;min-height:0}.filters-clear-btn{display:inline-flex;align-items:center;gap:4px;background:none;border:none;color:var(--brand);font-size:10px;font-weight:700;cursor:pointer;font-family:inherit;padding:4px}.filters-clear-btn:hover{color:var(--brand2)}.filters-panel{position:relative;z-index:5;max-width:870px;max-height:0;overflow:hidden;opacity:0;transition:max-height .32s ease,opacity .25s ease,margin-top .32s ease}.filters-panel.open{max-height:360px;opacity:1;margin-top:8px}.filters-panel-inner{background:#fff;border:1px solid #ece8f7;border-radius:12px;padding:16px 18px;box-shadow:0 14px 34px rgba(45,29,112,.1)}.filters-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px}.filter-field{display:flex;flex-direction:column;gap:6px}.filter-field span{font-size:9px;font-weight:800;color:var(--ink3);text-transform:uppercase;letter-spacing:.5px}.filter-field select,.filter-field input{background:var(--surface2);border:1.5px solid var(--border2);border-radius:8px;padding:9px 11px;font-size:12px;color:var(--ink);font-family:inherit;outline:none;transition:border-color .2s;width:100%}.filter-field select:focus,.filter-field input:focus{border-color:var(--brand)}.popular-searches{position:absolute;z-index:3;left:0;bottom:-31px;display:flex;align-items:center;gap:8px;color:#7d798d;font-size:9px}.popular-searches strong{font-size:9px}.popular-searches button{border:0;background:var(--brand-soft);border-radius:12px;padding:5px 9px;color:#6943d8;font-size:8px;cursor:pointer}.popular-searches button:hover{background:#e6deff}
 
 /* ── FEATURED COMPANIES STRIP ── */
-.fc-strip{border-bottom:1px solid var(--border);padding:22px 24px;background:var(--surface)}
-.fc-inner{max-width:1180px;margin:0 auto}
-.fc-label{font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--ink3);margin-bottom:16px;text-align:center}
-.fc-logos{display:flex;align-items:center;justify-content:center;gap:48px;flex-wrap:wrap}
-.fc-logos a{font-family:'Plus Jakarta Sans',sans-serif;font-size:25px;font-weight:700;color:var(--ink3);opacity:.65;transition:all .25s;text-decoration:none}
-.fc-logos a:hover{opacity:1;color:var(--brand)}
+.fc-strip{border-bottom:1px solid var(--border);padding:31px 24px 28px;background:var(--surface)}.fc-inner{max-width:1150px;margin:0 auto}.compact-heading{margin-bottom:15px}.section-heading{display:flex;justify-content:space-between;gap:18px;align-items:end}.eyebrow{color:var(--brand);margin:0 0 6px;font-size:9px;letter-spacing:1px;font-weight:800}.section-heading h2{font-family:'Space Grotesk',sans-serif;color:var(--ink);letter-spacing:-.8px;font-size:19px;margin:0}.text-button{display:inline-flex;align-items:center;gap:6px;color:var(--brand);font-size:10px;font-weight:800;white-space:nowrap}.text-button:hover{color:var(--brand2)}.fc-logos{display:grid;grid-template-columns:repeat(8,1fr);border:1px solid #efedf4;border-radius:10px;overflow:hidden}.company-tile{min-height:112px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;background:#fff;border-right:1px solid #efedf4;transition:all .18s}.company-tile:last-child{border-right:0}.company-tile:hover{background:#faf8ff;transform:translateY(-3px)}.company-tile strong{font-size:9px;color:#2d2944}.company-tile small{font-size:8px;color:#9692a3}.company-mark{width:31px;height:31px;display:grid;place-items:center;font-family:'Space Grotesk',sans-serif;font-size:19px;font-weight:800;color:var(--brand);border-radius:9px;background:var(--brand-soft)}
 
 /* ── CONTENT ── */
 .content-wrap{max-width:1180px;margin:0 auto;padding:24px}
@@ -448,6 +312,11 @@ ${SHARED_CSS}
 @media(max-width:380px){
   .hero-title{font-size:29px}
 }
+/* Final visual pass: the supplied UI reference mapped onto the live SSR markup. */
+.hero{padding:66px 24px 84px;background:linear-gradient(116deg,#fff 0%,#fbfaff 55%,#f3efff 100%);border-bottom:1px solid #f0edf8}.hero::before{background:radial-gradient(ellipse 42% 80% at 82% 20%,rgba(117,75,236,.09),transparent 65%)}.hero-inner{max-width:1150px;min-height:390px}.hero-copy{width:min(560px,55%);padding-top:11px}.hero-eyebrow{background:none;border:0;color:var(--brand);font-size:10px;letter-spacing:1.1px;padding:0;margin-bottom:15px}.hero-title{font-family:'${heroFont.name}',sans-serif;font-size:clamp(40px,4.4vw,57px);letter-spacing:-2.3px;line-height:1.06;color:var(--ink);max-width:600px}.hero-title .hl{color:var(--brand)}.hero-title .hl::after{background:#cfc2ff}.hero-sub{color:#77748a;font-size:13px;max-width:450px}.hero-visual{right:-35px;top:0;width:560px;height:320px}.hero-map-grid{display:block}.hero-stat-card{display:grid}.hero-people-card{display:flex}.search-card{left:0;bottom:0;width:min(870px,86%);grid-template-columns:1.35fr 1fr 42px 132px;gap:9px;padding:13px 15px;border-radius:10px}.sc-field{display:grid}.sc-field>span{display:block}.sc-row{height:38px;padding:0 10px;margin-bottom:0;border-radius:6px}.sc-input,.sc-select{font-size:10px}.sc-search-btn{height:38px;border-radius:7px;padding:0 13px;font-size:10px}.filters-toggle-row{max-width:870px}.filters-panel{max-width:870px}.filters-clear-btn{color:var(--brand)}.popular-searches{bottom:-31px}.content-wrap{max-width:1150px;padding:24px}.category-strip{padding:22px 0}.category-inner{padding-top:0;padding-bottom:0}.cg-grid{grid-template-columns:repeat(8,1fr)}.cg-item{min-height:65px;padding:8px 10px}.cg-item strong{font-size:9px}.fc-strip{padding:31px 24px 28px}.fc-inner{max-width:1150px}.fc-logos{grid-template-columns:repeat(8,1fr);gap:0}.company-tile{min-height:112px}.jobs-section{padding-top:42px}.home-jobs-grid{grid-template-columns:minmax(0,1.72fr) minmax(230px,.72fr);gap:27px}.section-heading h2{font-size:19px}.job-card{border-radius:11px}.home-sidebar{display:grid}.side-card{border-radius:11px}.trust-grid{padding:24px 0}.cta-banner{background:linear-gradient(135deg,var(--brand),var(--brand2))}
+@media(max-width:960px){.hero-visual{right:-150px;opacity:.65}.cg-grid,.fc-logos{grid-template-columns:repeat(4,1fr)}.cg-item:nth-child(4n),.company-tile:nth-child(4n){border-right:0}.cg-item:nth-child(-n+4),.company-tile:nth-child(-n+4){border-bottom:1px solid #f0eef5}.home-jobs-grid{grid-template-columns:1fr}.home-sidebar{grid-template-columns:repeat(2,1fr)}.resources-card{grid-column:span 2}.sf-top{grid-template-columns:1.4fr repeat(2,1fr)}}
+@media(max-width:760px){.hero{min-height:555px;padding:50px 20px 42px}.hero-inner{min-height:555px}.hero-copy{width:100%}.hero-title{font-size:39px;letter-spacing:-2.1px}.hero-sub{font-size:12px;max-width:310px}.hero-visual{width:400px;right:-136px;top:169px;height:217px;opacity:.8}.hero-stat-card{left:25px;top:29px;padding:11px}.hero-stat-card strong{font-size:18px}.hero-people-card{right:11px;top:113px}.search-card{bottom:54px;width:100%;display:grid;grid-template-columns:1fr;gap:8px;padding:12px}.sc-field{display:none}.sc-field:first-child{display:grid}.sc-slider-btn{display:none}.sc-search-btn{width:100%}.filters-panel{max-width:100%}.filters-toggle-row{max-width:100%}.popular-searches{bottom:18px;max-width:100%;overflow:hidden;gap:7px;white-space:nowrap}.category-strip{padding:29px 0 22px}.category-inner{padding:0 14px}.cg-grid,.fc-logos{grid-template-columns:repeat(2,1fr)}.cg-item:nth-child(2n),.company-tile:nth-child(2n){border-right:0}.cg-item:nth-child(-n+6),.company-tile:nth-child(-n+6){border-bottom:1px solid #f0eef5}.jobs-section{padding-top:34px}.content-wrap{padding:14px}.home-sidebar{grid-template-columns:1fr}.resources-card{grid-column:auto}.job-tabs{gap:17px;overflow:auto}.job-tabs button{font-size:9px}.trust-grid{grid-template-columns:1fr 1fr;gap:18px}.trust-grid>div{justify-content:flex-start;border:0}.cta-banner{padding:20px}.cta-btn{width:100%}}
+@media(max-width:400px){.hero-title{font-size:34px}.filters-grid{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
@@ -800,6 +669,7 @@ function renderSaved(){
 
 function clearAllSaved(){savedIds=[];localStorage.removeItem('jn_saved');renderSaved();showToast('All cleared','info');}
 
+function setSearchAndGo(v){const input=document.getElementById('searchInput');if(input)input.value=v;srch=v;pg=1;loadJobs();}
 function debounceSearch(v){clearTimeout(srchT);srchT=setTimeout(()=>{srch=v;pg=1;loadJobs();},400);}
 
 // ── Filters panel (attached to the hero search box) ──────────────

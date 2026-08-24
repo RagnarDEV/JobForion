@@ -64,7 +64,7 @@ ${ogImage ? `<meta property="og:image" content="${ogImage}">` : `<meta property=
 <link rel="alternate" type="application/rss+xml" title="${siteName} Jobs Feed" href="${BASE_URL}/feed.rss">
 ${extraHead}
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;700;800&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
 <style>
 ${SHARED_CSS}
 ${JOB_CARD_CSS}
@@ -133,6 +133,8 @@ ${ACCOUNTS_CSS}
   .job-hero-hdr,.job-body{padding:18px 16px}
   .apply-big{width:100%;justify-content:center}
 }
+/* Detail and editorial surfaces use the same calm hierarchy as the supplied UI. */
+.page,.page-sm{padding-top:42px}.job-hero{border-radius:14px;box-shadow:var(--shadow-card);border-color:#efedf5}.job-hero::before{height:3px;background:linear-gradient(90deg,var(--brand),#9c80f5,#d8d0ff)}.job-title-h1,.static-title,.article-title{font-family:'Space Grotesk',sans-serif;letter-spacing:-1px}.job-title-h1{font-size:28px}.job-salary-lg{color:var(--brand);font-size:20px}.job-body{background:#fff}.apply-big{background:var(--brand);border-radius:8px;font-size:13px;padding:12px 25px;box-shadow:0 7px 18px rgba(99,57,230,.18)}.apply-big:hover{background:var(--brand2);box-shadow:0 10px 24px rgba(99,57,230,.25)}.skill-tag{background:var(--brand-soft);border-color:#e0d8ff;color:var(--brand);border-radius:13px}.related-title{font-family:'Space Grotesk',sans-serif;font-size:19px}.related-card{border-radius:11px;box-shadow:none}.related-card:hover{border-color:#bcaef3;box-shadow:var(--shadow)}.article-body h2{border-left-color:var(--brand)}
 </style>
 </head>
 <body>
