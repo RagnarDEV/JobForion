@@ -48,6 +48,7 @@ export function mobileHeaderHtml(settings, menuPages = [], navButtons = [], user
 <div class="mob-hdr">
   <a href="/" class="mob-logo"><img src="/favicon.svg" alt="${siteName}">${siteName}</a>
   <button class="mob-burger" onclick="toggleMobMenu()" id="mobBurgerBtn" aria-label="Open navigation menu">${iconMenu({ size: 18 })}</button>
+  <a href="${user ? '/user/dashboard' : '/login'}" class="mob-account-indicator" aria-label="${user ? 'Open dashboard' : 'Log in'}"><span></span></a>
 </div>
 <div class="mob-menu" id="mobMenu" aria-label="Mobile navigation">
   <a href="/">${iconSearch({ size: 16 })} Find jobs</a>
