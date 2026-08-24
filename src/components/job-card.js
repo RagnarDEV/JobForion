@@ -7,6 +7,7 @@ import { CATEGORY_META, CATEGORY_ORDER, JOB_TYPE_META } from '../config/constant
 import { slugify, escapeHtml } from '../lib/entities.js';
 import { iconSparkle, iconFlame, iconPin, iconMapPin, iconBadgeCheck, iconClock, iconGlobe, iconBuilding, iconArrowRight, iconBookmark } from '../assets/icons.js';
 import { DEFAULT_CARD_STYLES, buildCardStyleAttr, buildBadgeStyleAttr } from '../lib/job-card-styles.js';
+import { logoProxyPath } from '../lib/logo-proxy.js';
 
 // Shared empty-Set default for jobCardSSR's optional verifiedCompanySet
 // param — a single frozen instance instead of allocating `new Set()` on
@@ -26,16 +27,18 @@ function safeLogoUrl(value) {
 export function logoImgHtml(company, size = '64px', cls = 'job-logo', overrideUrl = null) {
   const safeCompany = escapeHtml(company);
   const fs = Math.round(parseInt(size) * .34) + 'px';
-  // Admin-set custom logo (see /admin/companies → lib/company-logos.js)
-  // takes priority; if it fails to load, the markup degrades to a
-  // professional monogram fallback. Without a trusted URL, no guessed
-  // company domain is requested.
   const ini = (company || '?').split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0] || '').join('').toUpperCase() || '?';
+  // Priority: (1) admin/employer-set logo (companies.logo_url /
+  // company_logos table, passed in as overrideUrl) — (2) automatic
+  // best-effort brand favicon, resolved and cached Worker-side by
+  // lib/logo-proxy.js so the visitor's browser only ever talks to our own
+  // origin, never a third party — (3) monogram initials if both 404/fail.
   const trustedOverride = safeLogoUrl(overrideUrl);
-  if (trustedOverride) {
-    const safeOverride = escapeHtml(trustedOverride);
+  const src = trustedOverride || logoProxyPath(company);
+  if (src) {
+    const safeSrc = escapeHtml(src);
     return `<div class="${cls}" style="width:${size};height:${size}">
-    <img src="${safeOverride}" alt="${safeCompany}"
+    <img src="${safeSrc}" alt="${safeCompany}" loading="lazy"
       style="width:100%;height:100%;object-fit:contain;padding:7px"
       onerror="this.onerror=null;this.style.display='none';this.nextElementSibling.style.display='flex'">
     <span style="display:none;width:100%;height:100%;align-items:center;justify-content:center;font-size:${fs};font-weight:800;color:var(--brand)">${escapeHtml(ini)}</span>
