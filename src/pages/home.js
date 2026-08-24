@@ -9,7 +9,7 @@ import { postJobModalHtml } from '../components/post-job-modal.js';
 import { SHARED_CSS } from '../styles/shared-css.js';
 import { ICON_HEAD } from '../assets/favicon.js';
 import { JOB_TYPE_META, JOB_TYPE_SORT_SQL, PUBLIC_JOB_STATUS_SQL, JOB_LISTING_COLUMNS } from '../config/constants.js';
-import { jobCardSSR } from '../components/job-card.js';
+import { jobCardSSR, logoImgHtml } from '../components/job-card.js';
 import { adSlot } from '../components/ad-slot.js';
 import { escapeHtml, slugify, listCompanies } from '../lib/entities.js';
 import { COUNTRY_TO_ISO } from '../lib/country-flags.js';
@@ -22,7 +22,8 @@ import { getFooterPages, getMenuPages } from '../lib/pages-cms.js';
 import { getNavButtons } from '../lib/nav-buttons.js';
 import { getEnabledHomepageSections } from '../lib/homepage-sections.js';
 import { categoryIconSvg } from '../lib/category-icons.js';
-import { getVerifiedCompanyNameSet } from '../lib/companies.js';
+import { getVerifiedCompanyNameSet, listPublicCompanies } from '../lib/companies.js';
+import { getLogoOverrides } from '../lib/company-logos.js';
 import { getPosts } from '../lib/blog-cms.js';
 import { iconSparkle, iconFlame, iconPin, iconMapPin, iconBookmark, iconLink, iconArrowRight, iconBadgeCheck, iconClock, iconGlobe, iconBuilding, iconSearch, iconCheck, iconInfo, iconAlertTriangle, iconFilter, iconChevronDown, iconSliders, iconLayoutGrid, iconX, iconBell, iconFileText, iconPlus, iconBriefcase } from '../assets/icons.js';
 
@@ -40,12 +41,24 @@ const CLIENT_ICONS = {
   searchLg: iconSearch({ size: 32 }),
 };
 
+async function getCategoryCounts(env, categories) {
+  const counts = Object.fromEntries((categories || []).map(c => [c.key, 0]));
+  await Promise.all((categories || []).map(async c => {
+    try {
+      const { results } = await env.DB.prepare(`SELECT COUNT(*) AS c FROM jobs WHERE ${PUBLIC_JOB_STATUS_SQL} AND LOWER(title) LIKE ?`).bind(`%${String(c.key || '').toLowerCase()}%`).all();
+      counts[c.key] = Number(results?.[0]?.c || 0);
+    } catch (e) {}
+  }));
+  return counts;
+}
+
 export async function renderMainHTML(env, base, user = null) {
   await ensureTable(env);
   const settings = await getSettings(env);
   const categories = await getCategories(env);
   const categoryOrder = categories.map(c => c.key);
   const categoryMap = Object.fromEntries(categories.map(c => [c.key, { label: c.label, emoji: c.emoji, color: c.color }]));
+  const categoryCounts = await getCategoryCounts(env, categories.slice(0, 8));
   const cardStyles = await getCardStyles(env);
   const adConfig = await getAdSlotsConfig(env);
   const adsEnabled = settings.ads_enabled !== '0';
@@ -65,6 +78,16 @@ export async function renderMainHTML(env, base, user = null) {
   // leave the heading with no font applied at all.
   const heroFont = HERO_FONT_OPTIONS.find(f => f.name === settings.hero_heading_font) || HERO_FONT_OPTIONS[0];
   const heroFontGoogleParam = heroFont.name === 'Plus Jakarta Sans' ? '' : `&family=${heroFont.googleParam}`;
+  const legacyHeroDefaults = {
+    title1: 'Find your next',
+    title2: 'remote job',
+    subtitle: 'Browse curated remote positions from top companies worldwide. Filter by category, country, skill, or company — or post your own opening in minutes.',
+    button: 'Search',
+  };
+  const heroTitleLine1 = settings.hero_title_line1 === legacyHeroDefaults.title1 ? 'Find the work you love.' : settings.hero_title_line1;
+  const heroTitleLine2 = settings.hero_title_line2 === legacyHeroDefaults.title2 ? 'Anywhere in the world.' : settings.hero_title_line2;
+  const heroSubtitle = settings.hero_subtitle === legacyHeroDefaults.subtitle ? 'Discover flexible remote work from trusted companies, with global opportunities curated for the way you want to work.' : settings.hero_subtitle;
+  const heroSearchButtonText = settings.hero_search_button_text === legacyHeroDefaults.button ? 'Search Jobs' : settings.hero_search_button_text;
   let initialJobs = [], initialTotal = 0, totalJobsCount = 0, companiesCount = 0;
   try {
     const { results } = await env.DB.prepare(`SELECT ${JOB_LISTING_COLUMNS} FROM jobs WHERE ${PUBLIC_JOB_STATUS_SQL} ORDER BY ${JOB_TYPE_SORT_SQL} ASC, featured DESC, id DESC LIMIT 20`).all();
@@ -76,12 +99,35 @@ export async function renderMainHTML(env, base, user = null) {
     companiesCount = ccr[0]?.c || 0;
   } catch (e) {}
 
-  // Data for the four homepage facet-picker panels (category, country,
-  // skill, company) — each bounded to a reasonable top-N since these
-  // render as flat button lists, not paginated tables (the full
-  // directories live at /categories, /countries, /skills, /companies).
+  // Top companies prefer the real, admin-managed companies table (which
+  // carries logo_url, verification and an exact job_count). Legacy provider-
+  // only names remain a safe fallback so the homepage never goes empty on a
+  // fresh install. Logos are resolved from real company data or admin logo
+  // overrides; the renderer uses a monogram when neither exists.
   let topCompanies = [];
-  try { topCompanies = await listCompanies(env, { limit: 40 }); } catch (e) {}
+  let companyLogoMap = {};
+  try {
+    const [realCompanies, legacyCompanies] = await Promise.all([
+      listPublicCompanies(env, { limit: 40 }),
+      listCompanies(env, { limit: 40 }),
+    ]);
+    const seen = new Set();
+    for (const c of realCompanies || []) {
+      const key = String(c.name || '').toLowerCase();
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      topCompanies.push({ ...c, count: Number(c.job_count || 0), slug: c.slug || slugify(c.name) });
+      if (c.logo_url) companyLogoMap[key] = c.logo_url;
+    }
+    for (const c of legacyCompanies || []) {
+      const key = String(c.name || '').toLowerCase();
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      topCompanies.push(c);
+    }
+    const overrides = await getLogoOverrides(env, topCompanies.map(c => c.name));
+    companyLogoMap = { ...companyLogoMap, ...overrides };
+  } catch (e) {}
   const verifiedCompanySet = await getVerifiedCompanyNameSet(env);
   let blogPosts = [];
   try { blogPosts = await getPosts(env, { limit: 4 }); } catch (e) {}
@@ -98,8 +144,10 @@ export async function renderMainHTML(env, base, user = null) {
   });
 
   const featuredEnabled = settings.feature_featured_jobs !== '0';
+  const initialLogoOverrides = await getLogoOverrides(env, initialJobs.map(j => j.company));
+  const jobLogoOverrides = { ...companyLogoMap, ...initialLogoOverrides };
   const ssrJobsHtml = initialJobs.length
-    ? initialJobs.map((j, i) => jobCardSSR(j, i, categoryMap, categoryOrder, cardStyles, {}, featuredEnabled, verifiedCompanySet)).join('')
+    ? initialJobs.map((j, i) => jobCardSSR(j, i, categoryMap, categoryOrder, cardStyles, jobLogoOverrides, featuredEnabled, verifiedCompanySet)).join('')
     : `<div class="loader-wrap"><div class="loader"></div></div>`;
 
   const siteName = escapeHtml(settings.site_name);
@@ -117,8 +165,8 @@ export async function renderMainHTML(env, base, user = null) {
       <div class="hero-inner">
         <div class="hero-copy">
           <div class="hero-eyebrow"><span class="hero-eyebrow-dot"></span> REMOTE-FIRST CAREERS</div>
-          <h1 class="hero-title">${escapeHtml(settings.hero_title_line1)}<br><span class="hl">${escapeHtml(settings.hero_title_line2)}</span></h1>
-          <p class="hero-sub">${escapeHtml(settings.hero_subtitle)}</p>
+          <h1 class="hero-title">${escapeHtml(heroTitleLine1)}<br><span class="hl">${escapeHtml(heroTitleLine2)}</span></h1>
+          <p class="hero-sub">${escapeHtml(heroSubtitle)}</p>
         </div>
         <div class="hero-visual" aria-hidden="true"><div class="hero-map-grid"></div><span class="hero-orbit orbit-a"></span><span class="hero-orbit orbit-b"></span><span class="hero-orbit orbit-c"></span><div class="hero-stat-card"><strong>${totalJobsCount ? totalJobsCount.toLocaleString() : '24,589'}<em>+</em></strong><small>Active jobs<br>Updated daily</small></div><div class="hero-people-card"><span>JD</span><span>AK</span><span>RS</span></div></div>
         <div class="search-card">
@@ -126,7 +174,7 @@ export async function renderMainHTML(env, base, user = null) {
           <label class="sc-field"><span>Location</span><div class="sc-row"><span class="sc-icon">${iconMapPin({ size: 15 })}</span><input type="text" class="sc-input" id="fCountry" placeholder="Anywhere" oninput="debounceCountryChange(this.value)"></div></label>
           <label class="sc-field"><span>Job type</span><div class="sc-row sc-row-select"><span class="sc-icon">${iconBriefcase({ size: 15 })}</span><select class="sc-select" id="fEmploy" onchange="onFilterChange()"><option value="">Any type</option><option value="full_time">Full-time</option><option value="part_time">Part-time</option><option value="contract">Contract</option></select><span class="sc-chevron">${iconChevronDown({ size: 15 })}</span></div></label>
           <button class="sc-slider-btn" id="filtersToggleBtn" onclick="toggleFiltersPanel()" aria-label="More filters" title="More filters">${iconSliders({ size: 16 })}<span class="filters-count-badge" id="filtersCountBadge" style="display:none">0</span></button>
-          <button class="sc-search-btn" onclick="onFilterChange()">${iconSearch({ size: 15 })} ${escapeHtml(settings.hero_search_button_text)}</button>
+          <button class="sc-search-btn" onclick="onFilterChange()">${iconSearch({ size: 15 })} ${escapeHtml(heroSearchButtonText)}</button>
         </div>
         <div class="filters-toggle-row"><button class="filters-clear-btn" id="filtersClearBtn" onclick="clearFilters()" style="display:none">${iconX({ size: 11 })} Clear all filters</button></div>
         <div class="filters-panel" id="filtersPanel"><div class="filters-panel-inner"><div class="filters-grid">
@@ -139,28 +187,28 @@ export async function renderMainHTML(env, base, user = null) {
           <label class="filter-field"><span>Source</span><select id="fSourceType" onchange="onFilterChange()"><option value="">Any</option><option value="employer">Direct from employer</option><option value="provider">Aggregated</option></select></label>
           <label class="filter-field"><span>Sort by</span><select id="fSort" onchange="onFilterChange()"><option value="relevance">Relevance</option><option value="newest">Newest</option><option value="updated">Recently updated</option><option value="salary">Highest salary</option><option value="oldest">Oldest</option></select></label>
         </div></div></div>
-        <div class="popular-searches"><strong>Popular searches:</strong><button onclick="setSearchAndGo('developer')">Developer</button><button onclick="setSearchAndGo('designer')">Designer</button><button onclick="setSearchAndGo('marketing')">Marketing</button><button onclick="setSearchAndGo('data analyst')">Data analyst</button></div>
+        <div class="popular-searches"><strong>Popular searches:</strong><button onclick="setSearchAndGo('developer')">Developer</button><button onclick="setSearchAndGo('designer')">Designer</button><button onclick="setSearchAndGo('marketing')">Marketing</button><button onclick="setSearchAndGo('data analyst')">Data analyst</button><button onclick="setSearchAndGo('customer support')">Customer Support</button></div>
       </div>
     </section>`,
 
     featured_companies: topCompanies.length ? `
     <section class="fc-strip">
       <div class="fc-inner"><div class="section-heading compact-heading"><div><p class="eyebrow">CURATED EMPLOYERS</p><h2>Top companies hiring now</h2></div><a class="text-button" href="/companies">View all companies ${iconArrowRight({ size: 14 })}</a></div>
-      <div class="fc-logos">${topCompanies.slice(0, 8).map(c => `<a class="company-tile" href="/companies/${slugify(c.name)}"><span class="company-mark">${escapeHtml((c.name || '?').slice(0, 1).toUpperCase())}</span><strong>${escapeHtml(c.name)}</strong><small>${Number(c.count || 0).toLocaleString()} open roles</small></a>`).join('')}</div></div>
+      <div class="fc-logos">${topCompanies.slice(0, 8).map(c => `<a class="company-tile" href="/companies/${escapeHtml(c.slug || slugify(c.name))}">${companyLogoMap[String(c.name || '').toLowerCase()] ? logoImgHtml(c.name, '38px', 'company-logo', companyLogoMap[String(c.name || '').toLowerCase()]) : `<span class="company-mark">${escapeHtml((c.name || '?').slice(0, 1).toUpperCase())}</span>`}<strong>${escapeHtml(c.name)}</strong><small>${Number(c.count || 0).toLocaleString()} open roles</small></a>`).join('')}</div></div>
     </section>` : '',
 
     categories_grid: categories.length ? `
     <section class="category-strip"><div class="content-wrap category-inner"><div class="cg-title">Browse by category</div><div class="cg-grid">
-      ${categories.slice(0, 8).map(c => { const swatch = /^#[0-9a-fA-F]{6}$/.test(c.color || '') ? c.color : '#6339E6'; return `<a href="/categories/${c.key}" class="cg-item" style="--cat-color:${swatch}"><span class="cg-icon" style="background:${swatch}1a;color:${swatch}">${categoryIconSvg(c.key, { size: 18 })}</span><span><strong class="cg-label">${escapeHtml(c.label)}</strong><small>Explore roles</small></span></a>`; }).join('')}
+      ${categories.slice(0, 8).map(c => { const swatch = /^#[0-9a-fA-F]{6}$/.test(c.color || '') ? c.color : '#6339E6'; return `<a href="/categories/${c.key}" class="cg-item" style="--cat-color:${swatch}"><span class="cg-icon" style="background:${swatch}1a;color:${swatch}">${categoryIconSvg(c.key, { size: 18 })}</span><span><strong class="cg-label">${escapeHtml(c.label)}</strong><small>${categoryCounts[c.key] ? `${Number(categoryCounts[c.key]).toLocaleString()} open roles` : 'Explore roles'}</small></span></a>`; }).join('')}
     </div></div></section>` : '',
 
     job_listing: `
     <section class="content-wrap jobs-section"><div class="home-jobs-grid"><div class="home-jobs-column">
-      <div class="section-heading jobs-heading"><div><p class="eyebrow">FRESH FOR YOU</p><h2>Latest job opportunities</h2></div><a class="text-button" href="/">View all jobs ${iconArrowRight({ size: 14 })}</a></div>
+      <div class="section-heading jobs-heading"><div><p class="eyebrow">FRESH FOR YOU</p><h2>Latest job opportunities</h2></div><a class="text-button" href="/jobs">View all jobs ${iconArrowRight({ size: 14 })}</a></div>
       <div class="job-tabs" role="tablist"><button class="active" data-job-tab="all" onclick="quickJobTab('all',this)">All jobs</button><button data-job-tab="remote" onclick="quickJobTab('remote',this)">Remote</button><button data-job-tab="full_time" onclick="quickJobTab('full_time',this)">Full-time</button><button data-job-tab="part_time" onclick="quickJobTab('part_time',this)">Part-time</button><button data-job-tab="contract" onclick="quickJobTab('contract',this)">Contract</button></div>
       <div class="results-hdr"><div class="results-count" id="resultsCount" style="display:none"><strong>${initialTotal.toLocaleString()}</strong> jobs found</div></div>
       ${adSlot('homepage-results-top', '', adConfig, adsEnabled)}
-      <div class="jobs-list" id="jobsList">${ssrJobsHtml}</div><a class="jobs-view-all" href="/">View all jobs ${iconArrowRight({ size: 14 })}</a><div class="pagination" id="pagination"></div>
+      <div class="jobs-list" id="jobsList">${ssrJobsHtml}</div><a class="jobs-view-all" href="/jobs">View all jobs ${iconArrowRight({ size: 14 })}</a>
     </div><aside class="home-sidebar">
       <div class="side-card alert-card"><div class="side-card-icon">${iconBell({ size: 18 })}</div><h3>Job alerts</h3><p>Get new roles in your inbox. Set a clear search once and stay in the loop.</p><a class="side-button" href="${user ? '/user/job-alerts' : '/register'}">Create alert ${iconArrowRight({ size: 13 })}</a></div>
       <div class="side-card resume-card"><div><p class="eyebrow">STAND OUT</p><h3>Boost your career</h3><p>Build a profile that helps the right companies find you.</p><a class="side-button light" href="${user ? '/user/profile' : '/register'}">Complete profile ${iconArrowRight({ size: 13 })}</a></div><div class="resume-orbit"><span></span><span></span><span></span></div></div>
@@ -207,7 +255,7 @@ ${SHARED_CSS}
 .search-card{position:absolute;z-index:4;left:0;bottom:0;width:min(870px,86%);display:grid;grid-template-columns:1.35fr 1fr 42px 132px;gap:9px;align-items:end;padding:13px 15px;background:#fff;border:1px solid #ebe8f2;border-radius:10px;box-shadow:0 14px 34px rgba(48,31,121,.1)}.sc-field{display:grid;gap:5px;min-width:0}.sc-field>span{color:#5d596f;font-size:8px;font-weight:800}.sc-row{display:flex;align-items:center;gap:8px;height:38px;background:#fff;border:1px solid #e8e5ef;border-radius:6px;padding:0 10px;transition:box-shadow .18s}.sc-row:focus-within{box-shadow:0 0 0 2px var(--brand-soft)}.sc-icon{color:#8c879b;flex-shrink:0;display:inline-flex}.sc-input{flex:1;min-width:0;background:transparent;border:none;padding:0;color:var(--ink);font-size:10px;font-family:inherit;outline:none}.sc-input::placeholder{color:#9c98a9}.sc-slider-btn{position:relative;flex-shrink:0;width:38px;height:38px;border-radius:7px;border:1px solid #e8e5ef;background:#fff;color:#777286;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all .18s}.sc-slider-btn:hover,.sc-slider-btn.active{background:var(--brand-soft);border-color:#cabdf7;color:var(--brand)}.sc-row-select{cursor:pointer}.sc-select{flex:1;min-width:0;background:transparent;border:none;padding:0;color:var(--ink);font-size:10px;font-weight:600;font-family:inherit;outline:none;appearance:none;cursor:pointer}.sc-chevron{color:#8b8799;flex-shrink:0;display:inline-flex;pointer-events:none}.sc-search-btn{height:38px;display:inline-flex;align-items:center;justify-content:center;gap:6px;background:#6339e6;color:#fff;border:none;border-radius:7px;padding:0 13px;font-size:10px;font-weight:800;cursor:pointer;font-family:inherit;transition:all .18s;white-space:nowrap}.sc-search-btn:hover{filter:brightness(1.08);box-shadow:0 8px 18px rgba(99,57,230,.25)}.filters-count-badge{position:absolute;top:-4px;right:-4px;background:var(--coral);color:#fff;font-size:8px;font-weight:800;padding:1px 5px;border-radius:20px;line-height:1.5;min-width:13px;text-align:center;border:2px solid #fff}.filters-toggle-row{max-width:560px;display:flex;justify-content:flex-end;min-height:0}.filters-clear-btn{display:inline-flex;align-items:center;gap:4px;background:none;border:none;color:var(--brand);font-size:10px;font-weight:700;cursor:pointer;font-family:inherit;padding:4px}.filters-clear-btn:hover{color:var(--brand2)}.filters-panel{position:relative;z-index:5;max-width:870px;max-height:0;overflow:hidden;opacity:0;transition:max-height .32s ease,opacity .25s ease,margin-top .32s ease}.filters-panel.open{max-height:360px;opacity:1;margin-top:8px}.filters-panel-inner{background:#fff;border:1px solid #ece8f7;border-radius:12px;padding:16px 18px;box-shadow:0 14px 34px rgba(45,29,112,.1)}.filters-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px}.filter-field{display:flex;flex-direction:column;gap:6px}.filter-field span{font-size:9px;font-weight:800;color:var(--ink3);text-transform:uppercase;letter-spacing:.5px}.filter-field select,.filter-field input{background:var(--surface2);border:1.5px solid var(--border2);border-radius:8px;padding:9px 11px;font-size:12px;color:var(--ink);font-family:inherit;outline:none;transition:border-color .2s;width:100%}.filter-field select:focus,.filter-field input:focus{border-color:var(--brand)}.popular-searches{position:absolute;z-index:3;left:0;bottom:-31px;display:flex;align-items:center;gap:8px;color:#7d798d;font-size:9px}.popular-searches strong{font-size:9px}.popular-searches button{border:0;background:var(--brand-soft);border-radius:12px;padding:5px 9px;color:#6943d8;font-size:8px;cursor:pointer}.popular-searches button:hover{background:#e6deff}
 
 /* ── FEATURED COMPANIES STRIP ── */
-.fc-strip{border-bottom:1px solid var(--border);padding:31px 24px 28px;background:var(--surface)}.fc-inner{max-width:1150px;margin:0 auto}.compact-heading{margin-bottom:15px}.section-heading{display:flex;justify-content:space-between;gap:18px;align-items:end}.eyebrow{color:var(--brand);margin:0 0 6px;font-size:9px;letter-spacing:1px;font-weight:800}.section-heading h2{font-family:'Space Grotesk',sans-serif;color:var(--ink);letter-spacing:-.8px;font-size:19px;margin:0}.text-button{display:inline-flex;align-items:center;gap:6px;color:var(--brand);font-size:10px;font-weight:800;white-space:nowrap}.text-button:hover{color:var(--brand2)}.fc-logos{display:grid;grid-template-columns:repeat(8,1fr);border:1px solid #efedf4;border-radius:10px;overflow:hidden}.company-tile{min-height:112px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;background:#fff;border-right:1px solid #efedf4;transition:all .18s}.company-tile:last-child{border-right:0}.company-tile:hover{background:#faf8ff;transform:translateY(-3px)}.company-tile strong{font-size:9px;color:#2d2944}.company-tile small{font-size:8px;color:#9692a3}.company-mark{width:31px;height:31px;display:grid;place-items:center;font-family:'Space Grotesk',sans-serif;font-size:19px;font-weight:800;color:var(--brand);border-radius:9px;background:var(--brand-soft)}
+.fc-strip{border-bottom:1px solid var(--border);padding:31px 24px 28px;background:var(--surface)}.fc-inner{max-width:1150px;margin:0 auto}.compact-heading{margin-bottom:15px}.section-heading{display:flex;justify-content:space-between;gap:18px;align-items:end}.eyebrow{color:var(--brand);margin:0 0 6px;font-size:9px;letter-spacing:1px;font-weight:800}.section-heading h2{font-family:'Space Grotesk',sans-serif;color:var(--ink);letter-spacing:-.8px;font-size:19px;margin:0}.text-button{display:inline-flex;align-items:center;gap:6px;color:var(--brand);font-size:10px;font-weight:800;white-space:nowrap}.text-button:hover{color:var(--brand2)}.fc-logos{display:grid;grid-template-columns:repeat(8,1fr);border:1px solid #efedf4;border-radius:10px;overflow:hidden}.company-tile{min-height:112px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;background:#fff;border-right:1px solid #efedf4;transition:all .18s}.company-tile:last-child{border-right:0}.company-tile:hover{background:#faf8ff;transform:translateY(-3px)}.company-tile strong{font-size:9px;color:#2d2944}.company-tile small{font-size:8px;color:#9692a3}.company-mark{width:31px;height:31px;display:grid;place-items:center;font-family:'Space Grotesk',sans-serif;font-size:19px;font-weight:800;color:var(--brand);border-radius:9px;background:var(--brand-soft)}.company-logo{width:38px;height:38px;border-radius:10px;background:var(--brand-soft);border:1px solid #ece8f7;display:flex;align-items:center;justify-content:center;overflow:hidden;flex-shrink:0}.company-logo img{width:100%;height:100%;object-fit:contain;padding:6px}.company-logo span{display:flex!important;width:100%;height:100%;align-items:center;justify-content:center}
 
 /* ── CONTENT ── */
 .content-wrap{max-width:1180px;margin:0 auto;padding:24px}
@@ -237,9 +285,7 @@ ${SHARED_CSS}
 /* ── JOB LIST (pastel-tinted cards, remote.io rhythm) ── */
 .jobs-list{display:flex;flex-direction:column;gap:9px}
 .job-card{border:1px solid var(--border);border-radius:13px;display:block;text-decoration:none;color:inherit;transition:all .2s;position:relative;overflow:hidden}
-.job-card::before{content:'';position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--cat-color,var(--brand));opacity:.55;transition:opacity .2s,width .2s}
 .job-card:hover{border-color:var(--cat-color,var(--brand));box-shadow:var(--shadow-lg);transform:translateY(-2px)}
-.job-card:hover::before{opacity:1;width:5px}
 .card-inner{padding:13px 14px}
 .card-row1{display:flex;align-items:flex-start;gap:11px}
 .co-logo{width:54px;height:54px;border-radius:12px;background:var(--brand-soft);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;color:var(--brand);overflow:hidden;flex-shrink:0}
@@ -317,7 +363,7 @@ ${SHARED_CSS}
   .hero-title{font-size:29px}
 }
 /* Final visual pass: the supplied UI reference mapped onto the live SSR markup. */
-.hero{padding:66px 24px 84px;background:linear-gradient(116deg,#fff 0%,#fbfaff 55%,#f3efff 100%);border-bottom:1px solid #f0edf8}.hero::before{background:radial-gradient(ellipse 42% 80% at 82% 20%,rgba(117,75,236,.09),transparent 65%)}.hero-inner{max-width:1150px;min-height:390px}.hero-copy{width:min(560px,55%);padding-top:11px}.hero-eyebrow{background:none;border:0;color:var(--brand);font-size:10px;letter-spacing:1.1px;padding:0;margin-bottom:15px}.hero-title{font-family:'${heroFont.name}',sans-serif;font-size:clamp(40px,4.4vw,57px);letter-spacing:-2.3px;line-height:1.06;color:var(--ink);max-width:600px}.hero-title .hl{color:var(--brand)}.hero-title .hl::after{background:#cfc2ff}.hero-sub{color:#77748a;font-size:13px;max-width:450px}.hero-visual{right:-35px;top:0;width:560px;height:320px}.hero-map-grid{display:block}.hero-stat-card{display:grid}.hero-people-card{display:flex}.search-card{left:0;bottom:0;width:min(870px,86%);grid-template-columns:1.28fr 1fr 1fr 42px 122px;gap:9px;padding:13px 15px;border-radius:10px}.sc-field{display:grid}.sc-field>span{display:block}.sc-row{height:38px;padding:0 10px;margin-bottom:0;border-radius:6px}.sc-input,.sc-select{font-size:10px}.sc-search-btn{height:38px;border-radius:7px;padding:0 13px;font-size:10px}.filters-toggle-row{max-width:870px}.filters-panel{max-width:870px}.filters-clear-btn{color:var(--brand)}.popular-searches{bottom:-31px}.content-wrap{max-width:1150px;padding:24px}.category-strip{padding:22px 0}.category-inner{padding-top:0;padding-bottom:0}.cg-grid{grid-template-columns:repeat(8,1fr)}.cg-item{min-height:65px;padding:8px 10px}.cg-item strong{font-size:9px}.fc-strip{padding:31px 24px 28px}.fc-inner{max-width:1150px}.fc-logos{grid-template-columns:repeat(8,1fr);gap:0}.company-tile{min-height:112px}.jobs-section{padding-top:42px}.home-jobs-grid{grid-template-columns:minmax(0,1.72fr) minmax(230px,.72fr);gap:27px}.section-heading h2{font-size:19px}.job-card{border-radius:11px}.home-sidebar{display:grid}.side-card{border-radius:11px}.jobs-view-all{display:flex;align-items:center;justify-content:center;gap:6px;margin-top:12px;border:1px solid #bcaef2;border-radius:8px;min-height:34px;color:var(--brand);font-size:9px;font-weight:800}.jobs-view-all:hover{background:var(--brand-soft)}.card-secondary-meta{display:flex;align-items:center;justify-content:flex-end;gap:9px;min-width:0;flex:1}.card-location-inline{display:inline-flex;align-items:center;gap:4px;font-size:9px;color:#8c879a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:150px}.card-save-btn{flex-shrink:0}.card-save-btn.saved{background:var(--brand-soft);border-color:#bdaef8;color:var(--brand)}.home-jobs-column .job-card{background:#fff!important}.home-jobs-column .job-card .card-inner{display:flex;align-items:center;gap:16px;padding:13px 16px}.home-jobs-column .job-card .card-row1{flex:1;min-width:0;align-items:center}.home-jobs-column .job-card .card-right{display:grid;grid-template-columns:minmax(92px,1fr) 30px;grid-template-rows:auto auto;align-items:center;gap:3px 10px;flex:0 0 205px;margin:0;padding:0;border:0}.home-jobs-column .job-card .card-secondary-meta{grid-column:1;grid-row:2;justify-content:flex-end;gap:8px}.home-jobs-column .job-card .salary-badge{grid-column:1;grid-row:1;justify-self:end}.home-jobs-column .job-card .card-save-btn{grid-column:2;grid-row:1 / span 2}.insights-strip{padding:24px 0 32px;background:#fff;border-top:1px solid #f0eef4}.insights-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:13px}.insight-tile{display:block;border:1px solid #eceaf2;border-radius:10px;overflow:hidden;background:#fff;transition:all .18s}.insight-tile:hover{border-color:#c9bcf5;box-shadow:0 8px 18px rgba(48,31,121,.08);transform:translateY(-2px)}.insight-cover{height:100px;background-size:cover;background-position:center;display:flex;align-items:flex-end;padding:8px}.insight-cover span{background:rgba(99,57,230,.92);color:#fff;border-radius:4px;padding:3px 6px;font-size:8px;font-weight:800}.insight-tile>strong,.insight-tile>small{display:block;padding:0 10px}.insight-tile>strong{margin-top:9px;font-size:10px;line-height:1.45;color:#312d48}.insight-tile>small{margin:5px 0 11px;color:#8b8799;font-size:8px;line-height:1.5}.trust-grid{padding:24px 0}.cta-banner{background:linear-gradient(135deg,var(--brand),var(--brand2))}
+.hero{padding:66px 24px 84px;background:linear-gradient(116deg,#fff 0%,#fbfaff 55%,#f3efff 100%);border-bottom:1px solid #f0edf8}.hero::before{background:radial-gradient(ellipse 42% 80% at 82% 20%,rgba(117,75,236,.09),transparent 65%)}.hero-inner{max-width:1150px;min-height:390px}.hero-copy{width:min(560px,55%);padding-top:11px}.hero-eyebrow{background:none;border:0;color:var(--brand);font-size:10px;letter-spacing:1.1px;padding:0;margin-bottom:15px}.hero-title{font-family:'${heroFont.name}',sans-serif;font-size:clamp(40px,4.4vw,57px);letter-spacing:-2.3px;line-height:1.06;color:var(--ink);max-width:600px}.hero-title .hl{color:var(--brand)}.hero-title .hl::after{background:#cfc2ff}.hero-sub{color:#77748a;font-size:13px;max-width:450px}.hero-visual{right:-35px;top:0;width:560px;height:320px}.hero-map-grid{display:block}.hero-stat-card{display:grid}.hero-people-card{display:flex}.search-card{left:0;bottom:0;width:min(870px,86%);grid-template-columns:1.28fr 1fr 1fr 42px 122px;gap:9px;padding:13px 15px;border-radius:10px}.sc-field{display:grid}.sc-field>span{display:block}.sc-row{height:38px;padding:0 10px;margin-bottom:0;border-radius:6px}.sc-input,.sc-select{font-size:10px}.sc-search-btn{height:38px;border-radius:7px;padding:0 13px;font-size:10px}.filters-toggle-row{max-width:870px}.filters-panel{max-width:870px}.filters-clear-btn{color:var(--brand)}.popular-searches{bottom:-31px}.content-wrap{max-width:1150px;padding:24px}.category-strip{padding:22px 0}.category-inner{padding-top:0;padding-bottom:0}.cg-grid{grid-template-columns:repeat(8,minmax(0,1fr))}.cg-item{min-height:65px;min-width:0;padding:8px 10px}.cg-item>span:last-child{min-width:0}.cg-item strong{font-size:9px;white-space:normal;overflow-wrap:anywhere}.fc-strip{padding:31px 24px 28px}.fc-inner{max-width:1150px}.fc-logos{grid-template-columns:repeat(8,1fr);gap:0}.company-tile{min-height:112px}.jobs-section{padding-top:42px}.home-jobs-grid{grid-template-columns:minmax(0,1.72fr) minmax(230px,.72fr);gap:27px}.section-heading h2{font-size:19px}.job-card{border-radius:11px}.home-sidebar{display:grid}.side-card{border-radius:11px}.jobs-view-all{display:flex;align-items:center;justify-content:center;gap:6px;margin-top:12px;border:1px solid #bcaef2;border-radius:8px;min-height:34px;color:var(--brand);font-size:9px;font-weight:800}.jobs-view-all:hover{background:var(--brand-soft)}.card-secondary-meta{display:flex;align-items:center;justify-content:flex-end;gap:9px;min-width:0;flex:1}.card-location-inline{display:inline-flex;align-items:center;gap:4px;font-size:9px;color:#8c879a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:150px}.card-save-btn{flex-shrink:0}.card-save-btn.saved{background:var(--brand-soft);border-color:#bdaef8;color:var(--brand)}.home-jobs-column .job-card{background:#fff!important}.home-jobs-column .job-card .card-inner{display:flex;align-items:center;gap:16px;padding:13px 16px}.home-jobs-column .job-card .card-row1{flex:1;min-width:0;align-items:center}.home-jobs-column .job-card .card-right{display:grid;grid-template-columns:minmax(92px,1fr) 30px;grid-template-rows:auto auto;align-items:center;gap:3px 10px;flex:0 0 205px;margin:0;padding:0;border:0}.home-jobs-column .job-card .card-secondary-meta{grid-column:1;grid-row:2;justify-content:flex-end;gap:8px}.home-jobs-column .job-card .salary-badge{grid-column:1;grid-row:1;justify-self:end}.home-jobs-column .job-card .card-save-btn{grid-column:2;grid-row:1 / span 2}.insights-strip{padding:24px 0 32px;background:#fff;border-top:1px solid #f0eef4}.insights-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:13px}.insight-tile{display:block;border:1px solid #eceaf2;border-radius:10px;overflow:hidden;background:#fff;transition:all .18s}.insight-tile:hover{border-color:#c9bcf5;box-shadow:0 8px 18px rgba(48,31,121,.08);transform:translateY(-2px)}.insight-cover{height:100px;background-size:cover;background-position:center;display:flex;align-items:flex-end;padding:8px}.insight-cover span{background:rgba(99,57,230,.92);color:#fff;border-radius:4px;padding:3px 6px;font-size:8px;font-weight:800}.insight-tile>strong,.insight-tile>small{display:block;padding:0 10px}.insight-tile>strong{margin-top:9px;font-size:10px;line-height:1.45;color:#312d48}.insight-tile>small{margin:5px 0 11px;color:#8b8799;font-size:8px;line-height:1.5}.trust-grid{padding:24px 0}.cta-banner{background:linear-gradient(135deg,var(--brand),var(--brand2))}
 @media(max-width:960px){.hero-visual{right:-150px;opacity:.65}.cg-grid,.fc-logos{grid-template-columns:repeat(4,1fr)}.cg-item:nth-child(4n),.company-tile:nth-child(4n){border-right:0}.cg-item:nth-child(-n+4),.company-tile:nth-child(-n+4){border-bottom:1px solid #f0eef5}.home-jobs-grid{grid-template-columns:1fr}.home-sidebar{grid-template-columns:repeat(2,1fr)}.resources-card{grid-column:span 2}.sf-top{grid-template-columns:1.4fr repeat(2,1fr)}}
 @media(max-width:760px){.hero{min-height:555px;padding:50px 20px 42px}.hero-inner{min-height:555px}.hero-copy{width:100%;text-align:left}.hero-title{font-size:39px;letter-spacing:-2.1px;text-align:left}.hero-sub{font-size:12px;max-width:310px;text-align:left}.hero-visual{width:400px;right:-136px;top:169px;height:217px;opacity:.8}.hero-stat-card{left:25px;top:29px;padding:11px}.hero-stat-card strong{font-size:18px}.hero-people-card{right:11px;top:113px}.search-card{bottom:54px;width:100%;display:grid;grid-template-columns:1fr;gap:8px;padding:12px}.sc-field{display:grid}.sc-slider-btn{display:none}.sc-search-btn{width:100%}.filters-panel{max-width:100%}.filters-toggle-row{max-width:100%}.popular-searches{bottom:18px;max-width:100%;overflow:hidden;gap:7px;white-space:nowrap}.category-strip{padding:29px 0 22px}.category-inner{padding:0 14px}.cg-grid{display:flex;overflow-x:auto;scroll-snap-type:x proximity;scrollbar-width:none}.cg-grid::-webkit-scrollbar{display:none}.cg-item{min-width:112px;flex:0 0 112px;flex-direction:column;justify-content:center;text-align:center;scroll-snap-align:start;border-right:1px solid #f0eef5!important;border-bottom:0!important}.fc-logos{display:flex;overflow-x:auto;scrollbar-width:none}.fc-logos::-webkit-scrollbar{display:none}.company-tile{min-width:118px;flex:0 0 118px;border-right:1px solid #efedf4!important}.insights-grid{grid-template-columns:repeat(2,1fr);gap:10px}.insight-cover{height:84px}.home-jobs-column .job-card .card-inner{display:block;padding:12px}.home-jobs-column .job-card .card-row1{display:flex}.home-jobs-column .job-card .card-right{display:flex;align-items:center;justify-content:flex-start;gap:7px;margin-top:8px;padding-top:8px;border-top:1px solid #f0eef4}.home-jobs-column .job-card .card-secondary-meta{justify-content:flex-start;overflow:hidden}.home-jobs-column .job-card .salary-badge{margin-left:auto}.home-jobs-column .job-card .card-save-btn{margin-left:0}.insights-grid{grid-template-columns:repeat(2,1fr);gap:10px}.insight-cover{height:84px}.jobs-section{padding-top:34px}.content-wrap{padding:14px}.home-sidebar{grid-template-columns:1fr}.resources-card{grid-column:auto}.job-tabs{gap:17px;overflow:auto}.job-tabs button{font-size:9px}.trust-grid{grid-template-columns:1fr 1fr;gap:18px}.trust-grid>div{justify-content:flex-start;border:0}.cta-banner{padding:20px}.cta-btn{width:100%}}
 .job-tabs{display:flex;align-items:center;gap:21px;border-bottom:1px solid #efedf4;margin:0 0 12px;overflow-x:auto;scrollbar-width:none}.job-tabs::-webkit-scrollbar{display:none}.job-tabs button{position:relative;flex-shrink:0;border:0;background:transparent;color:#858094;padding:0 0 10px;font:800 10px 'Manrope',sans-serif;cursor:pointer;white-space:nowrap}.job-tabs button:hover{color:var(--brand)}.job-tabs button.active{color:var(--brand)}.job-tabs button.active::after{content:'';position:absolute;left:0;right:0;bottom:-1px;height:2px;border-radius:2px;background:var(--brand)}.home-sidebar{display:grid;grid-template-columns:1fr;gap:11px}.side-card{border:1px solid #eceaf2;border-radius:11px;padding:17px;background:#fff;box-shadow:0 6px 18px rgba(38,25,99,.05);position:relative;overflow:hidden}.side-card-icon{width:34px;height:34px;border-radius:9px;background:var(--brand-soft);color:var(--brand);display:grid;place-items:center;margin-bottom:11px}.side-card h3{font:800 14px 'Space Grotesk',sans-serif;color:var(--ink);margin-bottom:6px}.side-card p{font-size:11px;line-height:1.65;color:#817c90;margin-bottom:13px}.side-button{display:inline-flex;align-items:center;gap:5px;color:var(--brand);font-size:10px;font-weight:800}.side-button:hover{color:var(--brand2)}.resume-card{background:linear-gradient(135deg,#6b45e6 0%,#4e2acc 100%);border-color:#6841dd;min-height:170px}.resume-card h3,.resume-card p{color:#fff}.resume-card p{color:rgba(255,255,255,.8)}.resume-card .eyebrow{color:#e2d9ff}.resume-card .side-button.light{color:#fff;background:rgba(255,255,255,.16);padding:8px 11px;border-radius:7px}.resume-orbit{position:absolute;right:-20px;bottom:-30px;width:128px;height:128px;border:1px solid rgba(255,255,255,.25);border-radius:50%;opacity:.8}.resume-orbit:before,.resume-orbit:after{content:'';position:absolute;inset:13px;border:1px solid rgba(255,255,255,.22);border-radius:50%}.resume-orbit:after{inset:32px}.resources-card h3{margin-bottom:7px}.resources-card a{display:flex;align-items:center;gap:8px;padding:9px 0;border-top:1px solid #f0eef4;color:#6f6a7f;font-size:10px;font-weight:700}.resources-card a svg:first-child{color:var(--brand)}.resources-card a svg:last-child{margin-left:auto}.resources-card a:hover{color:var(--brand)}.toast{z-index:9999}
@@ -363,6 +409,7 @@ const CAT_META=window.__CATEGORY_META__;
 const CAT_ORDER=window.__CATEGORY_ORDER__;
 const ICONS=window.__ICONS__;
 const COUNTRY_ISO=window.__COUNTRY_ISO__;
+const COMPANY_LOGOS=${JSON.stringify(companyLogoMap).replace(/</g,'\\u003c')};
 const JOB_TYPE_META=window.__JOB_TYPE_META__;
 const JOB_CARD_STYLES=window.__JOB_CARD_STYLES__;
 const FEATURES=window.__FEATURES__;
@@ -411,17 +458,17 @@ let savedIds=JSON.parse(localStorage.getItem('jn_saved')||'[]');
 let adv={};
 let hasLoadedOnce=true;
 
-function initials(n){return(n||'?').split(' ').slice(0,2).map(w=>w[0]||'').join('').toUpperCase();}
+function initials(n){return(n||'?').split(/\s+/).filter(Boolean).slice(0,2).map(w=>w[0]||'').join('').toUpperCase()||'?';}
+function escHtml(v){return String(v??'').replace(/[&<>\"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[c]));}
 function logoHtml(co,sz='54px'){
-  const slug=(co||'').toLowerCase().replace(/[^a-z0-9]/g,'');
-  const domain=slug+'.com';
-  const ini=initials(co);
+  const name=String(co||'?');
+  const logo=COMPANY_LOGOS[name.toLowerCase()]||'';
+  const ini=initials(name);
   const fs=Math.round(parseInt(sz)*.32)+'px';
+  if(!logo)return \`<div class="co-logo monogram-logo" role="img" aria-label="\${escHtml(name)}" style="width:\${sz};height:\${sz};display:flex;align-items:center;justify-content:center;font-size:\${fs};font-weight:800;color:#6339E6">\${escHtml(ini)}</div>\`;
   return \`<div class="co-logo" style="width:\${sz};height:\${sz}">
-    <img src="https://www.google.com/s2/favicons?domain=\${domain}&sz=64" alt="\${co}"
-      style="width:100%;height:100%;object-fit:contain;padding:6px;display:block"
-      onerror="this.onerror=null;this.src='https://icons.duckduckgo.com/ip3/\${domain}.ico';this.onerror=function(){this.style.display='none';this.nextElementSibling.style.display='flex'}">
-    <span style="display:none;width:100%;height:100%;align-items:center;justify-content:center;font-size:\${fs};font-weight:800;color:#2563EB">\${ini}</span>
+    <img src="\${escHtml(logo)}" alt="\${escHtml(name)}" style="width:100%;height:100%;object-fit:contain;padding:6px" onerror="this.onerror=null;this.style.display='none';this.nextElementSibling.style.display='flex'">
+    <span style="display:none;width:100%;height:100%;align-items:center;justify-content:center;font-size:\${fs};font-weight:800;color:#6339E6">\${escHtml(ini)}</span>
   </div>\`;
 }
 function remoteTag(t){
@@ -606,7 +653,8 @@ function applyStateFromUrl(){
 
 async function loadJobs(pushHistory){
   document.getElementById('jobsList').innerHTML=renderSkeletons();
-  document.getElementById('pagination').innerHTML='';
+  const paginationEl=document.getElementById('pagination');
+  if(paginationEl)paginationEl.innerHTML='';
   const p=buildQueryParams();
   try{
     const res=await fetch('/api/jobs?'+p);

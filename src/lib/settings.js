@@ -53,14 +53,14 @@ export const SETTINGS_DEFAULTS = {
   // Every field here is rendered by pages/home.js's hero block. Colors
   // are plain hex strings so they can feed straight into <input
   // type="color"> on the admin form without any parsing/formatting step.
-  hero_title_line1: 'Find your next',
-  hero_title_line2: 'remote job',
-  hero_subtitle: 'Browse curated remote positions from top companies worldwide. Filter by category, country, skill, or company — or post your own opening in minutes.',
+  hero_title_line1: 'Find the work you love.',
+  hero_title_line2: 'Anywhere in the world.',
+  hero_subtitle: 'Discover flexible remote work from trusted companies, with global opportunities curated for the way you want to work.',
   hero_gradient_start: '#2563EB',
   hero_gradient_mid: '#1D4ED8',
   hero_gradient_end: '#1E3A8A',
   hero_search_placeholder: 'Job title, skill, or company...',
-  hero_search_button_text: 'Search',
+  hero_search_button_text: 'Search Jobs',
   hero_search_button_color: '#FF5C7A',
   // One of the curated options in HERO_FONT_OPTIONS below — anything else
   // silently falls back to the first option, so a bad/stale value can

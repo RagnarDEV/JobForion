@@ -78,6 +78,69 @@ async function jobsListHtml(env, jobs, categoryMap, categoryOrder, cardStyles, e
   return `<div class="jobs-list">${jobs.map((j, i) => jobCardSSR(j, i, categoryMap, categoryOrder, cardStyles, logoOverrides, featuredEnabled, verifiedCompanySet)).join('')}</div>`;
 }
 
+// ── /jobs — complete jobs directory ─────────────────────────────
+// Homepage keeps one clear CTA and no visible pagination. This separate
+// directory owns pagination and the lightweight filters, reusing the same
+// D1 status rules and job-card renderer as every other public listing.
+export async function renderJobsIndex(env, base, user = null, filters = {}) {
+  const { settings, categoryMap, categoryOrder, cardStyles, categoryBundle, footerPages, menuPages, navButtons } = await loadPageContext(env);
+  const q = String(filters.q || '').trim().slice(0, 100);
+  const remoteType = String(filters.remote_type || '').trim();
+  const employmentType = String(filters.employment_type || '').trim();
+  const page = Math.max(1, Math.min(500, parseInt(filters.page || '1', 10) || 1));
+  const pageSize = 20;
+  const conditions = [PUBLIC_JOB_STATUS_SQL];
+  const binds = [];
+  if (q) {
+    const like = `%${q.toLowerCase()}%`;
+    conditions.push(`(LOWER(title) LIKE ? OR LOWER(company) LIKE ? OR LOWER(location) LIKE ? OR EXISTS (SELECT 1 FROM json_each(jobs.skills) je WHERE LOWER(je.value) LIKE ?))`);
+    binds.push(like, like, like, like);
+  }
+  if (remoteType) { conditions.push('remote_type = ?'); binds.push(remoteType); }
+  if (employmentType) { conditions.push('employment_type = ?'); binds.push(employmentType); }
+  const where = conditions.join(' AND ');
+  const offset = (page - 1) * pageSize;
+  const [{ results: countRows }, { results: jobs }] = await Promise.all([
+    env.DB.prepare(`SELECT COUNT(*) AS c FROM jobs WHERE ${where}`).bind(...binds).all(),
+    env.DB.prepare(`SELECT ${JOB_LISTING_COLUMNS} FROM jobs WHERE ${where} ORDER BY ${JOB_TYPE_SORT_SQL} ASC, id DESC LIMIT ? OFFSET ?`).bind(...binds, pageSize, offset).all(),
+  ]);
+  const total = Number(countRows?.[0]?.c || 0);
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const safeQ = escapeHtml(q);
+  const selectedRemote = value => value === remoteType ? ' selected' : '';
+  const selectedEmployment = value => value === employmentType ? ' selected' : '';
+  const queryForPage = nextPage => {
+    const params = new URLSearchParams();
+    if (q) params.set('q', q);
+    if (remoteType) params.set('remote_type', remoteType);
+    if (employmentType) params.set('employment_type', employmentType);
+    if (nextPage > 1) params.set('page', String(nextPage));
+    const qs = params.toString();
+    return `/jobs${qs ? `?${qs}` : ''}`;
+  };
+  const pagination = totalPages > 1 ? `<nav class="jobs-directory-pagination" aria-label="Jobs pagination">
+    ${page > 1 ? `<a class="page-btn" href="${queryForPage(page - 1)}">← Previous</a>` : `<span class="page-btn disabled">← Previous</span>`}
+    <span class="page-info" aria-current="page">Page ${page} of ${totalPages}</span>
+    ${page < totalPages ? `<a class="page-btn" href="${queryForPage(page + 1)}">Next →</a>` : `<span class="page-btn disabled">Next →</span>`}
+  </nav>` : '';
+  const content = `<div class="page jobs-directory-page"><style>
+    .jobs-directory-page{max-width:1180px}.jobs-directory-page .breadcrumb{display:flex;align-items:center;gap:8px;margin-bottom:24px;font-size:12px;color:var(--ink3)}.jobs-directory-page .breadcrumb a{color:var(--brand);text-decoration:none}.directory-heading{margin-bottom:22px}.directory-heading h1{font-family:'Plus Jakarta Sans',sans-serif;font-size:clamp(26px,4vw,38px);line-height:1.12;letter-spacing:-1.2px;color:var(--ink);margin:0 0 8px}.directory-heading p{color:var(--ink2);font-size:14px;margin:0}.jobs-directory-filters{display:grid;grid-template-columns:minmax(220px,1.5fr) repeat(2,minmax(160px,1fr)) auto;gap:10px;align-items:end;background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:16px;margin-bottom:22px;box-shadow:var(--shadow)}.jobs-directory-filters label{display:grid;gap:6px}.jobs-directory-filters label span{font-size:10px;font-weight:800;color:var(--ink3);text-transform:uppercase;letter-spacing:.5px}.jobs-directory-filters input,.jobs-directory-filters select{width:100%;min-height:40px;background:var(--surface2);border:1px solid var(--border2);border-radius:9px;padding:0 11px;color:var(--ink);font:inherit;font-size:12px;outline:none}.jobs-directory-filters input:focus,.jobs-directory-filters select:focus{border-color:var(--brand);box-shadow:0 0 0 3px var(--brand-soft)}.jobs-directory-filters .dash-btn{min-height:40px;white-space:nowrap}.jobs-directory-pagination{display:flex;justify-content:center;align-items:center;gap:12px;padding:26px 0 8px}.jobs-directory-pagination .page-btn{display:inline-flex;align-items:center;justify-content:center;min-height:36px;padding:0 13px;border-radius:9px;border:1px solid var(--border2);background:var(--surface);color:var(--ink2);text-decoration:none;font-size:12px;font-weight:700}.jobs-directory-pagination .page-btn:hover{border-color:var(--brand);color:var(--brand)}.jobs-directory-pagination .page-btn.disabled{opacity:.45;pointer-events:none}.jobs-directory-pagination .page-info{font-size:12px;color:var(--ink3);font-weight:700}
+    @media(max-width:760px){.jobs-directory-filters{grid-template-columns:1fr}.jobs-directory-filters .dash-btn{width:100%}.jobs-directory-page .jobs-list{gap:10px}.jobs-directory-pagination{padding-bottom:18px}}
+  </style><div class="breadcrumb"><a href="/">Home</a><span>›</span><strong>Jobs</strong></div>
+    <div class="directory-heading"><div><p class="eyebrow">OPEN ROLES</p><h1>Find your next opportunity</h1><p>Browse ${total.toLocaleString()} active remote roles from companies hiring worldwide.</p></div></div>
+    <form method="GET" action="/jobs" class="jobs-directory-filters" role="search">
+      <label><span>Keywords</span><input type="search" name="q" value="${safeQ}" placeholder="Job title, company, or skill"></label>
+      <label><span>Remote type</span><select name="remote_type"><option value="">Any remote type</option><option value="fully_remote"${selectedRemote('fully_remote')}>Fully remote</option><option value="hybrid"${selectedRemote('hybrid')}>Hybrid</option><option value="on_site"${selectedRemote('on_site')}>On-site</option></select></label>
+      <label><span>Employment</span><select name="employment_type"><option value="">Any employment</option><option value="full_time"${selectedEmployment('full_time')}>Full-time</option><option value="part_time"${selectedEmployment('part_time')}>Part-time</option><option value="contract"${selectedEmployment('contract')}>Contract</option></select></label>
+      <button type="submit" class="dash-btn dash-btn-primary">Search jobs</button>
+    </form>
+    ${await jobsListHtml(env, jobs || [], categoryMap, categoryOrder, cardStyles, `<div class="empty"><div class="e-icon">🔍</div><h3>${q ? `No jobs match “${safeQ}”` : 'No open roles right now'}</h3><p>Try another keyword or remove a filter.</p></div>`)}
+    ${pagination}
+  </div>`;
+  const description = `Browse ${total.toLocaleString()} active remote job opportunities on ${settings.site_name}. Search by title, company, location, skill, remote type, and employment type.`;
+  return baseLayout(`Browse Remote Jobs — ${settings.site_name}`, description, `${base}/jobs`, '', content, '', 'index, follow', settings, categoryBundle, footerPages, menuPages, navButtons, user);
+}
+
 // ── /categories ──
 export async function renderCategoriesIndex(env, base, user = null) {
   const { settings, categoryOrder, categoryMap, categoryBundle, footerPages, menuPages, navButtons } = await loadPageContext(env);

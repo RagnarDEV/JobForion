@@ -4,6 +4,7 @@
 // change per-request; detail pages set a shorter Cache-Control instead.
 
 import {
+  renderJobsIndex,
   renderCategoriesIndex, renderCategoryDetail,
   renderCompaniesIndex, renderCompanyDetail,
   renderSkillsIndex, renderSkillDetail,
@@ -12,6 +13,7 @@ import {
 } from '../pages/seo-pages.js';
 import { withCache, CACHE_PRESETS } from '../lib/cache.js';
 import { getSettings } from '../lib/settings.js';
+import { getSessionUser } from '../lib/accounts/session.js';
 
 export async function handleSeoPagesRoute(url, request, env, ctx, base) {
   // Feature Flags (Admin Dashboard V2, Phase 2): Company/Country/Skill
@@ -21,6 +23,17 @@ export async function handleSeoPagesRoute(url, request, env, ctx, base) {
   // the index page disappearing from nav while its detail pages stay
   // crawlable (or vice versa).
   const settings = await getSettings(env);
+
+  if (url.pathname === '/jobs') {
+    const filters = {
+      q: url.searchParams.get('q') || '',
+      remote_type: url.searchParams.get('remote_type') || '',
+      employment_type: url.searchParams.get('employment_type') || '',
+      page: url.searchParams.get('page') || '1',
+    };
+    const session = await getSessionUser(env, request);
+    return new Response(await renderJobsIndex(env, base, session?.user || null, filters), { headers: { "Content-Type": "text/html; charset=utf-8" } });
+  }
 
   if (url.pathname === '/categories') {
     return await withCache(ctx, request, CACHE_PRESETS.directory, async () => renderCategoriesIndex(env, base));

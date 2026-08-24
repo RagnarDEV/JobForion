@@ -18,29 +18,20 @@ export function logoImgHtml(company, size = '64px', cls = 'job-logo', overrideUr
   const safeCompany = escapeHtml(company);
   const fs = Math.round(parseInt(size) * .34) + 'px';
   // Admin-set custom logo (see /admin/companies → lib/company-logos.js)
-  // takes priority, but still falls back into the same auto-detection
-  // chain if the custom URL itself 404s — a bad manual URL should degrade
-  // gracefully, never show a broken image.
+  // takes priority; if it fails to load, the markup degrades to a
+  // professional monogram fallback. Without a trusted URL, no guessed
+  // company domain is requested.
+  const ini = (company || '?').split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0] || '').join('').toUpperCase() || '?';
   if (overrideUrl) {
-    const slug = (company || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-    const domain = slug + '.com';
     const safeOverride = escapeHtml(overrideUrl);
     return `<div class="${cls}" style="width:${size};height:${size}">
     <img src="${safeOverride}" alt="${safeCompany}"
       style="width:100%;height:100%;object-fit:contain;padding:7px"
-      onerror="this.onerror=null;this.src='https://www.google.com/s2/favicons?domain=${domain}&sz=64';this.onerror=function(){this.style.display='none';this.nextElementSibling.style.display='flex'}">
-    <span style="display:none;width:100%;height:100%;align-items:center;justify-content:center;font-size:${fs};font-weight:800;color:var(--brand)">${escapeHtml((company || '?').split(' ').slice(0, 2).map(w => w[0] || '').join('').toUpperCase())}</span>
-  </div>`;
-  }
-  const slug = (company || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-  const domain = slug + '.com';
-  const ini = (company || '?').split(' ').slice(0, 2).map(w => w[0] || '').join('').toUpperCase();
-  return `<div class="${cls}" style="width:${size};height:${size}">
-    <img src="https://www.google.com/s2/favicons?domain=${domain}&sz=64" alt="${safeCompany}"
-      style="width:100%;height:100%;object-fit:contain;padding:7px"
-      onerror="this.onerror=null;this.src='https://icons.duckduckgo.com/ip3/${domain}.ico';this.onerror=function(){this.style.display='none';this.nextElementSibling.style.display='flex'}">
+      onerror="this.onerror=null;this.style.display='none';this.nextElementSibling.style.display='flex'">
     <span style="display:none;width:100%;height:100%;align-items:center;justify-content:center;font-size:${fs};font-weight:800;color:var(--brand)">${escapeHtml(ini)}</span>
   </div>`;
+  }
+  return `<div class="${cls} monogram-logo" role="img" aria-label="${safeCompany}" style="width:${size};height:${size};display:flex;align-items:center;justify-content:center;font-size:${fs};font-weight:800;color:var(--brand)">${escapeHtml(ini)}</div>`;
 }
 
 export function remoteTagHtml(t) {
