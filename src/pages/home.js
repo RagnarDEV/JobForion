@@ -193,7 +193,7 @@ export async function renderMainHTML(env, base, user = null) {
     featured_companies: topCompanies.length ? `
     <section class="fc-strip">
       <div class="fc-inner"><div class="section-heading compact-heading"><div><p class="eyebrow">CURATED EMPLOYERS</p><h2>Top companies hiring now</h2></div><a class="text-button" href="/companies">View all companies ${iconArrowRight({ size: 14 })}</a></div>
-      <div class="fc-logos">${topCompanies.slice(0, 8).map(c => `<a class="company-tile" href="/companies/${escapeHtml(c.slug || slugify(c.name))}">${companyLogoMap[String(c.name || '').toLowerCase()] ? logoImgHtml(c.name, '38px', 'company-logo', companyLogoMap[String(c.name || '').toLowerCase()]) : `<span class="company-mark">${escapeHtml((c.name || '?').slice(0, 1).toUpperCase())}</span>`}<strong>${escapeHtml(c.name)}</strong><small>${Number(c.count || 0).toLocaleString()} open roles</small></a>`).join('')}</div></div>
+      <div class="fc-logos">${topCompanies.slice(0, 8).map(c => `<a class="company-tile" href="/companies/${escapeHtml(c.slug || slugify(c.name))}">${logoImgHtml(c.name, '38px', 'company-logo', companyLogoMap[String(c.name || '').toLowerCase()] || null)}<strong>${escapeHtml(c.name)}</strong><small>${Number(c.count || 0).toLocaleString()} open roles</small></a>`).join('')}</div></div>
     </section>` : '',
 
     categories_grid: categories.length ? `
