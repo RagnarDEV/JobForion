@@ -12,7 +12,7 @@ import { getCardStyles } from '../lib/job-card-styles.js';
 import { getAdSlotsConfig } from '../lib/ad-slots.js';
 import { getFooterPages, getMenuPages } from '../lib/pages-cms.js';
 import { getNavButtons } from '../lib/nav-buttons.js';
-import { getLogoOverrides } from '../lib/company-logos.js';
+import { getLogoOverrides, attachCompanyLogos } from '../lib/company-logos.js';
 import { getVerifiedCompanyNameSet, getPublicCompanyBySlug } from '../lib/companies.js';
 
 // SECURITY: JSON.stringify() does NOT escape "<", so a malicious job title
@@ -106,6 +106,9 @@ function companySnapshotHtml(job, snapshot, siteName) {
 }
 
 export async function renderJobPage(job, related, base, env, user = null) {
+  const hydrated = await attachCompanyLogos(env, [job, ...(related || [])]);
+  job = hydrated[0] || job;
+  related = hydrated.slice(1);
   let skills = [];
   try { skills = JSON.parse(job.skills || '[]'); } catch (e) {}
   const isNew = job.created_at && Date.now() - new Date(job.created_at).getTime() < 86400000;
@@ -141,7 +144,7 @@ export async function renderJobPage(job, related, base, env, user = null) {
   const descriptionHtml = richDescriptionHtml(job.description);
   const requirementsHtml = skills.length ? `<div id="requirements" class="job-section-anchor"><div class="sec-label">Skills &amp; requirements</div><div class="skills-wrap">${skills.map(s => `<a href="/skills/${slugify(s)}" class="skill-tag" style="text-decoration:none">${escapeHtml(s)}</a>`).join('')}</div></div>` : '';
   const benefitsHtml = job.benefits ? `<div id="benefits" class="job-section-anchor job-benefits-summary"><div class="sec-label">Benefits</div><div class="desc-wrap">${richDescriptionHtml(job.benefits)}</div></div>` : '';
-  const companyLogoUrl = publicCompany?.logo_url || jobLogoOverride || null;
+  const companyLogoUrl = job.company_logo_url || publicCompany?.logo_url || jobLogoOverride || null;
   const companyHref = publicCompany ? `/companies/${slugify(job.company)}` : '';
   const companyNameHtml = companyHref ? `<a href="${companyHref}" style="color:inherit">${escapeHtml(job.company)}</a>` : escapeHtml(job.company);
   const companyDescriptionHtml = publicCompany?.description ? `<p>${escapeHtml(publicCompany.description)}</p>` : '';

@@ -17,7 +17,7 @@ import { listUserCompanies } from '../lib/accounts/permissions.js';
 import { listSessions } from '../lib/accounts/session.js';
 import { BASE_URL } from '../config/constants.js';
 import { getCardStyles } from '../lib/job-card-styles.js';
-import { getLogoOverrides } from '../lib/company-logos.js';
+import { getLogoOverrides, attachCompanyLogos } from '../lib/company-logos.js';
 import { getVerifiedCompanyNameSet } from '../lib/companies.js';
 import {
   iconLayoutDashboard, iconUser, iconBookmark, iconBriefcase, iconBell, iconSettingsGear,
@@ -65,10 +65,11 @@ function profileUrl(value) {
 
 async function savedJobCards(env, jobs, ctx) {
   const companies = jobs.map(job => job.company).filter(Boolean);
-  const [cardStyles, logoOverrides, verifiedCompanySet] = await Promise.all([
+  const [hydratedJobs, cardStyles, logoOverrides, verifiedCompanySet] = await Promise.all([
+    attachCompanyLogos(env, jobs),
     getCardStyles(env), getLogoOverrides(env, companies), getVerifiedCompanyNameSet(env),
   ]);
-  return jobs.map((job, index) => jobCardSSR(job, index, ctx.categories?.map, ctx.categories?.order, cardStyles, logoOverrides, true, verifiedCompanySet)).join('');
+  return hydratedJobs.map((job, index) => jobCardSSR(job, index, ctx.categories?.map, ctx.categories?.order, cardStyles, logoOverrides, true, verifiedCompanySet)).join('');
 }
 
 function formatAccountDate(value) {

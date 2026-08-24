@@ -109,7 +109,7 @@ export async function listCompanies(env, { limit = 200 } = {}) {
     `SELECT company, COUNT(*) c FROM (
        SELECT company FROM jobs WHERE company IS NOT NULL AND company != '' AND ${PUBLIC_JOB_STATUS_SQL} ORDER BY id DESC LIMIT 8000
      )
-     WHERE LOWER(company) NOT IN (SELECT company_lower FROM hidden_companies)
+     WHERE LOWER(TRIM(company)) NOT IN (SELECT LOWER(TRIM(company_lower)) FROM hidden_companies)
      GROUP BY company ORDER BY c DESC LIMIT ?`
   ).bind(limit).all();
   return (results || []).map(r => ({ name: r.company, slug: slugify(r.company), count: r.c }));

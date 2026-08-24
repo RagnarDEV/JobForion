@@ -36,7 +36,7 @@ import { resolveRawNames } from '../lib/directory-overrides.js';
 import { getSettings } from '../lib/settings.js';
 import { getCategories } from '../lib/categories.js';
 import { getCardStyles } from '../lib/job-card-styles.js';
-import { getLogoOverrides } from '../lib/company-logos.js';
+import { getLogoOverrides, attachCompanyLogos } from '../lib/company-logos.js';
 import { getFooterPages, getMenuPages } from '../lib/pages-cms.js';
 import { getNavButtons } from '../lib/nav-buttons.js';
 import {
@@ -72,13 +72,14 @@ async function loadPageContext(env) {
 // listing page look identical to the homepage, not a stripped-down row.
 async function jobsListHtml(env, jobs, categoryMap, categoryOrder, cardStyles, emptyHtml) {
   if (!jobs || !jobs.length) return emptyHtml;
-  const [logoOverrides, settings, verifiedCompanySet] = await Promise.all([
+  const [hydratedJobs, logoOverrides, settings, verifiedCompanySet] = await Promise.all([
+    attachCompanyLogos(env, jobs),
     getLogoOverrides(env, jobs.map(j => j.company)),
     getSettings(env), // cheap: 60s-cached per isolate, see lib/settings.js
     getVerifiedCompanyNameSet(env), // same 60s-cache pattern, see lib/companies.js
   ]);
   const featuredEnabled = settings.feature_featured_jobs !== '0';
-  return `<div class="jobs-list">${jobs.map((j, i) => jobCardSSR(j, i, categoryMap, categoryOrder, cardStyles, logoOverrides, featuredEnabled, verifiedCompanySet)).join('')}</div>`;
+  return `<div class="jobs-list">${hydratedJobs.map((j, i) => jobCardSSR(j, i, categoryMap, categoryOrder, cardStyles, logoOverrides, featuredEnabled, verifiedCompanySet)).join('')}</div>`;
 }
 
 // ── /jobs — complete jobs directory ─────────────────────────────

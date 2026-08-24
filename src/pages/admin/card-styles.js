@@ -8,6 +8,7 @@
 import { escapeHtml } from '../../lib/entities.js';
 import { getCardStyles, buildCardStyleAttr, buildBadgeStyleAttr, CARD_STYLE_JOB_TYPES } from '../../lib/job-card-styles.js';
 import { JOB_TYPE_META } from '../../config/constants.js';
+import { iconMapPin } from '../../assets/icons.js';
 
 function colorField(label, name, value) {
   return `<label style="display:flex;flex-direction:column;gap:6px">
@@ -34,10 +35,10 @@ function previewCardHtml(type, style) {
           </div>
           <div class="job-title-card">Senior Backend Engineer</div>
           <div class="job-co-card">Acme Inc.</div>
-          <div class="job-meta-row"><span class="tag tag-loc">🌍 Remote</span></div>
+          <div class="job-meta-row"><span class="tag tag-remote">Remote</span></div>
         </div>
       </div>
-      <div class="card-right"><div class="salary-badge">$120k - $160k</div></div>
+      <div class="card-right"><div class="card-secondary-meta"><span class="job-location job-location-v2">${iconMapPin({ size: 10 })} Remote</span></div><div class="salary-badge">$120k - $160k</div></div>
     </div>
   </a>`;
 }

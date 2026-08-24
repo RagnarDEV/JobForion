@@ -83,9 +83,22 @@ const SECURITY_HEADERS = {
   ].join('; '),
 };
 
-function withSecurityHeaders(response) {
+function withSecurityHeaders(response, env = null) {
   const headers = new Headers(response.headers);
   for (const [name, value] of Object.entries(SECURITY_HEADERS)) headers.set(name, value);
+  // Uploaded logos may use the configured public R2 domain instead of the
+  // Worker proxy. Add only that validated origin to img-src; never widen the
+  // policy to arbitrary external image hosts.
+  const publicBase = String(env?.R2_PUBLIC_BASE_URL || '').trim();
+  if (publicBase) {
+    try {
+      const origin = new URL(publicBase).origin;
+      if (['http:', 'https:'].includes(new URL(publicBase).protocol)) {
+        const csp = headers.get('Content-Security-Policy') || '';
+        headers.set('Content-Security-Policy', csp.replace('https://*.r2.dev', `https://*.r2.dev ${origin}`));
+      }
+    } catch (e) {}
+  }
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
 }
 
@@ -104,7 +117,7 @@ export default {
     // Retired domain? Redirect permanently before touching D1 or anything
     // else — this must work even if the database is having a bad day.
     if (RETIRED_HOSTS.has(url.hostname)) {
-      return withSecurityHeaders(Response.redirect(`${BASE_URL}${url.pathname}${url.search}`, 301));
+      return withSecurityHeaders(Response.redirect(`${BASE_URL}${url.pathname}${url.search}`, 301), env);
     }
 
     const base = `${url.protocol}//${url.host}`;
@@ -113,11 +126,11 @@ export default {
 
     // ── static brand assets (favicons, manifest, robots.txt) ──
     const assetResponse = handleAssetsRoute(url, base);
-    if (assetResponse) return withSecurityHeaders(assetResponse);
+    if (assetResponse) return withSecurityHeaders(assetResponse, env);
 
     // ── R2-backed company logo/cover images (Company System, Stage 3) ──
     const r2Response = await handleR2AssetRoute(url, env);
-    if (r2Response) return withSecurityHeaders(r2Response);
+    if (r2Response) return withSecurityHeaders(r2Response, env);
 
     // ── maintenance mode (toggled from /admin/settings, no redeploy) ──
     // /admin/* is always exempt — otherwise a site owner who enables
@@ -128,7 +141,7 @@ export default {
     if (!url.pathname.startsWith('/admin')) {
       settingsForRequest = await getSettings(env);
       if (settingsForRequest.maintenance_mode === '1') {
-        return withSecurityHeaders(renderMaintenancePage(settingsForRequest.site_name, settingsForRequest.maintenance_message));
+        return withSecurityHeaders(renderMaintenancePage(settingsForRequest.site_name, settingsForRequest.maintenance_message), env);
       }
     }
 
@@ -141,7 +154,7 @@ export default {
     // public section is switched off.
     if (settingsForRequest && settingsForRequest.feature_blog === '0' &&
         (url.pathname === '/blog' || url.pathname.startsWith('/blog/'))) {
-      return withSecurityHeaders(new Response('Not found', { status: 404 }));
+      return withSecurityHeaders(new Response('Not found', { status: 404 }), env);
     }
 
     // ── visitor analytics (best-effort, non-blocking) ──
@@ -154,36 +167,36 @@ export default {
     // ── sitemap index + its child sitemaps / feed.rss ──
     // Use the canonical BASE_URL for feeds to ensure Google Search Console consistency
     const feedResponse = await handleFeedRoute(url, env, BASE_URL, ctx);
-    if (feedResponse) return withSecurityHeaders(feedResponse);
+    if (feedResponse) return withSecurityHeaders(feedResponse, env);
 
     // ── /admin/* ──
     const adminResponse = await handleAdminRoute(url, request, env, base);
-    if (adminResponse) return withSecurityHeaders(adminResponse);
+    if (adminResponse) return withSecurityHeaders(adminResponse, env);
 
     // ── Accounts: auth (/login /register /logout /forgot-password
     // /reset-password /verify-email), /user/*, /company/* ──────────
     const authResponse = await handleAuthRoute(url, request, env, base);
-    if (authResponse) return withSecurityHeaders(authResponse);
+    if (authResponse) return withSecurityHeaders(authResponse, env);
 
     const userResponse = await handleUserRoute(url, request, env, base);
-    if (userResponse) return withSecurityHeaders(userResponse);
+    if (userResponse) return withSecurityHeaders(userResponse, env);
 
     const companyResponse = await handleCompanyRoute(url, request, env, base);
-    if (companyResponse) return withSecurityHeaders(companyResponse);
+    if (companyResponse) return withSecurityHeaders(companyResponse, env);
 
     // ── core content: job / blog / static / home ──
     const pageResponse = await handlePagesRoute(url, request, env, base);
-    if (pageResponse) return withSecurityHeaders(pageResponse);
+    if (pageResponse) return withSecurityHeaders(pageResponse, env);
 
     // ── programmatic SEO: categories / companies / skills / search ──
     const seoResponse = await handleSeoPagesRoute(url, request, env, ctx, base);
-    if (seoResponse) return withSecurityHeaders(seoResponse);
+    if (seoResponse) return withSecurityHeaders(seoResponse, env);
 
     // ── JSON API ──
     const apiResponse = await handleApiRoute(url, request, env);
-    if (apiResponse) return withSecurityHeaders(apiResponse);
+    if (apiResponse) return withSecurityHeaders(apiResponse, env);
 
-    return withSecurityHeaders(new Response(await renderNotFoundPage(base, env), { status: 404, headers: { 'Content-Type': 'text/html; charset=utf-8' } }));
+    return withSecurityHeaders(new Response(await renderNotFoundPage(base, env), { status: 404, headers: { 'Content-Type': 'text/html; charset=utf-8' } }), env);
   },
 
   async scheduled(event, env, ctx) {

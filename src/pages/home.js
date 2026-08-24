@@ -12,7 +12,6 @@ import { JOB_TYPE_META, JOB_TYPE_SORT_SQL, PUBLIC_JOB_STATUS_SQL, JOB_LISTING_CO
 import { jobCardSSR, logoImgHtml } from '../components/job-card.js';
 import { adSlot } from '../components/ad-slot.js';
 import { escapeHtml, slugify, listCompanies } from '../lib/entities.js';
-import { COUNTRY_TO_ISO } from '../lib/country-flags.js';
 import { googleAnalyticsTag } from '../lib/analytics-tag.js';
 import { getSettings, HERO_FONT_OPTIONS } from '../lib/settings.js';
 import { getCategories } from '../lib/categories.js';
@@ -308,7 +307,6 @@ ${SHARED_CSS}
 
 /* ── TAGS ── */
 .tag{display:inline-flex;align-items:center;gap:4px;font-size:11px;padding:3px 9px;border-radius:20px;font-weight:700;white-space:nowrap}
-.tag-loc{background:var(--surface2);color:var(--ink2);font-size:10.5px;font-weight:600;border:none;padding:3px 10px;border-radius:20px}
 .tag-remote{background:rgba(15,174,121,.1);color:var(--green);border:1px solid rgba(15,174,121,.2)}
 .tag-hybrid{background:rgba(245,166,35,.1);color:var(--amber);border:1px solid rgba(245,166,35,.2)}
 .tag-onsite{background:var(--surface2);color:var(--ink2);border:none}
@@ -403,29 +401,15 @@ ${postJobModalHtml(categoryOrder, categoryMap)}
   <div class="toast-bar" id="toastBar"></div>
 </div>
 
-<script>window.__CATEGORY_META__=${JSON.stringify(categoryMap)};window.__CATEGORY_ORDER__=${JSON.stringify(categoryOrder)};window.__ICONS__=${JSON.stringify(CLIENT_ICONS)};window.__COUNTRY_ISO__=${JSON.stringify(COUNTRY_TO_ISO)};window.__JOB_TYPE_META__=${JSON.stringify(JOB_TYPE_META)};window.__JOB_CARD_STYLES__=${JSON.stringify(cardStyles)};window.__FEATURES__=${JSON.stringify({ featuredJobs: featuredEnabled })};</script>
+<script>window.__CATEGORY_META__=${JSON.stringify(categoryMap)};window.__CATEGORY_ORDER__=${JSON.stringify(categoryOrder)};window.__ICONS__=${JSON.stringify(CLIENT_ICONS)};window.__JOB_TYPE_META__=${JSON.stringify(JOB_TYPE_META)};window.__JOB_CARD_STYLES__=${JSON.stringify(cardStyles)};window.__FEATURES__=${JSON.stringify({ featuredJobs: featuredEnabled })};</script>
 <script>
 const CAT_META=window.__CATEGORY_META__;
 const CAT_ORDER=window.__CATEGORY_ORDER__;
 const ICONS=window.__ICONS__;
-const COUNTRY_ISO=window.__COUNTRY_ISO__;
 const COMPANY_LOGOS=${JSON.stringify(companyLogoMap).replace(/</g,'\\u003c')};
 const JOB_TYPE_META=window.__JOB_TYPE_META__;
 const JOB_CARD_STYLES=window.__JOB_CARD_STYLES__;
 const FEATURES=window.__FEATURES__;
-function isoToFlagEmoji(iso){
-  if(!iso||iso.length!==2)return null;
-  const cps=[...iso.toUpperCase()].map(c=>127397+c.charCodeAt(0));
-  return String.fromCodePoint(...cps);
-}
-function clientCountryFlag(name){
-  if(!name)return'🌍';
-  const key=name.trim().toLowerCase();
-  if(/^(remote|worldwide|anywhere|global)$/.test(key))return'🌍';
-  const iso=COUNTRY_ISO[key];
-  if(!iso)return'🌍';
-  return isoToFlagEmoji(iso)||'🌍';
-}
 function normalizeJobType(t){return(t&&JOB_TYPE_META[t])?t:'Free';}
 // Mirrors lib/job-card-styles.js's buildCardStyleAttr/buildBadgeStyleAttr
 // exactly (same shadow presets, same gradient/solid logic) so cards
@@ -553,7 +537,6 @@ function renderJobsList(){
     const meta=CAT_META[k];
     const bg=pastelFor(j);
     const jts=jtStyleFor(j.job_type);
-    const locFlag=j.location?clientCountryFlag(j.location.split(',').pop().trim()):'';
     return\`<article class="job-card\${jobTypeCardClass(j.job_type)}" style="--cat-color:\${meta.color};\${jtCardStyleAttr(j.job_type,bg)};animation:fadeInUp .3s ease \${Math.min(idx,6)*.04}s both">
       <div class="card-inner" style="padding:\${jts.card_padding}px 16px">
         <a href="/job/\${j.id}" class="card-row1" aria-label="View \${esc(j.title)} at \${esc(j.company)}">
@@ -569,7 +552,6 @@ function renderJobsList(){
             <div class="job-title-card">\${esc(j.title)}</div>
             <div class="job-co-card">\${esc(j.company)} \${j.is_verified?'<span class="verified-ico" title="Verified Company">'+ICONS.badgeCheck+'</span>':''}</div>
             <div class="job-meta-row">
-              \${j.location?'<span class="tag tag-loc">'+locFlag+' '+esc(j.location)+'</span>':''}
               \${remoteTag(j.remote_type)}
               \${j.employment_type?'<span class="tag tag-type">'+esc(j.employment_type.replace(/_/g,' '))+'</span>':''}
               \${j.seniority?'<span class="tag tag-type">'+esc(j.seniority)+'</span>':''}
@@ -577,7 +559,7 @@ function renderJobsList(){
             \${normalizeJobType(j.job_type)==='Sponsored'&&j.job_type_note?'<div class="jt-note">'+esc(j.job_type_note)+'</div>':''}
           </div>
         </a>
-        \${'<div class="card-right"><div class="card-secondary-meta">'+(timeAgo?'<span class="card-time-corner">'+ICONS.clock+' '+timeAgo+'</span>':'')+'</div>'+(j.salary?'<div class="salary-badge">'+esc(j.salary)+'</div>':'')+'<button class="act-btn card-save-btn" id="sb-'+j.id+'" onclick="event.preventDefault();event.stopPropagation();toggleSave('+j.id+')" aria-label="Save job" title="Save job">'+ICONS.bookmark+'</button></div>'}
+        \${'<div class="card-right"><div class="card-secondary-meta">'+(j.location?'<span class="job-location job-location-v2" title="Job location">'+ICONS.mapPin+' '+esc(j.location)+'</span>':'')+(timeAgo?'<span class="card-time-corner">'+ICONS.clock+' '+timeAgo+'</span>':'')+'</div>'+(j.salary?'<div class="salary-badge">'+esc(j.salary)+'</div>':'')+'<button class="act-btn card-save-btn" id="sb-'+j.id+'" onclick="event.preventDefault();event.stopPropagation();toggleSave('+j.id+')" aria-label="Save job" title="Save job">'+ICONS.bookmark+'</button></div>'}
       </div>
     </article>\`;
   }).join('');

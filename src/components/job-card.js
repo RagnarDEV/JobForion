@@ -6,7 +6,6 @@
 import { CATEGORY_META, CATEGORY_ORDER, JOB_TYPE_META } from '../config/constants.js';
 import { slugify, escapeHtml } from '../lib/entities.js';
 import { iconSparkle, iconFlame, iconPin, iconMapPin, iconBadgeCheck, iconClock, iconGlobe, iconBuilding, iconArrowRight, iconBookmark } from '../assets/icons.js';
-import { countryFlag } from '../lib/country-flags.js';
 import { DEFAULT_CARD_STYLES, buildCardStyleAttr, buildBadgeStyleAttr } from '../lib/job-card-styles.js';
 
 // Shared empty-Set default for jobCardSSR's optional verifiedCompanySet
@@ -49,9 +48,8 @@ export function jobLocationHtml(jobOrLocation, { compact = false, className = ''
   const location = typeof jobOrLocation === 'object' ? jobOrLocation?.location : jobOrLocation;
   const value = String(location || '').trim();
   if (!value) return '';
-  const flag = countryFlag(value.split(',').pop().trim());
-  const compactStyle = compact ? ' style="font-size:11px;color:var(--ink3);background:transparent;padding:0;max-width:180px;overflow:hidden;text-overflow:ellipsis"' : '';
-  return `<span class="tag tag-loc job-location${compact ? ' job-location-compact' : ''}${className ? ` ${escapeHtml(className)}` : ''}" title="Job location"${compactStyle}>${flag} ${escapeHtml(value)}</span>`;
+  const compactStyle = compact ? ' style="font-size:11px;color:var(--ink3);max-width:180px;overflow:hidden;text-overflow:ellipsis"' : '';
+  return `<span class="job-location job-location-v2${compact ? ' job-location-compact' : ''}${className ? ` ${escapeHtml(className)}` : ''}" title="Job location"${compactStyle}>${iconMapPin({ size: compact ? 10 : 11 })} ${escapeHtml(value)}</span>`;
 }
 
 export function remoteTagHtml(t) {
@@ -273,7 +271,6 @@ export function jobCardSSR(job, idx, categoryMap = CATEGORY_META, categoryOrder 
           <div class="job-title-card">${escapeHtml(job.title)}</div>
           <div class="job-co-card">${escapeHtml(job.company)} ${verifiedCompanySet.has((job.company || '').toLowerCase()) ? `<span class="verified-ico" title="Verified Company">${iconBadgeCheck({ size: 12 })}</span>` : ''}</div>
           <div class="job-meta-row">
-            ${jobLocationHtml(job)}
             ${remoteTagHtml(job.remote_type)}
             ${job.employment_type ? '<span class="tag tag-type">' + escapeHtml(job.employment_type.replace(/_/g, ' ')) + '</span>' : ''}
             ${skillsTagsHtml}
@@ -282,7 +279,7 @@ export function jobCardSSR(job, idx, categoryMap = CATEGORY_META, categoryOrder 
         </div>
       </a>
       <div class="card-right">
-        <div class="card-secondary-meta">${timeAgo ? `<span class="card-time-corner">${iconClock({ size: 11 })} ${timeAgo}</span>` : ''}</div>
+        <div class="card-secondary-meta">${jobLocationHtml(job, { compact: true })}${timeAgo ? `<span class="card-time-corner">${iconClock({ size: 11 })} ${timeAgo}</span>` : ''}</div>
         ${job.salary ? '<div class="salary-badge">' + escapeHtml(job.salary) + '</div>' : ''}
         <button class="act-btn card-save-btn" id="sb-${job.id}" onclick="event.preventDefault();event.stopPropagation();if(window.toggleSave){window.toggleSave(${job.id})}" aria-label="Save job" title="Save job">${iconBookmark({ size: 16 })}</button>
       </div>
