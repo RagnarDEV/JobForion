@@ -32,8 +32,12 @@ import { PUBLIC_JOB_STATUS_SQL } from '../config/constants.js';
 // XML payload comfortably small and fast to generate/cache.
 export const JOBS_PER_SITEMAP = 20000;
 
+function xmlEscape(value) {
+  return String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;');
+}
+
 function urlTag(loc, opts = {}) {
-  return `<url><loc>${loc}</loc>${opts.changefreq ? `<changefreq>${opts.changefreq}</changefreq>` : ''}${opts.priority ? `<priority>${opts.priority}</priority>` : ''}${opts.lastmod ? `<lastmod>${opts.lastmod}</lastmod>` : ''}</url>`;
+  return `<url><loc>${xmlEscape(loc)}</loc>${opts.changefreq ? `<changefreq>${xmlEscape(opts.changefreq)}</changefreq>` : ''}${opts.priority ? `<priority>${xmlEscape(opts.priority)}</priority>` : ''}${opts.lastmod ? `<lastmod>${xmlEscape(opts.lastmod)}</lastmod>` : ''}</url>`;
 }
 
 function urlsetXml(urls) {
@@ -60,7 +64,7 @@ export async function buildSitemapIndexXml(env, base) {
   const today = new Date().toISOString().split('T')[0];
 
   const entries = [];
-  const add = (loc) => entries.push(`<sitemap><loc>${loc}</loc><lastmod>${today}</lastmod></sitemap>`);
+  const add = (loc) => entries.push(`<sitemap><loc>${xmlEscape(loc)}</loc><lastmod>${xmlEscape(today)}</lastmod></sitemap>`);
 
   add(`${base}/sitemap-static.xml`);
   for (let i = 1; i <= jobChunks; i++) add(`${base}/sitemap-jobs-${i}.xml`);
@@ -74,17 +78,25 @@ ${entries.join('')}
 </sitemapindex>`.trim();
 }
 
-// ── /sitemap-static.xml — core pages, blog, categories ─────────────
-// `blogPosts` / `categoryOrder` are passed in since they're still defined
-// as in-code constants in index.js (static content stays static).
+// ── /sitemap-static.xml — core pages, blog, and public content ──────
+// `categoryOrder` is passed in from the live category configuration; all
+// other URLs below are real routes owned by the current Worker.
 export async function buildStaticSitemapXml(env, base, { categoryOrder = [] } = {}) {
   const urls = [];
   urls.push(urlTag(`${base}/`, { changefreq: 'hourly', priority: '1.0' }));
   urls.push(urlTag(`${base}/blog`, { changefreq: 'weekly', priority: '0.8' }));
+  urls.push(urlTag(`${base}/resources`, { changefreq: 'weekly', priority: '0.7' }));
+  urls.push(urlTag(`${base}/about`, { changefreq: 'monthly', priority: '0.4' }));
+  urls.push(urlTag(`${base}/how-it-works`, { changefreq: 'monthly', priority: '0.4' }));
+  urls.push(urlTag(`${base}/contact`, { changefreq: 'yearly', priority: '0.3' }));
   urls.push(urlTag(`${base}/companies`, { changefreq: 'daily', priority: '0.7' }));
   urls.push(urlTag(`${base}/categories`, { changefreq: 'daily', priority: '0.7' }));
   urls.push(urlTag(`${base}/skills`, { changefreq: 'daily', priority: '0.6' }));
   urls.push(urlTag(`${base}/countries`, { changefreq: 'daily', priority: '0.6' }));
+  try {
+    const remoteCount = await getJobCount(env);
+    if (remoteCount >= MIN_JOBS_FOR_INDEXING) urls.push(urlTag(`${base}/remote-jobs`, { changefreq: 'daily', priority: '0.7' }));
+  } catch (e) {}
   for (const key of categoryOrder) urls.push(urlTag(`${base}/categories/${key}`, { changefreq: 'daily', priority: '0.65' }));
 
   // CMS pages (Privacy/Terms/Disclaimer + anything created at

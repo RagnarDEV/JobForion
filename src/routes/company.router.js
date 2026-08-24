@@ -25,6 +25,18 @@ import {
 
 const HTML = { "Content-Type": "text/html; charset=utf-8" };
 
+async function readValidatedImage(file, mimeType) {
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const startsWith = (offset, values) => values.every((value, index) => bytes[offset + index] === value);
+  const valid = mimeType === 'image/png'
+    ? startsWith(0, [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
+    : mimeType === 'image/jpeg'
+      ? startsWith(0, [0xff, 0xd8, 0xff])
+      : startsWith(0, [0x52, 0x49, 0x46, 0x46]) && startsWith(8, [0x57, 0x45, 0x42, 0x50]);
+  if (!valid) throw new Error('Image signature does not match the declared MIME type.');
+  return bytes;
+}
+
 async function pageCtx(env, userId) {
   const [settings, categories, companies] = await Promise.all([getSettings(env), getCategoryData(env), listUserCompanies(env, userId)]);
   return { settings, categories, companies };
@@ -145,6 +157,12 @@ export async function handleCompanyRoute(url, request, env, base) {
     if (file.size > MAX_BYTES) {
       return new Response(await renderCompanyProfilePage(user, company, ctx, { csrfToken, canEdit: true, uploadError: 'Image is too large — 2MB maximum.' }), { status: 400, headers: HTML });
     }
+    let imageBytes;
+    try {
+      imageBytes = await readValidatedImage(file, file.type);
+    } catch (e) {
+      return new Response(await renderCompanyProfilePage(user, company, ctx, { csrfToken, canEdit: true, uploadError: 'The uploaded file is not a valid PNG, JPEG, or WebP image.' }), { status: 400, headers: HTML });
+    }
     const kind = url.pathname === '/company/logo' ? 'logo' : 'cover';
     const ext = file.type === 'image/png' ? 'png' : file.type === 'image/webp' ? 'webp' : 'jpg';
     // Content-addressed-ish key (company id + kind + timestamp) so a
@@ -153,7 +171,7 @@ export async function handleCompanyRoute(url, request, env, base) {
     // risking a race with an in-flight request still serving the old URL.
     const key = `companies/${company.id}/${kind}-${Date.now()}.${ext}`;
     try {
-      await env.COMPANY_ASSETS.put(key, file.stream(), { httpMetadata: { contentType: file.type } });
+      await env.COMPANY_ASSETS.put(key, imageBytes, { httpMetadata: { contentType: file.type } });
     } catch (e) {
       return new Response(await renderCompanyProfilePage(user, company, ctx, { csrfToken, canEdit: true, uploadError: 'Upload failed — please try again.' }), { status: 500, headers: HTML });
     }

@@ -49,7 +49,7 @@ export function mobileHeaderHtml(settings, menuPages = [], navButtons = [], user
   return `
 <div class="mob-hdr">
   <a href="/" class="mob-logo"><img src="/favicon.svg" alt="${siteName}">${siteName}</a>
-  <button class="mob-burger" onclick="toggleMobMenu()" id="mobBurgerBtn" aria-label="Open navigation menu">${iconMenu({ size: 18 })}</button>
+  <button class="mob-burger" onclick="toggleMobMenu()" id="mobBurgerBtn" aria-label="Open navigation menu" aria-expanded="false" aria-controls="mobMenu">${iconMenu({ size: 18 })}</button>
   <a href="${user ? '/user/dashboard' : '/login'}" class="mob-account-indicator" aria-label="${user ? 'Open dashboard' : 'Sign in'}"><span>${user ? escapeHtml((user.email || 'J').slice(0, 1).toUpperCase()) : ''}</span></a>
 </div>
 <div class="mob-menu" id="mobMenu" aria-label="Mobile navigation">
@@ -75,11 +75,12 @@ export function mobileHeaderHtml(settings, menuPages = [], navButtons = [], user
     menu.classList.toggle('open'); btn.classList.toggle('is-open',willOpen);
     btn.innerHTML=willOpen?CLOSE_ICON:MENU_ICON;
     btn.setAttribute('aria-label',willOpen?'Close navigation menu':'Open navigation menu');
+    btn.setAttribute('aria-expanded',String(willOpen));
   };
   window.closeMobMenu=function(){
     document.getElementById('mobMenu').classList.remove('open');
     var btn=document.getElementById('mobBurgerBtn'); btn.classList.remove('is-open');
-    btn.innerHTML=MENU_ICON; btn.setAttribute('aria-label','Open navigation menu');
+    btn.innerHTML=MENU_ICON; btn.setAttribute('aria-label','Open navigation menu'); btn.setAttribute('aria-expanded','false');
   };
 })();
 </script>`;

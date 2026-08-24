@@ -11,6 +11,7 @@ import {
   renderCountriesIndex, renderCountryDetail, renderRemoteJobsLanding,
   renderSearchPage,
 } from '../pages/seo-pages.js';
+import { renderNotFoundPage } from '../pages/public-content.js';
 import { withCache, CACHE_PRESETS } from '../lib/cache.js';
 import { getSettings } from '../lib/settings.js';
 import { getSessionUser } from '../lib/accounts/session.js';
@@ -23,6 +24,7 @@ export async function handleSeoPagesRoute(url, request, env, ctx, base) {
   // the index page disappearing from nav while its detail pages stay
   // crawlable (or vice versa).
   const settings = await getSettings(env);
+  const public404 = async () => new Response(await renderNotFoundPage(base, env, null), { status: 404, headers: { "Content-Type": "text/html; charset=utf-8" } });
 
   if (url.pathname === '/remote-jobs') {
     const page = url.searchParams.get('page') || '';
@@ -42,11 +44,11 @@ export async function handleSeoPagesRoute(url, request, env, ctx, base) {
   const catMatch = url.pathname.match(/^\/categories\/([a-z][a-z0-9]{1,19})$/);
   if (catMatch) {
     const html = await renderCategoryDetail(env, base, catMatch[1], null, { page: url.searchParams.get('page') || '' });
-    if (!html) return new Response('Not found', { status: 404 });
+    if (!html) return public404();
     return new Response(html, { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": CACHE_PRESETS.entity } });
   }
   if (url.pathname === '/companies' || url.pathname.match(/^\/companies\/([a-z0-9-]+)$/)) {
-    if (settings.feature_company_pages === '0') return new Response('Not found', { status: 404 });
+    if (settings.feature_company_pages === '0') return public404();
   }
   if (url.pathname === '/companies') {
     // withCache() keys on the full request URL (including query string),
@@ -69,11 +71,11 @@ export async function handleSeoPagesRoute(url, request, env, ctx, base) {
     const detailFilterKeys = ['q', 'remote_type', 'employment_type', 'category', 'seniority', 'country', 'page'];
     const filters = Object.fromEntries(detailFilterKeys.map(key => [key, url.searchParams.get(key) || '']));
     const html = await renderCompanyDetail(env, base, companyMatch[1], null, filters);
-    if (!html) return new Response('Company not found', { status: 404 });
+    if (!html) return public404();
     return new Response(html, { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": CACHE_PRESETS.entity } });
   }
   if (url.pathname === '/countries' || url.pathname.match(/^\/countries\/([a-z0-9-]+)$/)) {
-    if (settings.feature_country_pages === '0') return new Response('Not found', { status: 404 });
+    if (settings.feature_country_pages === '0') return public404();
   }
   if (url.pathname === '/countries') {
     return await withCache(ctx, request, CACHE_PRESETS.directory, async () => renderCountriesIndex(env, base));
@@ -81,11 +83,11 @@ export async function handleSeoPagesRoute(url, request, env, ctx, base) {
   const countryMatch = url.pathname.match(/^\/countries\/([a-z0-9-]+)$/);
   if (countryMatch) {
     const html = await renderCountryDetail(env, base, countryMatch[1], null, { page: url.searchParams.get('page') || '' });
-    if (!html) return new Response('Country not found', { status: 404 });
+    if (!html) return public404();
     return new Response(html, { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": CACHE_PRESETS.entity } });
   }
   if (url.pathname === '/skills' || url.pathname.match(/^\/skills\/([a-z0-9-]+)$/)) {
-    if (settings.feature_skill_pages === '0') return new Response('Not found', { status: 404 });
+    if (settings.feature_skill_pages === '0') return public404();
   }
   if (url.pathname === '/skills') {
     return await withCache(ctx, request, CACHE_PRESETS.directory, async () => renderSkillsIndex(env, base));
@@ -93,7 +95,7 @@ export async function handleSeoPagesRoute(url, request, env, ctx, base) {
   const skillMatch = url.pathname.match(/^\/skills\/([a-z0-9-]+)$/);
   if (skillMatch) {
     const html = await renderSkillDetail(env, base, skillMatch[1], null, { page: url.searchParams.get('page') || '' });
-    if (!html) return new Response('Skill not found', { status: 404 });
+    if (!html) return public404();
     return new Response(html, { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": CACHE_PRESETS.entity } });
   }
   const searchMatch = url.pathname.match(/^\/search\/([^/]+)$/);

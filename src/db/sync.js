@@ -167,14 +167,17 @@ const LOCK_STALE_MS = 5 * 60 * 1000; // a lock older than this is treated as aba
 async function acquireProviderLock(env, providerId) {
   const key = `_sync_lock_${providerId}`;
   try {
-    const { results } = await env.DB.prepare(`SELECT value FROM site_settings WHERE key = ?`).bind(key).all();
-    const existing = results?.[0]?.value;
-    if (existing && (Date.now() - parseInt(existing, 10)) < LOCK_STALE_MS) return false; // genuinely still running elsewhere
-    await env.DB.prepare(
+    // The freshness check and claim must be one SQLite operation. A separate
+    // SELECT followed by an UPSERT lets two cron/manual invocations both see
+    // an old lock and then both claim it before either write is committed.
+    const now = Date.now();
+    const staleBefore = String(now - LOCK_STALE_MS);
+    const result = await env.DB.prepare(
       `INSERT INTO site_settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)
-       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP`
-    ).bind(key, String(Date.now())).run();
-    return true;
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP
+       WHERE CAST(site_settings.value AS INTEGER) < ?`
+    ).bind(key, String(now), staleBefore).run();
+    return (result.meta?.changes || 0) > 0;
   } catch (e) {
     return true; // fail OPEN — a broken lock table must never permanently block syncing
   }

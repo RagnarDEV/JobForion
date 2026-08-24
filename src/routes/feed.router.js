@@ -8,7 +8,7 @@ import {
 } from '../lib/sitemap.js';
 import { getPosts } from '../lib/blog-cms.js';
 import { getCategoryOrder } from '../lib/categories.js';
-import { getSettings } from '../lib/settings.js';
+import { getSettings, SETTINGS_DEFAULTS } from '../lib/settings.js';
 import { PUBLIC_JOB_STATUS_SQL, JOB_LISTING_COLUMNS } from '../config/constants.js';
 
 // PERFORMANCE + RELIABILITY: cache every sitemap variant at Cloudflare's
@@ -56,16 +56,85 @@ async function cachedXmlResponse(url, ctx, rootTag, generate) {
   return response;
 }
 
+function xmlEscape(value) {
+  return String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;');
+}
+
+function cdata(value) {
+  return `<![CDATA[${String(value ?? '').replace(/]]>/g, ']]]]><![CDATA[>')}]]>`;
+}
+
+async function cachedRssResponse(url, ctx, generate) {
+  const cache = caches.default;
+  const cacheKey = new Request(url.toString(), { method: 'GET' });
+  const cached = await cache.match(cacheKey);
+  if (cached) return cached;
+  let rss;
+  try {
+    rss = await generate();
+  } catch (e) {
+    console.error(`[${url.pathname}] build failed:`, e && e.stack || e);
+    rss = '<?xml version="1.0" encoding="UTF-8"?><rss version="2.0"><channel><title>JobForion</title></channel></rss>';
+  }
+  const response = new Response(rss.replace(/^\uFEFF/, '').trim(), { headers: {
+    "Content-Type": "application/rss+xml; charset=utf-8",
+    "Cache-Control": "public, max-age=900, s-maxage=1800",
+    "X-Content-Type-Options": "nosniff",
+  }});
+  if (ctx?.waitUntil) ctx.waitUntil(cache.put(cacheKey, response.clone()));
+  return response;
+}
+
+async function buildRssXml(env, base) {
+  let settings = SETTINGS_DEFAULTS;
+  try { settings = await getSettings(env); } catch (e) {}
+  let jobs = [];
+  try {
+    const result = await env.DB.prepare(`SELECT ${JOB_LISTING_COLUMNS} FROM jobs WHERE ${PUBLIC_JOB_STATUS_SQL} ORDER BY id DESC LIMIT 50`).all();
+    jobs = result.results || [];
+  } catch (e) {}
+  const jobItems = jobs.map(j => {
+    const jobUrl = `${base}/job/${encodeURIComponent(String(j.id || ''))}`;
+    return `<item>
+        <title>${cdata(`${j.title || ''} at ${j.company || ''}`)}</title>
+        <link>${xmlEscape(jobUrl)}</link>
+        <guid>${xmlEscape(jobUrl)}</guid>
+        <description>${cdata(`${j.company || ''} — ${j.location || 'Remote'}${j.salary ? ' — ' + j.salary : ''}`)}</description>
+        <pubDate>${xmlEscape(new Date(j.created_at || Date.now()).toUTCString())}</pubDate>
+        <category>Job</category>
+      </item>`;
+  }).join('');
+  let posts = [];
+  try { posts = await getPosts(env, { limit: 50 }); } catch (e) {}
+  const articleItems = posts.map(p => {
+    const articleUrl = `${base}/blog/${encodeURIComponent(String(p.slug || p.id || ''))}`;
+    return `<item>
+        <title>${cdata(p.title || '')}</title>
+        <link>${xmlEscape(articleUrl)}</link>
+        <guid>${xmlEscape(articleUrl)}</guid>
+        <description>${cdata(p.excerpt || '')}</description>
+        <pubDate>${xmlEscape(new Date(p.published_at || Date.now()).toUTCString())}</pubDate>
+        <category>Article</category>
+      </item>`;
+  }).join('');
+  const siteName = String(settings.site_name || SETTINGS_DEFAULTS.site_name);
+  return `<?xml version="1.0" encoding="UTF-8"?><rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+<channel><title>${cdata(`${siteName} — Remote Jobs & Career Advice`)}</title><link>${xmlEscape(base)}</link>
+<description>${cdata(`Latest remote job listings and career articles from ${siteName}`)}</description>
+<atom:link href="${xmlEscape(`${base}/feed.rss`)}" rel="self" type="application/rss+xml"/>
+${jobItems}${articleItems}</channel></rss>`;
+}
+
 export async function handleFeedRoute(url, env, base, ctx) {
   if (url.pathname === '/sitemap.xml') {
     return cachedXmlResponse(url, ctx, 'sitemapindex', () => buildSitemapIndexXml(env, base));
   }
 
   if (url.pathname === '/sitemap-static.xml') {
-    const categoryOrder = await getCategoryOrder(env);
-    return cachedXmlResponse(url, ctx, 'urlset', () =>
-      buildStaticSitemapXml(env, base, { categoryOrder })
-    );
+    return cachedXmlResponse(url, ctx, 'urlset', async () => {
+      const categoryOrder = await getCategoryOrder(env);
+      return buildStaticSitemapXml(env, base, { categoryOrder });
+    });
   }
 
   const jobsSitemapMatch = url.pathname.match(/^\/sitemap-jobs-(\d+)\.xml$/);
@@ -87,30 +156,7 @@ export async function handleFeedRoute(url, env, base, ctx) {
   }
 
   if (url.pathname === '/feed.rss') {
-    const settings = await getSettings(env);
-    const { results } = await env.DB.prepare(`SELECT ${JOB_LISTING_COLUMNS} FROM jobs WHERE ${PUBLIC_JOB_STATUS_SQL} ORDER BY id DESC LIMIT 50`).all();
-    const jobItems = results.map(j => `<item>
-        <title><![CDATA[${j.title} at ${j.company}]]></title>
-        <link>${base}/job/${j.id}</link>
-        <guid>${base}/job/${j.id}</guid>
-        <description><![CDATA[${j.company} — ${j.location || 'Remote'}${j.salary ? ' — ' + j.salary : ''}]]></description>
-        <pubDate>${new Date(j.created_at || Date.now()).toUTCString()}</pubDate>
-        <category>Job</category>
-      </item>`).join('');
-    const posts = await getPosts(env, { limit: 50 });
-    const articleItems = posts.map(p => `<item>
-        <title><![CDATA[${p.title}]]></title>
-        <link>${base}/blog/${p.slug || p.id}</link>
-        <guid>${base}/blog/${p.slug || p.id}</guid>
-        <description><![CDATA[${p.excerpt || ''}]]></description>
-        <pubDate>${new Date(p.published_at || Date.now()).toUTCString()}</pubDate>
-        <category>Article</category>
-      </item>`).join('');
-    return new Response(`<?xml version="1.0" encoding="UTF-8"?><rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
-<channel><title><![CDATA[${settings.site_name} — Remote Jobs & Career Advice]]></title><link>${base}</link>
-<description><![CDATA[Latest remote job listings and career articles from ${settings.site_name}]]></description>
-<atom:link href="${base}/feed.rss" rel="self" type="application/rss+xml"/>
-${jobItems}${articleItems}</channel></rss>`, { headers: { "Content-Type": "application/rss+xml" } });
+    return cachedRssResponse(url, ctx, () => buildRssXml(env, base));
   }
 
   return null;

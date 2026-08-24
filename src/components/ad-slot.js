@@ -29,15 +29,14 @@ import { DEFAULT_AD_CONFIG } from '../lib/ad-slots.js';
 // The fix — and this is what every major ad network's own embed code
 // does for document.write()-based tags — is to never let document.write()
 // run in the MAIN page document at all. Each slot now renders into its
-// own blank, same-page <iframe>; the Adsterra snippet is written into
-// that iframe's OWN document via JS (iframe.contentDocument.write()).
+// own sandboxed iframe through `srcdoc`, so the parent never grants the
+// ad access to its DOM, cookies, or same-origin document APIs.
 // Chrome's slow-connection intervention only targets document.write()
 // reached through a parser-blocking script tag in the top-level
-// document — a JS-created iframe's document is exempt, so the ad renders
+// document — an iframe's srcdoc document is exempt, so the ad renders
 // correctly regardless of connection speed. As a side benefit, each ad
-// now also gets a fully isolated `window`/`atOptions`, so two different
-// ad slots on the same page (job-detail-inline + job-detail-footer) can
-// never step on each other's config even in edge-case load orders.
+// gets a fully isolated `window`/`atOptions`, so two different ad slots
+// can never step on each other's config even in edge-case load orders.
 // SECURITY/CORRECTNESS: the ad snippet embedded in `code` may contain
 // literal `</script>` tags. JSON.stringify() does NOT escape "/", so
 // naively dropping JSON.stringify(code) inside a real HTML <script>
@@ -51,7 +50,7 @@ import { DEFAULT_AD_CONFIG } from '../lib/ad-slots.js';
 // ANYTHING an admin pastes at /admin/ads, not just the one Adsterra
 // snippet a developer wrote — the isolation below is what makes that
 // safe (worst case, a bad/malicious paste is contained inside its own
-// sandboxed iframe, never able to touch the parent page's DOM/cookies).
+// opaque-origin sandboxed iframe, never able to touch the parent page's DOM/cookies).
 function safeJsForScriptTag(str) {
   return JSON.stringify(str).replace(/</g, '\\u003c');
 }
@@ -60,12 +59,7 @@ function adFrameScript(uid, code) {
   return `<script>(function(){
   var f=document.getElementById(${JSON.stringify(uid)});
   if(!f)return;
-  try{
-    var d=f.contentWindow.document;
-    d.open();
-    d.write(${safeJsForScriptTag(code)});
-    d.close();
-  }catch(e){}
+  try{f.srcdoc=${safeJsForScriptTag(code)};}catch(e){}
 })();</script>`;
 }
 
@@ -92,7 +86,7 @@ export function adSlot(id, style = '', config = DEFAULT_AD_CONFIG, globalAdsEnab
     return `<div class="ad-slot ad-slot-live" style="${boxStyle}">` +
       `<iframe id="${uid}" title="Advertisement" scrolling="no" ` +
       `style="width:100%;height:100%;border:0;display:block" ` +
-      `sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox"></iframe>` +
+      `sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox"></iframe>` +
       adFrameScript(uid, slot.code) +
       `</div>`;
   }

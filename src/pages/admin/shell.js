@@ -153,6 +153,8 @@ const SHELL_SCRIPT = `
     if (!drawer || !backdrop) return;
     var isOpen = open === undefined ? !drawer.classList.contains('open') : open;
     drawer.classList.toggle('open', isOpen); backdrop.classList.toggle('open', isOpen);
+    var trigger = document.querySelector('.adm-mobile-trigger');
+    if (trigger) { trigger.setAttribute('aria-expanded', String(isOpen)); trigger.setAttribute('aria-label', isOpen ? 'Close admin navigation' : 'Open admin navigation'); }
     document.body.style.overflow = isOpen ? 'hidden' : '';
   };
   document.addEventListener('DOMContentLoaded', function(){
@@ -243,7 +245,7 @@ export function adminShell(activeId, content) {
   </aside>
   <main class="adm-main">
     <div class="adm-topbar">
-      <div class="adm-topbar-left"><button class="adm-mobile-trigger" type="button" onclick="jnAdminMenu()" aria-label="Open admin navigation">☰</button><div class="adm-breadcrumbs"><a href="/admin">Admin</a><span>›</span><strong>${activeItem.label}</strong><span class="adm-breadcrumb-group">${activeGroup ? `· ${activeGroup.title}` : ''}</span></div></div>
+      <div class="adm-topbar-left"><button class="adm-mobile-trigger" type="button" onclick="jnAdminMenu()" aria-label="Open admin navigation" aria-expanded="false" aria-controls="admMobileDrawer">☰</button><div class="adm-breadcrumbs"><a href="/admin">Admin</a><span>›</span><strong>${activeItem.label}</strong><span class="adm-breadcrumb-group">${activeGroup ? `· ${activeGroup.title}` : ''}</span></div></div>
       <div class="adm-topbar-actions"><a class="adm-view-site" href="/" target="_blank" rel="noopener">View live site</a><button class="theme-toggle" id="themeToggleBtn" onclick="jnToggleTheme()" title="Toggle dark mode" aria-label="Toggle dark mode">☼</button></div>
     </div>
     <div class="adm-mobile-backdrop" id="admMobileBackdrop" onclick="jnAdminMenu(false)"></div>

@@ -40,6 +40,8 @@ import { SETTINGS_DEFAULTS } from '../lib/settings.js';
 export function baseLayout(title, description, canonical, ogImage, content, extraHead = '', robots = 'index, follow', settings = null, categories = null, footerPages = null, menuPages = null, navButtons = null, user = null) {
   const safeTitle = escapeHtml(title);
   const safeDescription = escapeHtml(description);
+  const safeCanonical = escapeHtml(canonical || BASE_URL);
+  const safeOgImage = escapeHtml(ogImage || `${BASE_URL}/icon-512.png`);
   const siteName = escapeHtml(settings?.site_name || SETTINGS_DEFAULTS.site_name);
   const currentPath = (() => { try { return new URL(canonical || BASE_URL, BASE_URL).pathname || '/'; } catch (e) { return '/'; } })();
   const gaTag = settings ? googleAnalyticsTag(settings.ga_measurement_id) : GOOGLE_ANALYTICS_TAG;
@@ -57,11 +59,11 @@ ${ICON_HEAD}
 <meta property="og:title" content="${safeTitle}">
 <meta property="og:description" content="${safeDescription}">
 <meta property="og:type" content="website">
-<meta property="og:url" content="${canonical}">
+<meta property="og:url" content="${safeCanonical}">
 <meta property="og:site_name" content="${siteName}">
-${ogImage ? `<meta property="og:image" content="${ogImage}">` : `<meta property="og:image" content="${BASE_URL}/icon-512.png">`}
+<meta property="og:image" content="${safeOgImage}">
 <meta name="twitter:card" content="summary">
-<link rel="canonical" href="${canonical}">
+<link rel="canonical" href="${safeCanonical}">
 <link rel="alternate" type="application/rss+xml" title="${siteName} Jobs Feed" href="${BASE_URL}/feed.rss">
 ${extraHead}
 <link rel="preconnect" href="https://fonts.googleapis.com">
