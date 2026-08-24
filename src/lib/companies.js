@@ -6,7 +6,7 @@
 // an orphaned, unmanageable row.
 
 import { slugify } from './entities.js';
-import { JOB_TYPE_SORT_SQL, PUBLIC_JOB_STATUS_SQL } from '../config/constants.js';
+import { JOB_TYPE_SORT_SQL, PUBLIC_JOB_STATUS_SQL, JOB_LISTING_COLUMNS } from '../config/constants.js';
 
 // Job-matching condition shared by every "jobs that belong to this real
 // company" query below. A job belongs to a real company either because it
@@ -18,7 +18,7 @@ import { JOB_TYPE_SORT_SQL, PUBLIC_JOB_STATUS_SQL } from '../config/constants.js
 // PUBLIC_JOB_STATUS_SQL is baked in here (not left to each caller) since
 // every current consumer of this constant is public-facing (the company
 // profile page) — a paused/closed/expired job must not show there either.
-const COMPANY_JOB_MATCH_SQL = `(jobs.company_id = ? OR (jobs.company_id IS NULL AND LOWER(jobs.company) = LOWER(?))) AND ${PUBLIC_JOB_STATUS_SQL}`;
+export const COMPANY_JOB_MATCH_SQL = `(jobs.company_id = ? OR (jobs.company_id IS NULL AND LOWER(jobs.company) = LOWER(?))) AND ${PUBLIC_JOB_STATUS_SQL}`;
 
 async function uniqueCompanySlug(env, name, excludeId = null) {
   const base = slugify(name) || 'company';
@@ -199,10 +199,31 @@ export async function getPublicCompanyBySlug(env, slug) {
   return results?.[0] || null;
 }
 
-export async function jobsForCompanyEntity(env, company, { limit = 100 } = {}) {
+function companyJobsQuery(company, { remote_type = '', employment_type = '', category = '', seniority = '', country = '', q = '' } = {}) {
+  const where = [COMPANY_JOB_MATCH_SQL];
+  const binds = [company.id, company.name];
+  if (remote_type) { where.push('jobs.remote_type = ?'); binds.push(String(remote_type).slice(0, 40)); }
+  if (employment_type) { where.push('jobs.employment_type = ?'); binds.push(String(employment_type).slice(0, 40)); }
+  if (category) { where.push('LOWER(jobs.title) LIKE ?'); binds.push(`%${String(category).toLowerCase().slice(0, 60)}%`); }
+  if (seniority) { where.push('LOWER(jobs.seniority) LIKE ?'); binds.push(`%${String(seniority).toLowerCase().slice(0, 40)}%`); }
+  if (country) { where.push('LOWER(jobs.location) LIKE ?'); binds.push(`%${String(country).toLowerCase().slice(0, 100)}%`); }
+  if (q) { where.push('(LOWER(jobs.title) LIKE ? OR LOWER(jobs.description) LIKE ? OR EXISTS (SELECT 1 FROM json_each(jobs.skills) je WHERE LOWER(je.value) LIKE ?))'); const like = `%${String(q).toLowerCase().slice(0, 100)}%`; binds.push(like, like, like); }
+  return { where: where.join(' AND '), binds };
+}
+
+export async function countJobsForCompanyEntity(env, company, filters = {}) {
+  const { where, binds } = companyJobsQuery(company, filters);
+  const { results } = await env.DB.prepare(`SELECT COUNT(*) AS c FROM jobs WHERE ${where}`).bind(...binds).all();
+  return Number(results?.[0]?.c || 0);
+}
+
+export async function jobsForCompanyEntity(env, company, { limit = 100, offset = 0, ...filters } = {}) {
+  const { where, binds } = companyJobsQuery(company, filters);
+  const safeLimit = Math.max(1, Math.min(100, parseInt(limit, 10) || 100));
+  const safeOffset = Math.max(0, parseInt(offset, 10) || 0);
   const { results } = await env.DB.prepare(
-    `SELECT * FROM jobs WHERE ${COMPANY_JOB_MATCH_SQL} ORDER BY ${JOB_TYPE_SORT_SQL} ASC, id DESC LIMIT ?`
-  ).bind(company.id, company.name, limit).all();
+    `SELECT ${JOB_LISTING_COLUMNS} FROM jobs WHERE ${where} ORDER BY ${JOB_TYPE_SORT_SQL} ASC, id DESC LIMIT ${safeLimit} OFFSET ${safeOffset}`
+  ).bind(...binds).all();
   return results || [];
 }
 

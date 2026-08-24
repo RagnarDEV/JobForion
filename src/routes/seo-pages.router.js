@@ -61,7 +61,9 @@ export async function handleSeoPagesRoute(url, request, env, ctx, base) {
   }
   const companyMatch = url.pathname.match(/^\/companies\/([a-z0-9-]+)$/);
   if (companyMatch) {
-    const html = await renderCompanyDetail(env, base, companyMatch[1]);
+    const detailFilterKeys = ['q', 'remote_type', 'employment_type', 'category', 'seniority', 'country', 'page'];
+    const filters = Object.fromEntries(detailFilterKeys.map(key => [key, url.searchParams.get(key) || '']));
+    const html = await renderCompanyDetail(env, base, companyMatch[1], null, filters);
     if (!html) return new Response('Company not found', { status: 404 });
     return new Response(html, { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": CACHE_PRESETS.entity } });
   }
