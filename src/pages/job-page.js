@@ -5,7 +5,7 @@ import { baseLayout } from '../layout/base-layout.js';
 import { slugify, escapeHtml, cleanDescription, parseSalaryRange, categorySalaryStats, companySnapshot } from '../lib/entities.js';
 import { adSlot } from '../components/ad-slot.js';
 import { jobPostingSchema } from '../lib/schema.js';
-import { iconBadgeCheck, iconMapPin, iconSparkle, iconFlame, iconDollarSign, iconArrowRight, iconBookmark, iconLink, iconTrendingUp, iconBuilding } from '../assets/icons.js';
+import { iconBadgeCheck, iconMapPin, iconSparkle, iconFlame, iconDollarSign, iconArrowRight, iconBookmark, iconLink, iconTrendingUp, iconBuilding, iconBriefcase, iconClock } from '../assets/icons.js';
 import { getSettings } from '../lib/settings.js';
 import { getCategories } from '../lib/categories.js';
 import { getCardStyles } from '../lib/job-card-styles.js';
@@ -107,6 +107,10 @@ export async function renderJobPage(job, related, base, env, user = null) {
     ? cleanDesc.slice(0, 160).replace(/\n/g, ' ') + '...'
     : `${job.title} at ${job.company}. ${job.location || 'Remote'}${job.salary ? ' — ' + job.salary : ''}. Apply on ${settings.site_name}.`;
   const insightsHtml = salaryInsightHtml(job, salaryStats, categoryLabel, settings.site_name) + companySnapshotHtml(job, companyInfo, settings.site_name);
+  const postedLabel = job.created_at ? (isNew ? 'Posted recently' : `Posted ${new Date(job.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`) : 'Recently posted';
+  const employmentLabel = (job.employment_type || 'full_time').replace(/_/g, ' ');
+  const experienceLabel = job.seniority || 'All levels';
+  const jobFactsHtml = `<div class="job-facts"><div class="job-fact"><span>${iconDollarSign({ size: 17 })}</span><strong>${escapeHtml(job.salary || 'Not listed')}</strong><small>Estimated salary</small></div><div class="job-fact"><span>${iconMapPin({ size: 17 })}</span><strong>${escapeHtml(job.location || 'Anywhere')}</strong><small>Location</small></div><div class="job-fact"><span>${iconBriefcase({ size: 17 })}</span><strong>${escapeHtml(experienceLabel)}</strong><small>Experience</small></div><div class="job-fact"><span>${iconClock({ size: 17 })}</span><strong>${escapeHtml(employmentLabel)}</strong><small>Job type</small></div></div>`;
 
   const schema = safeJsonLd(jobPostingSchema(job, base, { description: cleanDesc || desc }));
   const breadcrumbSchema = safeJsonLd({
@@ -119,6 +123,7 @@ export async function renderJobPage(job, related, base, env, user = null) {
   });
   const content = `
 <div class="page">
+  <div class="job-mobile-topbar"><a href="/" aria-label="Back">←</a><strong>Job Details</strong><button onclick="copyJobLink()" aria-label="Share job">${iconLink({ size: 16 })}</button></div>
   <div class="breadcrumb"><a href="/">${escapeHtml(settings.site_name)}</a><span>›</span><a href="/">Jobs</a><span>›</span><span>${escapeHtml(job.title)}</span></div>
   <div class="job-hero${jobTypeCardClass(job.job_type)}">
     <div class="job-hero-hdr">
@@ -131,6 +136,7 @@ export async function renderJobPage(job, related, base, env, user = null) {
         </div>
       </div>
       <h1 class="job-title-h1">${escapeHtml(job.title)}</h1>
+      <div class="job-detail-status"><span class="status-dot"></span><strong>Active</strong><span>${escapeHtml(postedLabel)}</span>${job.applicant_count ? `<span>·</span><span>${escapeHtml(String(job.applicant_count))} applicants</span>` : ''}</div>
       <div class="job-chips">
         ${jobTypeBadgeHtml(job.job_type, cardStyles)}
         ${remoteTagHtml(job.remote_type)}
@@ -141,16 +147,20 @@ export async function renderJobPage(job, related, base, env, user = null) {
         ${isHot ? `<span class="tag tag-hot">${iconFlame({ size: 11 })} HOT</span>` : ''}
       </div>
       ${job.salary ? `<div class="job-salary-lg">${iconDollarSign({ size: 20 })} ${escapeHtml(job.salary)}</div>` : ''}
+      <div class="job-primary-actions"><a href="${escapeHtml(job.url)}" target="_blank" rel="noopener noreferrer" class="apply-big" onclick="recordApplyClick(${job.id})">Apply Now ${iconArrowRight({ size: 16 })}</a><button class="job-save-outline" onclick="toggleJobSave(${job.id});return false">${iconBookmark({ size: 16 })} Save</button></div>
     </div>
+    ${jobFactsHtml}
+    <nav class="job-detail-tabs" aria-label="Job detail sections"><a class="active" href="#overview">Overview</a><a href="#company">About company</a><a href="#requirements">Requirements</a><a href="#benefits">Benefits</a></nav>
     <div class="job-body">
-      ${skills.length ? `<div class="sec-label">Required Skills</div><div class="skills-wrap">${skills.map(s => `<a href="/skills/${slugify(s)}" class="skill-tag" style="text-decoration:none">${escapeHtml(s)}</a>`).join('')}</div>` : ''}
-      <div class="sec-label">About the Role</div>
-      <div class="desc-wrap">${cleanDesc.length > 20 ? escapeHtml(cleanDesc) : 'Full description available on the company website.'}</div>
+      <div id="overview" class="job-section-anchor"><div class="sec-label">Job overview</div><div class="desc-wrap">${cleanDesc.length > 20 ? escapeHtml(cleanDesc) : 'Full description available on the company website.'}</div></div>
+      <div id="requirements" class="job-section-anchor">${skills.length ? `<div class="sec-label">Skills &amp; requirements</div><div class="skills-wrap">${skills.map(s => `<a href="/skills/${slugify(s)}" class="skill-tag" style="text-decoration:none">${escapeHtml(s)}</a>`).join('')}</div>` : `<div class="sec-label">Requirements</div><div class="desc-wrap">Review the full requirements on the employer application page.</div>`}</div>
+      <div id="company" class="job-section-anchor job-company-summary"><div class="sec-label">About ${escapeHtml(job.company)}</div><p>Explore open roles, company information, and the team behind this opportunity.</p><a href="/companies/${slugify(job.company)}" class="text-link">View company profile ${iconArrowRight({ size: 14 })}</a></div>
+      <div id="benefits" class="job-section-anchor job-benefits-summary"><div class="sec-label">Benefits</div><p>Benefits and perks are provided by the hiring company on the application page.</p></div>
       ${adSlot('job-detail-inline', '', adConfig, adsEnabled)}
-      <a href="${escapeHtml(job.url)}" target="_blank" rel="noopener noreferrer" class="apply-big" onclick="recordApplyClick(${job.id})">Apply Now ${iconArrowRight({ size: 16 })}</a>
     </div>
   </div>
   ${insightsHtml ? `<div class="insights-wrap">${insightsHtml}</div>` : ''}
+  <a class="apply-mobile-sticky" href="${escapeHtml(job.url)}" target="_blank" rel="noopener noreferrer" onclick="recordApplyClick(${job.id})">Apply Now ${iconArrowRight({ size: 16 })}</a>
   ${related.length ? `
     <div class="related-title" style="margin-top:24px">Similar Jobs</div>
     <div class="jobs-list">
@@ -174,6 +184,8 @@ export async function renderJobPage(job, related, base, env, user = null) {
 .job-hero.jt-card-premium .job-logo,.job-hero.jt-card-sponsored .job-logo{width:76px !important;height:76px !important}
 .job-hero.jt-card-premium .job-title-h1,.job-hero.jt-card-sponsored .job-title-h1{font-weight:800}
 .job-hero.jt-card-premium .apply-big,.job-hero.jt-card-sponsored .apply-big{padding:16px 40px;font-size:17px;box-shadow:0 8px 24px rgba(53,86,255,.28)}
+.job-primary-actions{display:flex;align-items:center;gap:9px;margin-top:17px}.job-primary-actions .apply-big{flex:1;justify-content:center}.job-save-outline{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:42px;padding:0 20px;border:1px solid var(--brand);border-radius:8px;background:#fff;color:var(--brand);font:800 12px 'Manrope',sans-serif;cursor:pointer;transition:all .18s}.job-save-outline:hover,.job-save-outline.active{background:var(--brand-soft)}.job-detail-status{display:flex;align-items:center;gap:7px;color:#858094;font-size:10px;margin:-5px 0 11px}.job-detail-status strong{color:var(--green);font-size:10px}.status-dot{width:6px;height:6px;border-radius:50%;background:var(--green);box-shadow:0 0 0 3px rgba(45,173,105,.1)}.job-facts{display:grid;grid-template-columns:repeat(4,1fr);border-top:1px solid #f0eef4;border-bottom:1px solid #f0eef4;background:#fff}.job-fact{display:grid;justify-items:center;gap:3px;padding:15px 9px;border-right:1px solid #f0eef4;text-align:center}.job-fact:last-child{border-right:0}.job-fact>span{color:var(--brand);display:inline-flex;margin-bottom:2px}.job-fact strong{font-size:11px;color:var(--ink);font-weight:800;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.job-fact small{color:#938fa0;font-size:9px}.job-detail-tabs{display:flex;gap:26px;overflow-x:auto;border-bottom:1px solid #efedf4;margin-top:17px;padding:0 7px;scrollbar-width:none}.job-detail-tabs::-webkit-scrollbar{display:none}.job-detail-tabs a{position:relative;flex-shrink:0;padding:0 0 11px;color:#767184;font-size:11px;font-weight:800}.job-detail-tabs a.active{color:var(--brand)}.job-detail-tabs a.active::after{content:'';position:absolute;left:0;right:0;bottom:-1px;height:2px;background:var(--brand);border-radius:3px}.job-section-anchor{scroll-margin-top:88px}.job-section-anchor+.job-section-anchor{border-top:1px solid #f0eef4;margin-top:24px;padding-top:22px}.job-company-summary p,.job-benefits-summary p{font-size:13px;color:var(--ink2);line-height:1.7;margin-bottom:10px}.text-link{display:inline-flex;align-items:center;gap:5px;color:var(--brand);font-size:12px;font-weight:800}.apply-mobile-sticky{display:none}.job-mobile-topbar{display:none}
+@media(max-width:640px){.page{padding-top:12px}.job-mobile-topbar{display:flex;align-items:center;justify-content:space-between;height:38px;margin:0 0 12px;padding:0 2px}.job-mobile-topbar a,.job-mobile-topbar button{display:grid;place-items:center;width:30px;height:30px;border:0;background:transparent;color:var(--ink);font-size:23px;cursor:pointer}.job-mobile-topbar strong{font:800 12px 'Space Grotesk',sans-serif}.job-mobile-topbar button{font-size:0}.job-mobile-topbar button svg{display:block}.breadcrumb{display:none}.job-primary-actions{margin-top:14px}.job-primary-actions .apply-big{font-size:12px;padding:0 10px;min-height:42px}.job-save-outline{padding:0 14px;min-width:92px;font-size:11px}.job-facts{grid-template-columns:repeat(2,1fr)}.job-fact:nth-child(2){border-right:0}.job-fact:nth-child(-n+2){border-bottom:1px solid #f0eef4}.job-detail-tabs{gap:22px;margin-left:-16px;margin-right:-16px;padding-left:16px;padding-right:16px}.job-detail-tabs a{font-size:10px}.job-body{padding-bottom:84px}.apply-mobile-sticky{position:fixed;display:flex;align-items:center;justify-content:center;gap:7px;left:14px;right:14px;bottom:76px;height:42px;background:var(--brand);border-radius:8px;color:#fff;font-size:12px;font-weight:800;box-shadow:0 10px 24px rgba(99,57,230,.25);z-index:340}.job-actions{gap:5px}.job-act-btn{padding:8px}.job-act-label{display:none}.job-hero-hdr{padding:19px 16px}.job-co-row{gap:10px}.job-logo{width:52px;height:52px}.job-title-h1{font-size:21px}.job-hero{margin-left:-2px;margin-right:-2px}}
 </style>
 <script>
 (function(){
@@ -181,10 +193,10 @@ export async function renderJobPage(job, related, base, env, user = null) {
   function getSaved(){ try { return JSON.parse(localStorage.getItem('jn_saved')||'[]'); } catch(e){ return []; } }
   function setSaved(arr){ localStorage.setItem('jn_saved', JSON.stringify(arr)); }
   function refreshBtn(){
-    var btn = document.getElementById('jobSaveBtn');
     var isSaved = getSaved().includes(jobId);
-    btn.classList.toggle('active', isSaved);
-    btn.querySelector('.job-act-label').textContent = isSaved ? 'Saved' : 'Save';
+    var btn = document.getElementById('jobSaveBtn');
+    if(btn){btn.classList.toggle('active', isSaved);var label=btn.querySelector('.job-act-label');if(label)label.textContent=isSaved?'Saved':'Save';}
+    document.querySelectorAll('.job-save-outline').forEach(function(el){el.classList.toggle('active',isSaved);el.innerHTML=${JSON.stringify(iconBookmark({ size: 16 }))}+' '+(isSaved?'Saved':'Save');});
   }
   window.toggleJobSave = function(id){
     var arr = getSaved();

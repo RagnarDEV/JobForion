@@ -5,7 +5,7 @@
 
 import { CATEGORY_META, CATEGORY_ORDER, JOB_TYPE_META } from '../config/constants.js';
 import { slugify, escapeHtml } from '../lib/entities.js';
-import { iconSparkle, iconFlame, iconPin, iconMapPin, iconBadgeCheck, iconClock, iconGlobe, iconBuilding, iconArrowRight } from '../assets/icons.js';
+import { iconSparkle, iconFlame, iconPin, iconMapPin, iconBadgeCheck, iconClock, iconGlobe, iconBuilding, iconArrowRight, iconBookmark } from '../assets/icons.js';
 import { countryFlag } from '../lib/country-flags.js';
 import { DEFAULT_CARD_STYLES, buildCardStyleAttr, buildBadgeStyleAttr } from '../lib/job-card-styles.js';
 
@@ -72,7 +72,7 @@ export function jobRowMini(job, logoOverrides = {}) {
     <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:4px">
       <div style="display:flex;align-items:center;font-size:13.5px;font-weight:700;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${tierIcon}${escapeHtml(job.title)}</div>
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0">
-        <a href="/companies/${slugify(job.company)}" style="font-size:12px;font-weight:600;color:var(--brand);text-decoration:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:160px" onclick="event.stopPropagation()">${escapeHtml(job.company)}</a>
+        <span style="font-size:12px;font-weight:600;color:var(--brand);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:160px">${escapeHtml(job.company)}</span>
         ${job.location ? `<span style="font-size:11px;color:var(--ink3);display:inline-flex;align-items:center;gap:3px;white-space:nowrap">${iconMapPin({ size: 10 })}${escapeHtml(job.location)}</span>` : ''}
         ${remoteBadge}
       </div>
@@ -270,10 +270,11 @@ export function jobCardSSR(job, idx, categoryMap = CATEGORY_META, categoryOrder 
           ${jobType === 'Sponsored' && job.job_type_note ? `<div class="jt-note">${escapeHtml(job.job_type_note)}</div>` : ''}
         </div>
       </div>
-      ${(timeAgo || job.salary) ? `<div class="card-right">
-        ${timeAgo ? `<span class="card-time-corner">${iconClock({ size: 11 })} ${timeAgo}</span>` : ''}
+      <div class="card-right">
+        <div class="card-secondary-meta">${timeAgo ? `<span class="card-time-corner">${iconClock({ size: 11 })} ${timeAgo}</span>` : ''}${job.location ? `<span class="card-location-inline">${iconMapPin({ size: 10 })} ${escapeHtml(job.location)}</span>` : ''}</div>
         ${job.salary ? '<div class="salary-badge">' + escapeHtml(job.salary) + '</div>' : ''}
-      </div>` : ''}
+        <button class="act-btn card-save-btn" id="sb-${job.id}" onclick="event.preventDefault();event.stopPropagation();if(window.toggleSave){window.toggleSave(${job.id})}else{var a=JSON.parse(localStorage.getItem('jn_saved')||'[]'),i=a.indexOf(${job.id});if(i<0){a.push(${job.id});this.classList.add('saved')}else{a.splice(i,1);this.classList.remove('saved')}localStorage.setItem('jn_saved',JSON.stringify(a))}" aria-label="Save job" title="Save job">${iconBookmark({ size: 16 })}</button>
+      </div>
     </div>
   </a>`;
 }

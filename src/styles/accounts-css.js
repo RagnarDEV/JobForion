@@ -14,7 +14,7 @@
 export const ACCOUNTS_CSS = `
 .auth-wrap{max-width:420px;margin:56px auto;padding:0 20px 60px}
 .auth-card{background:var(--surface);border:1px solid var(--border);border-radius:18px;padding:32px 28px;box-shadow:var(--shadow-lg)}
-.auth-title{font-family:'Plus Jakarta Sans',sans-serif;font-size:22px;font-weight:800;color:var(--ink);margin-bottom:6px}
+.auth-title{font-family:'Space Grotesk',sans-serif;font-size:22px;font-weight:800;color:var(--ink);margin-bottom:6px}
 .auth-sub{font-size:13px;color:var(--ink3);margin-bottom:22px}
 .auth-err{background:rgba(255,92,122,.1);border:1px solid rgba(255,92,122,.25);color:var(--coral);font-size:13px;padding:10px 12px;border-radius:9px;margin-bottom:16px}
 .auth-ok{background:rgba(15,174,121,.1);border:1px solid rgba(15,174,121,.25);color:var(--green);font-size:13px;padding:10px 12px;border-radius:9px;margin-bottom:16px}
@@ -26,14 +26,14 @@ export const ACCOUNTS_CSS = `
 /* ── Dashboard shell (User + Company) — mirrors the Admin shell's
    sidebar/content split (pages/admin/shell.js) so logged-in users get a
    visually consistent "app" feel without copying admin-only styling. ── */
-.dash-shell{display:flex;min-height:70vh;max-width:1180px;margin:0 auto}
-.dash-sidebar{width:220px;flex-shrink:0;padding:24px 14px;border-right:1px solid var(--border)}
-.dash-nav-link{display:flex;align-items:center;gap:9px;padding:10px 12px;border-radius:9px;font-size:13.5px;font-weight:600;color:var(--ink2);text-decoration:none;margin-bottom:2px}
-.dash-nav-link:hover{background:var(--surface2)}
-.dash-nav-link.active{background:var(--brand);color:#fff}
-.dash-main{flex:1;min-width:0;padding:24px 24px 60px}
+.dash-shell{display:flex;min-height:70vh;max-width:1180px;margin:0 auto;background:#fff;border:1px solid #efedf5;border-radius:14px;overflow:hidden;box-shadow:var(--shadow-card)}
+.dash-sidebar{width:224px;flex-shrink:0;padding:22px 13px;background:#fcfbff;border-right:1px solid #efedf5}
+.dash-nav-link{display:flex;align-items:center;gap:9px;padding:10px 12px;border-radius:8px;font-size:12px;font-weight:700;color:var(--ink2);text-decoration:none;margin-bottom:3px}
+.dash-nav-link:hover{background:var(--brand-soft);color:var(--brand)}
+.dash-nav-link.active{background:var(--brand-soft);color:var(--brand)}
+.dash-main{flex:1;min-width:0;padding:28px 28px 60px}
 .dash-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:10px}
-.dash-title{font-family:'Plus Jakarta Sans',sans-serif;font-size:22px;font-weight:800;color:var(--ink)}
+.dash-title{font-family:'Space Grotesk',sans-serif;font-size:22px;font-weight:800;color:var(--ink)}
 .dash-sub{font-size:13px;color:var(--ink3)}
 .dash-mobile-nav{display:none;gap:8px;overflow-x:auto;padding:10px 16px;border-bottom:1px solid var(--border)}
 .dash-mobile-nav a{flex-shrink:0;padding:7px 14px;border-radius:20px;background:var(--surface2);color:var(--ink2);font-size:12.5px;font-weight:700;text-decoration:none;white-space:nowrap}
@@ -42,15 +42,15 @@ export const ACCOUNTS_CSS = `
   .dash-shell{flex-direction:column}
   .dash-sidebar{display:none}
   .dash-mobile-nav{display:flex}
-  .dash-main{padding:16px 16px 50px}
+  .dash-shell{border:0;border-radius:0;box-shadow:none;background:transparent}.dash-main{padding:16px 16px 84px}
 }
 
-.dash-card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:18px;box-shadow:var(--shadow);margin-bottom:14px}
+.dash-card{background:#fff;border:1px solid #efedf5;border-radius:11px;padding:18px;box-shadow:0 5px 18px rgba(37,24,92,.04);margin-bottom:14px}
 .dash-card-title{font-size:13px;font-weight:700;color:var(--ink);margin-bottom:14px}
 .dash-kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:16px}
 .dash-kpi{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:16px;box-shadow:var(--shadow)}
 .dash-kpi-label{font-size:10.5px;font-weight:700;color:var(--ink3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px}
-.dash-kpi-val{font-family:'Plus Jakarta Sans',sans-serif;font-size:24px;font-weight:800;color:var(--brand)}
+.dash-kpi-val{font-family:'Space Grotesk',sans-serif;font-size:24px;font-weight:800;color:var(--brand)}
 
 .dash-row{display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border);gap:10px;flex-wrap:wrap}
 .dash-row:last-child{border-bottom:none}

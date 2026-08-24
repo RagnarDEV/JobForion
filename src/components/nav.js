@@ -1,6 +1,6 @@
-// Shared desktop navigation and mobile menu.
+// Shared desktop navigation, mobile header/menu, and mobile bottom navigation.
 
-import { iconSearch, iconBuilding, iconFolder, iconBookmark, iconFileText, iconPlus, iconLock, iconMenu, iconGlobe, iconX, iconUser, iconLayoutDashboard } from '../assets/icons.js';
+import { iconSearch, iconBuilding, iconFolder, iconBookmark, iconFileText, iconPlus, iconLock, iconMenu, iconGlobe, iconX, iconUser, iconLayoutDashboard, iconHome, iconBriefcase } from '../assets/icons.js';
 import { escapeHtml } from '../lib/entities.js';
 import { SETTINGS_DEFAULTS } from '../lib/settings.js';
 
@@ -25,10 +25,11 @@ export function navHtml(settings, menuPages = [], navButtons = [], user = null) 
 <nav class="nav" aria-label="Primary navigation">
   <a href="/" class="nav-logo"><img src="/favicon.svg" alt="${siteName}"><span>${siteName}</span><span class="dot"></span></a>
   <div class="nav-links">
-    <a href="/" class="nav-link">Browse jobs</a>
+    <a href="/" class="nav-link">Find jobs</a>
     <a href="/companies" class="nav-link">Companies</a>
+    <a href="/?remote_type=fully_remote" class="nav-link">Remote jobs</a>
     <a href="/categories" class="nav-link">Categories</a>
-    <a href="/blog" class="nav-link">Career blog</a>
+    <a href="/blog" class="nav-link">Resources</a>
     ${extraLinks}
     <button class="nav-link" onclick="if(window.goView){goView('saved')}else{location='/' }">Saved jobs</button>
     ${authLinksHtml(user, false)}
@@ -49,12 +50,12 @@ export function mobileHeaderHtml(settings, menuPages = [], navButtons = [], user
   <button class="mob-burger" onclick="toggleMobMenu()" id="mobBurgerBtn" aria-label="Open navigation menu">${iconMenu({ size: 18 })}</button>
 </div>
 <div class="mob-menu" id="mobMenu" aria-label="Mobile navigation">
-  <a href="/">${iconSearch({ size: 16 })} Browse jobs</a>
+  <a href="/">${iconSearch({ size: 16 })} Find jobs</a>
   <a href="/companies">${iconBuilding({ size: 16 })} Companies</a>
+  <a href="/?remote_type=fully_remote">${iconGlobe({ size: 16 })} Remote jobs</a>
   <a href="/categories">${iconFolder({ size: 16 })} Categories</a>
-  <a href="/countries">${iconGlobe({ size: 16 })} Countries</a>
   <button onclick="if(window.goView){goView('saved');closeMobMenu();}else{location='/'}">${iconBookmark({ size: 16 })} Saved jobs</button>
-  <a href="/blog">${iconFileText({ size: 16 })} Career blog</a>
+  <a href="/blog">${iconFileText({ size: 16 })} Resources</a>
   <a href="/privacy">${iconLock({ size: 16 })} Privacy</a>
   ${extraMenuItems}
   ${authLinksHtml(user, true)}
@@ -79,4 +80,18 @@ export function mobileHeaderHtml(settings, menuPages = [], navButtons = [], user
   };
 })();
 </script>`;
+}
+
+export function mobileBottomNavHtml(currentPath = '/', user = null) {
+  const path = currentPath || '/';
+  const active = path.startsWith('/job') ? 'jobs' : path.startsWith('/companies') ? 'companies' : path.startsWith('/user/saved') ? 'saved' : path.startsWith('/user/applications') ? 'jobs' : path.startsWith('/user') ? 'profile' : 'home';
+  const profileHref = user ? '/user/dashboard' : '/login';
+  const item = (key, href, label, markup, click = '') => `<a href="${href}" class="mobile-bottom-item${active === key ? ' active' : ''}"${active === key ? ' aria-current="page"' : ''}${click ? ` onclick="${click}"` : ''}>${markup}<span>${label}</span></a>`;
+  return `<nav class="mobile-bottom-nav" aria-label="Mobile primary navigation">
+    ${item('home', '/', 'Home', iconHome({ size: 18 }))}
+    ${item('jobs', '/', 'Jobs', iconBriefcase({ size: 18 }), "if(window.goView){goView('jobs');event.preventDefault();}")}
+    ${item('companies', '/companies', 'Companies', iconBuilding({ size: 18 }))}
+    ${item('saved', '/', 'Saved', iconBookmark({ size: 18 }), "if(window.goView){goView('saved');event.preventDefault();}")}
+    ${item('profile', profileHref, 'Profile', iconUser({ size: 18 }))}
+  </nav>`;
 }

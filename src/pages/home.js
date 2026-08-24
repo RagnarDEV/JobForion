@@ -3,7 +3,7 @@
 // hero, featured-companies strip, filters, and all client-side interactivity.
 
 import { ensureTable } from '../db/schema.js';
-import { navHtml, mobileHeaderHtml } from '../components/nav.js';
+import { navHtml, mobileHeaderHtml, mobileBottomNavHtml } from '../components/nav.js';
 import { footerHtml } from '../components/footer.js';
 import { postJobModalHtml } from '../components/post-job-modal.js';
 import { SHARED_CSS } from '../styles/shared-css.js';
@@ -23,7 +23,8 @@ import { getNavButtons } from '../lib/nav-buttons.js';
 import { getEnabledHomepageSections } from '../lib/homepage-sections.js';
 import { categoryIconSvg } from '../lib/category-icons.js';
 import { getVerifiedCompanyNameSet } from '../lib/companies.js';
-import { iconSparkle, iconFlame, iconPin, iconMapPin, iconBookmark, iconLink, iconArrowRight, iconBadgeCheck, iconClock, iconGlobe, iconBuilding, iconSearch, iconCheck, iconInfo, iconAlertTriangle, iconFilter, iconChevronDown, iconSliders, iconLayoutGrid, iconX, iconBell, iconFileText, iconPlus } from '../assets/icons.js';
+import { getPosts } from '../lib/blog-cms.js';
+import { iconSparkle, iconFlame, iconPin, iconMapPin, iconBookmark, iconLink, iconArrowRight, iconBadgeCheck, iconClock, iconGlobe, iconBuilding, iconSearch, iconCheck, iconInfo, iconAlertTriangle, iconFilter, iconChevronDown, iconSliders, iconLayoutGrid, iconX, iconBell, iconFileText, iconPlus, iconBriefcase } from '../assets/icons.js';
 
 // Same icon markup used by the server-rendered cards (job-card.js) is
 // reused for client-rendered cards (search/filter/pagination results) by
@@ -82,6 +83,8 @@ export async function renderMainHTML(env, base, user = null) {
   let topCompanies = [];
   try { topCompanies = await listCompanies(env, { limit: 40 }); } catch (e) {}
   const verifiedCompanySet = await getVerifiedCompanyNameSet(env);
+  let blogPosts = [];
+  try { blogPosts = await getPosts(env, { limit: 4 }); } catch (e) {}
 
   const itemListSchema = JSON.stringify({
     "@context": "https://schema.org", "@type": "ItemList",
@@ -120,14 +123,15 @@ export async function renderMainHTML(env, base, user = null) {
         <div class="hero-visual" aria-hidden="true"><div class="hero-map-grid"></div><span class="hero-orbit orbit-a"></span><span class="hero-orbit orbit-b"></span><span class="hero-orbit orbit-c"></span><div class="hero-stat-card"><strong>${totalJobsCount ? totalJobsCount.toLocaleString() : '24,589'}<em>+</em></strong><small>Active jobs<br>Updated daily</small></div><div class="hero-people-card"><span>JD</span><span>AK</span><span>RS</span></div></div>
         <div class="search-card">
           <label class="sc-field"><span>Job title, keywords, or company</span><div class="sc-row"><span class="sc-icon">${iconSearch({ size: 17 })}</span><input type="text" class="sc-input" id="searchInput" placeholder="${escapeHtml(settings.hero_search_placeholder)}" oninput="debounceSearch(this.value)"></div></label>
-          <label class="sc-field"><span>Category</span><div class="sc-row sc-row-select"><span class="sc-icon">${iconLayoutGrid({ size: 16 })}</span><select class="sc-select" id="fCategory" onchange="onFilterChange()"><option value="">All categories</option>${categories.map(c => `<option value="${c.key}">${escapeHtml(c.label)}</option>`).join('')}</select><span class="sc-chevron">${iconChevronDown({ size: 15 })}</span></div></label>
+          <label class="sc-field"><span>Location</span><div class="sc-row"><span class="sc-icon">${iconMapPin({ size: 15 })}</span><input type="text" class="sc-input" id="fCountry" placeholder="Anywhere" oninput="debounceCountryChange(this.value)"></div></label>
+          <label class="sc-field"><span>Job type</span><div class="sc-row sc-row-select"><span class="sc-icon">${iconBriefcase({ size: 15 })}</span><select class="sc-select" id="fEmploy" onchange="onFilterChange()"><option value="">Any type</option><option value="full_time">Full-time</option><option value="part_time">Part-time</option><option value="contract">Contract</option></select><span class="sc-chevron">${iconChevronDown({ size: 15 })}</span></div></label>
           <button class="sc-slider-btn" id="filtersToggleBtn" onclick="toggleFiltersPanel()" aria-label="More filters" title="More filters">${iconSliders({ size: 16 })}<span class="filters-count-badge" id="filtersCountBadge" style="display:none">0</span></button>
           <button class="sc-search-btn" onclick="onFilterChange()">${iconSearch({ size: 15 })} ${escapeHtml(settings.hero_search_button_text)}</button>
         </div>
         <div class="filters-toggle-row"><button class="filters-clear-btn" id="filtersClearBtn" onclick="clearFilters()" style="display:none">${iconX({ size: 11 })} Clear all filters</button></div>
         <div class="filters-panel" id="filtersPanel"><div class="filters-panel-inner"><div class="filters-grid">
           <label class="filter-field"><span>Remote type</span><select id="fRemote" onchange="onFilterChange()"><option value="">Any</option><option value="fully_remote">Fully remote</option><option value="hybrid">Hybrid</option><option value="on_site">On-site</option></select></label>
-          <label class="filter-field"><span>Employment</span><select id="fEmploy" onchange="onFilterChange()"><option value="">Any</option><option value="full_time">Full-time</option><option value="part_time">Part-time</option><option value="contract">Contract</option></select></label>
+          <label class="filter-field"><span>Category</span><select id="fCategory" onchange="onFilterChange()"><option value="">All categories</option>${categories.map(c => `<option value="${c.key}">${escapeHtml(c.label)}</option>`).join('')}</select></label>
           <label class="filter-field"><span>Seniority</span><select id="fSeniority" onchange="onFilterChange()"><option value="">Any</option><option value="Junior">Junior</option><option value="Mid">Mid-level</option><option value="Senior">Senior</option><option value="Lead">Lead</option></select></label>
           <label class="filter-field"><span>Min salary (USD/yr)</span><input type="number" id="fSalaryMin" placeholder="e.g. 80000" min="0" step="5000" oninput="debounceFilterChange()"></label>
           <label class="filter-field"><span>Max salary (USD/yr)</span><input type="number" id="fSalaryMax" placeholder="e.g. 150000" min="0" step="5000" oninput="debounceFilterChange()"></label>
@@ -153,10 +157,10 @@ export async function renderMainHTML(env, base, user = null) {
     job_listing: `
     <section class="content-wrap jobs-section"><div class="home-jobs-grid"><div class="home-jobs-column">
       <div class="section-heading jobs-heading"><div><p class="eyebrow">FRESH FOR YOU</p><h2>Latest job opportunities</h2></div><a class="text-button" href="/">View all jobs ${iconArrowRight({ size: 14 })}</a></div>
-      <div class="job-tabs"><button class="active">All jobs</button><button>Remote</button><button>Full-time</button><button>Part-time</button><button>Contract</button></div>
+      <div class="job-tabs" role="tablist"><button class="active" data-job-tab="all" onclick="quickJobTab('all',this)">All jobs</button><button data-job-tab="remote" onclick="quickJobTab('remote',this)">Remote</button><button data-job-tab="full_time" onclick="quickJobTab('full_time',this)">Full-time</button><button data-job-tab="part_time" onclick="quickJobTab('part_time',this)">Part-time</button><button data-job-tab="contract" onclick="quickJobTab('contract',this)">Contract</button></div>
       <div class="results-hdr"><div class="results-count" id="resultsCount" style="display:none"><strong>${initialTotal.toLocaleString()}</strong> jobs found</div></div>
       ${adSlot('homepage-results-top', '', adConfig, adsEnabled)}
-      <div class="jobs-list" id="jobsList">${ssrJobsHtml}</div><div class="pagination" id="pagination"></div>
+      <div class="jobs-list" id="jobsList">${ssrJobsHtml}</div><a class="jobs-view-all" href="/">View all jobs ${iconArrowRight({ size: 14 })}</a><div class="pagination" id="pagination"></div>
     </div><aside class="home-sidebar">
       <div class="side-card alert-card"><div class="side-card-icon">${iconBell({ size: 18 })}</div><h3>Job alerts</h3><p>Get new roles in your inbox. Set a clear search once and stay in the loop.</p><a class="side-button" href="/register">Create alert ${iconArrowRight({ size: 13 })}</a></div>
       <div class="side-card resume-card"><div><p class="eyebrow">STAND OUT</p><h3>Boost your career</h3><p>Build a profile that helps the right companies find you.</p><a class="side-button light" href="/register">Complete profile ${iconArrowRight({ size: 13 })}</a></div><div class="resume-orbit"><span></span><span></span><span></span></div></div>
@@ -164,7 +168,7 @@ export async function renderMainHTML(env, base, user = null) {
     </aside></div></section>`,
 
     cta_banner: `
-    <section class="trust-strip"><div class="content-wrap trust-grid"><div><span class="trust-icon">⌁</span><p><strong>100% Remote Jobs</strong><small>Work from anywhere in the world</small></p></div><div><span class="trust-icon">✓</span><p><strong>Verified companies</strong><small>Teams you can trust</small></p></div><div><span class="trust-icon">✦</span><p><strong>Daily updates</strong><small>Fresh roles added every day</small></p></div><div><span class="trust-icon">◌</span><p><strong>Free for job seekers</strong><small>Search and apply for free</small></p></div></div></section><div class="content-wrap"><div class="cta-banner"><div><div class="cta-title">Hiring remotely?</div><div class="cta-sub">Reach qualified candidates and post your job in minutes.</div></div><button class="cta-btn" onclick="openPostJobModal()">${iconPlus({ size: 13 })} Post a job</button></div></div>`,
+    ${blogPosts.length ? `<section class="insights-strip"><div class="content-wrap"><div class="section-heading compact-heading"><div><p class="eyebrow">CAREER GUIDANCE</p><h2>Career tips and insights</h2></div><a class="text-button" href="/blog">View all articles ${iconArrowRight({ size: 14 })}</a></div><div class="insights-grid">${blogPosts.map((post, i) => `<a class="insight-tile" href="/blog/${escapeHtml(post.slug)}"><div class="insight-cover" style="${post.cover_image_url ? `background-image:url('${escapeHtml(post.cover_image_url)}')` : `background:linear-gradient(135deg,${['#6a53d8','#ed9d83','#54a9b5','#d47898'][i % 4]},#29244e)`}"><span>${escapeHtml(post.category || 'Career advice')}</span></div><strong>${escapeHtml(post.title)}</strong><small>${escapeHtml(post.excerpt || 'Practical guidance for your next remote opportunity.')}</small></a>`).join('')}</div></div></section>` : ''}<section class="trust-strip"><div class="content-wrap trust-grid"><div><span class="trust-icon">⌁</span><p><strong>100% Remote Jobs</strong><small>Work from anywhere in the world</small></p></div><div><span class="trust-icon">✓</span><p><strong>Verified companies</strong><small>Teams you can trust</small></p></div><div><span class="trust-icon">✦</span><p><strong>Daily updates</strong><small>Fresh roles added every day</small></p></div><div><span class="trust-icon">◌</span><p><strong>Free for job seekers</strong><small>Search and apply for free</small></p></div></div></section><div class="content-wrap"><div class="cta-banner"><div><div class="cta-title">Hiring remotely?</div><div class="cta-sub">Reach qualified candidates and post your job in minutes.</div></div><button class="cta-btn" onclick="openPostJobModal()">${iconPlus({ size: 13 })} Post a job</button></div></div>`,
   };
   const homepageSectionsHtml = enabledSections.map(s => sectionHtml[s.key] || '').join('');
 
@@ -313,15 +317,16 @@ ${SHARED_CSS}
   .hero-title{font-size:29px}
 }
 /* Final visual pass: the supplied UI reference mapped onto the live SSR markup. */
-.hero{padding:66px 24px 84px;background:linear-gradient(116deg,#fff 0%,#fbfaff 55%,#f3efff 100%);border-bottom:1px solid #f0edf8}.hero::before{background:radial-gradient(ellipse 42% 80% at 82% 20%,rgba(117,75,236,.09),transparent 65%)}.hero-inner{max-width:1150px;min-height:390px}.hero-copy{width:min(560px,55%);padding-top:11px}.hero-eyebrow{background:none;border:0;color:var(--brand);font-size:10px;letter-spacing:1.1px;padding:0;margin-bottom:15px}.hero-title{font-family:'${heroFont.name}',sans-serif;font-size:clamp(40px,4.4vw,57px);letter-spacing:-2.3px;line-height:1.06;color:var(--ink);max-width:600px}.hero-title .hl{color:var(--brand)}.hero-title .hl::after{background:#cfc2ff}.hero-sub{color:#77748a;font-size:13px;max-width:450px}.hero-visual{right:-35px;top:0;width:560px;height:320px}.hero-map-grid{display:block}.hero-stat-card{display:grid}.hero-people-card{display:flex}.search-card{left:0;bottom:0;width:min(870px,86%);grid-template-columns:1.35fr 1fr 42px 132px;gap:9px;padding:13px 15px;border-radius:10px}.sc-field{display:grid}.sc-field>span{display:block}.sc-row{height:38px;padding:0 10px;margin-bottom:0;border-radius:6px}.sc-input,.sc-select{font-size:10px}.sc-search-btn{height:38px;border-radius:7px;padding:0 13px;font-size:10px}.filters-toggle-row{max-width:870px}.filters-panel{max-width:870px}.filters-clear-btn{color:var(--brand)}.popular-searches{bottom:-31px}.content-wrap{max-width:1150px;padding:24px}.category-strip{padding:22px 0}.category-inner{padding-top:0;padding-bottom:0}.cg-grid{grid-template-columns:repeat(8,1fr)}.cg-item{min-height:65px;padding:8px 10px}.cg-item strong{font-size:9px}.fc-strip{padding:31px 24px 28px}.fc-inner{max-width:1150px}.fc-logos{grid-template-columns:repeat(8,1fr);gap:0}.company-tile{min-height:112px}.jobs-section{padding-top:42px}.home-jobs-grid{grid-template-columns:minmax(0,1.72fr) minmax(230px,.72fr);gap:27px}.section-heading h2{font-size:19px}.job-card{border-radius:11px}.home-sidebar{display:grid}.side-card{border-radius:11px}.trust-grid{padding:24px 0}.cta-banner{background:linear-gradient(135deg,var(--brand),var(--brand2))}
+.hero{padding:66px 24px 84px;background:linear-gradient(116deg,#fff 0%,#fbfaff 55%,#f3efff 100%);border-bottom:1px solid #f0edf8}.hero::before{background:radial-gradient(ellipse 42% 80% at 82% 20%,rgba(117,75,236,.09),transparent 65%)}.hero-inner{max-width:1150px;min-height:390px}.hero-copy{width:min(560px,55%);padding-top:11px}.hero-eyebrow{background:none;border:0;color:var(--brand);font-size:10px;letter-spacing:1.1px;padding:0;margin-bottom:15px}.hero-title{font-family:'${heroFont.name}',sans-serif;font-size:clamp(40px,4.4vw,57px);letter-spacing:-2.3px;line-height:1.06;color:var(--ink);max-width:600px}.hero-title .hl{color:var(--brand)}.hero-title .hl::after{background:#cfc2ff}.hero-sub{color:#77748a;font-size:13px;max-width:450px}.hero-visual{right:-35px;top:0;width:560px;height:320px}.hero-map-grid{display:block}.hero-stat-card{display:grid}.hero-people-card{display:flex}.search-card{left:0;bottom:0;width:min(870px,86%);grid-template-columns:1.28fr 1fr 1fr 42px 122px;gap:9px;padding:13px 15px;border-radius:10px}.sc-field{display:grid}.sc-field>span{display:block}.sc-row{height:38px;padding:0 10px;margin-bottom:0;border-radius:6px}.sc-input,.sc-select{font-size:10px}.sc-search-btn{height:38px;border-radius:7px;padding:0 13px;font-size:10px}.filters-toggle-row{max-width:870px}.filters-panel{max-width:870px}.filters-clear-btn{color:var(--brand)}.popular-searches{bottom:-31px}.content-wrap{max-width:1150px;padding:24px}.category-strip{padding:22px 0}.category-inner{padding-top:0;padding-bottom:0}.cg-grid{grid-template-columns:repeat(8,1fr)}.cg-item{min-height:65px;padding:8px 10px}.cg-item strong{font-size:9px}.fc-strip{padding:31px 24px 28px}.fc-inner{max-width:1150px}.fc-logos{grid-template-columns:repeat(8,1fr);gap:0}.company-tile{min-height:112px}.jobs-section{padding-top:42px}.home-jobs-grid{grid-template-columns:minmax(0,1.72fr) minmax(230px,.72fr);gap:27px}.section-heading h2{font-size:19px}.job-card{border-radius:11px}.home-sidebar{display:grid}.side-card{border-radius:11px}.jobs-view-all{display:flex;align-items:center;justify-content:center;gap:6px;margin-top:12px;border:1px solid #bcaef2;border-radius:8px;min-height:34px;color:var(--brand);font-size:9px;font-weight:800}.jobs-view-all:hover{background:var(--brand-soft)}.card-secondary-meta{display:flex;align-items:center;justify-content:flex-end;gap:9px;min-width:0;flex:1}.card-location-inline{display:inline-flex;align-items:center;gap:4px;font-size:9px;color:#8c879a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:150px}.card-save-btn{flex-shrink:0}.card-save-btn.saved{background:var(--brand-soft);border-color:#bdaef8;color:var(--brand)}.home-jobs-column .job-card{background:#fff!important}.home-jobs-column .job-card .card-inner{display:flex;align-items:center;gap:16px;padding:13px 16px}.home-jobs-column .job-card .card-row1{flex:1;min-width:0;align-items:center}.home-jobs-column .job-card .card-right{display:grid;grid-template-columns:minmax(92px,1fr) 30px;grid-template-rows:auto auto;align-items:center;gap:3px 10px;flex:0 0 205px;margin:0;padding:0;border:0}.home-jobs-column .job-card .card-secondary-meta{grid-column:1;grid-row:2;justify-content:flex-end;gap:8px}.home-jobs-column .job-card .salary-badge{grid-column:1;grid-row:1;justify-self:end}.home-jobs-column .job-card .card-save-btn{grid-column:2;grid-row:1 / span 2}.insights-strip{padding:24px 0 32px;background:#fff;border-top:1px solid #f0eef4}.insights-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:13px}.insight-tile{display:block;border:1px solid #eceaf2;border-radius:10px;overflow:hidden;background:#fff;transition:all .18s}.insight-tile:hover{border-color:#c9bcf5;box-shadow:0 8px 18px rgba(48,31,121,.08);transform:translateY(-2px)}.insight-cover{height:100px;background-size:cover;background-position:center;display:flex;align-items:flex-end;padding:8px}.insight-cover span{background:rgba(99,57,230,.92);color:#fff;border-radius:4px;padding:3px 6px;font-size:8px;font-weight:800}.insight-tile>strong,.insight-tile>small{display:block;padding:0 10px}.insight-tile>strong{margin-top:9px;font-size:10px;line-height:1.45;color:#312d48}.insight-tile>small{margin:5px 0 11px;color:#8b8799;font-size:8px;line-height:1.5}.trust-grid{padding:24px 0}.cta-banner{background:linear-gradient(135deg,var(--brand),var(--brand2))}
 @media(max-width:960px){.hero-visual{right:-150px;opacity:.65}.cg-grid,.fc-logos{grid-template-columns:repeat(4,1fr)}.cg-item:nth-child(4n),.company-tile:nth-child(4n){border-right:0}.cg-item:nth-child(-n+4),.company-tile:nth-child(-n+4){border-bottom:1px solid #f0eef5}.home-jobs-grid{grid-template-columns:1fr}.home-sidebar{grid-template-columns:repeat(2,1fr)}.resources-card{grid-column:span 2}.sf-top{grid-template-columns:1.4fr repeat(2,1fr)}}
-@media(max-width:760px){.hero{min-height:555px;padding:50px 20px 42px}.hero-inner{min-height:555px}.hero-copy{width:100%}.hero-title{font-size:39px;letter-spacing:-2.1px}.hero-sub{font-size:12px;max-width:310px}.hero-visual{width:400px;right:-136px;top:169px;height:217px;opacity:.8}.hero-stat-card{left:25px;top:29px;padding:11px}.hero-stat-card strong{font-size:18px}.hero-people-card{right:11px;top:113px}.search-card{bottom:54px;width:100%;display:grid;grid-template-columns:1fr;gap:8px;padding:12px}.sc-field{display:none}.sc-field:first-child{display:grid}.sc-slider-btn{display:none}.sc-search-btn{width:100%}.filters-panel{max-width:100%}.filters-toggle-row{max-width:100%}.popular-searches{bottom:18px;max-width:100%;overflow:hidden;gap:7px;white-space:nowrap}.category-strip{padding:29px 0 22px}.category-inner{padding:0 14px}.cg-grid,.fc-logos{grid-template-columns:repeat(2,1fr)}.cg-item:nth-child(2n),.company-tile:nth-child(2n){border-right:0}.cg-item:nth-child(-n+6),.company-tile:nth-child(-n+6){border-bottom:1px solid #f0eef5}.jobs-section{padding-top:34px}.content-wrap{padding:14px}.home-sidebar{grid-template-columns:1fr}.resources-card{grid-column:auto}.job-tabs{gap:17px;overflow:auto}.job-tabs button{font-size:9px}.trust-grid{grid-template-columns:1fr 1fr;gap:18px}.trust-grid>div{justify-content:flex-start;border:0}.cta-banner{padding:20px}.cta-btn{width:100%}}
+@media(max-width:760px){.hero{min-height:555px;padding:50px 20px 42px}.hero-inner{min-height:555px}.hero-copy{width:100%;text-align:left}.hero-title{font-size:39px;letter-spacing:-2.1px;text-align:left}.hero-sub{font-size:12px;max-width:310px}.hero-visual{width:400px;right:-136px;top:169px;height:217px;opacity:.8}.hero-stat-card{left:25px;top:29px;padding:11px}.hero-stat-card strong{font-size:18px}.hero-people-card{right:11px;top:113px}.search-card{bottom:54px;width:100%;display:grid;grid-template-columns:1fr;gap:8px;padding:12px}.sc-field{display:grid}.sc-slider-btn{display:none}.sc-search-btn{width:100%}.filters-panel{max-width:100%}.filters-toggle-row{max-width:100%}.popular-searches{bottom:18px;max-width:100%;overflow:hidden;gap:7px;white-space:nowrap}.category-strip{padding:29px 0 22px}.category-inner{padding:0 14px}.cg-grid{display:flex;overflow-x:auto;scroll-snap-type:x proximity;scrollbar-width:none}.cg-grid::-webkit-scrollbar{display:none}.cg-item{min-width:112px;flex:0 0 112px;flex-direction:column;justify-content:center;text-align:center;scroll-snap-align:start;border-right:1px solid #f0eef5!important;border-bottom:0!important}.fc-logos{display:flex;overflow-x:auto;scrollbar-width:none}.fc-logos::-webkit-scrollbar{display:none}.company-tile{min-width:118px;flex:0 0 118px;border-right:1px solid #efedf4!important}.insights-grid{grid-template-columns:repeat(2,1fr);gap:10px}.insight-cover{height:84px}.home-jobs-column .job-card .card-inner{display:block;padding:12px}.home-jobs-column .job-card .card-row1{display:flex}.home-jobs-column .job-card .card-right{display:flex;align-items:center;justify-content:flex-start;gap:7px;margin-top:8px;padding-top:8px;border-top:1px solid #f0eef4}.home-jobs-column .job-card .card-secondary-meta{justify-content:flex-start;overflow:hidden}.home-jobs-column .job-card .salary-badge{margin-left:auto}.home-jobs-column .job-card .card-save-btn{margin-left:0}.insights-grid{grid-template-columns:repeat(2,1fr);gap:10px}.insight-cover{height:84px}.jobs-section{padding-top:34px}.content-wrap{padding:14px}.home-sidebar{grid-template-columns:1fr}.resources-card{grid-column:auto}.job-tabs{gap:17px;overflow:auto}.job-tabs button{font-size:9px}.trust-grid{grid-template-columns:1fr 1fr;gap:18px}.trust-grid>div{justify-content:flex-start;border:0}.cta-banner{padding:20px}.cta-btn{width:100%}}
 @media(max-width:400px){.hero-title{font-size:34px}.filters-grid{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
 ${navHtml(settings, menuPages, navButtons, user)}
 ${mobileHeaderHtml(settings, menuPages, navButtons, user)}
+${mobileBottomNavHtml('/', user)}
 
 <main>
   <!-- JOBS VIEW -->
@@ -522,7 +527,7 @@ function renderJobsList(){
             \${normalizeJobType(j.job_type)==='Sponsored'&&j.job_type_note?'<div class="jt-note">'+esc(j.job_type_note)+'</div>':''}
           </div>
         </div>
-        \${(timeAgo||j.salary)?'<div class="card-right">'+(timeAgo?'<span class="card-time-corner">'+ICONS.clock+' '+timeAgo+'</span>':'')+(j.salary?'<div class="salary-badge">'+esc(j.salary)+'</div>':'')+'</div>':''}
+        \${'<div class="card-right"><div class="card-secondary-meta">'+(timeAgo?'<span class="card-time-corner">'+ICONS.clock+' '+timeAgo+'</span>':'')+(j.location?'<span class="card-location-inline">'+ICONS.mapPin+' '+esc(j.location)+'</span>':'')+'</div>'+(j.salary?'<div class="salary-badge">'+esc(j.salary)+'</div>':'')+'<button class="act-btn card-save-btn" id="sb-'+j.id+'" onclick="event.preventDefault();event.stopPropagation();toggleSave('+j.id+')" aria-label="Save job" title="Save job">'+ICONS.bookmark+'</button></div>'}
       </div>
     </a>\`;
   }).join('');
@@ -588,7 +593,7 @@ function applyStateFromUrl(){
     country:p.get('country')||'', skill:p.get('skill')||'', company:p.get('company')||'',
   };
   const setVal=(id,v)=>{const el=document.getElementById(id);if(el)el.value=v;};
-  setVal('fCategory',cat); setVal('searchInput',srch); setVal('fRemote',adv.remote);
+  setVal('fCategory',cat); setVal('searchInput',srch); setVal('fCountry',adv.country); setVal('fRemote',adv.remote);
   setVal('fEmploy',adv.employ); setVal('fSeniority',adv.seniority); setVal('fSalaryMin',adv.salaryMin);
   setVal('fSalaryMax',adv.salaryMax); setVal('fDays',adv.days); setVal('fSourceType',adv.sourceType);
   setVal('fSort',adv.sort);
@@ -670,7 +675,9 @@ function renderSaved(){
 function clearAllSaved(){savedIds=[];localStorage.removeItem('jn_saved');renderSaved();showToast('All cleared','info');}
 
 function setSearchAndGo(v){const input=document.getElementById('searchInput');if(input)input.value=v;srch=v;pg=1;loadJobs();}
+function quickJobTab(type,btn){document.querySelectorAll('.job-tabs button').forEach(b=>b.classList.remove('active'));if(btn)btn.classList.add('active');if(type==='all'){adv.remote='';adv.employ='';}else if(type==='remote'){adv.remote='fully_remote';adv.employ='';}else{adv.remote='';adv.employ=type;}const remote=document.getElementById('fRemote');const employ=document.getElementById('fEmploy');if(remote)remote.value=adv.remote;if(employ)employ.value=adv.employ;pg=1;updateFiltersBadge();loadJobs();}
 function debounceSearch(v){clearTimeout(srchT);srchT=setTimeout(()=>{srch=v;pg=1;loadJobs();},400);}
+function debounceCountryChange(v){clearTimeout(srchT);srchT=setTimeout(()=>{adv.country=v.trim();pg=1;updateFiltersBadge();loadJobs();},450);}
 
 // ── Filters panel (attached to the hero search box) ──────────────
 function toggleFiltersPanel(){
@@ -693,6 +700,7 @@ function onFilterChange(){
   cat=document.getElementById('fCategory').value;
   adv.remote=document.getElementById('fRemote').value;
   adv.employ=document.getElementById('fEmploy').value;
+  adv.country=document.getElementById('fCountry')?.value.trim() || '';
   adv.seniority=document.getElementById('fSeniority').value;
   adv.days=document.getElementById('fDays').value;
   adv.sourceType=document.getElementById('fSourceType').value;
@@ -714,7 +722,7 @@ function debounceFilterChange(){
 }
 function clearFilters(){
   cat='';adv={};
-  ['fCategory','fRemote','fEmploy','fSeniority','fDays','fSalaryMin','fSalaryMax','fSourceType'].forEach(id=>{document.getElementById(id).value='';});
+  ['fCategory','fCountry','fRemote','fEmploy','fSeniority','fDays','fSalaryMin','fSalaryMax','fSourceType'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
   document.getElementById('fSort').value='relevance';
   pg=1;
   updateFiltersBadge();
@@ -736,7 +744,8 @@ function renderPagination(){
 // what only client JS can compute (relative time-ago is already SSR'd,
 // but pagination needs the live "total" count known only after render)
 document.addEventListener('DOMContentLoaded',()=>{
-  savedIds.forEach(id=>{const b=document.getElementById('sb-'+id);if(b)b.classList.add('saved');});
+    savedIds.forEach(id=>{const b=document.getElementById('sb-'+id);if(b)b.classList.add('saved');});
+    document.querySelectorAll('.card-save-btn').forEach(btn=>{const id=Number(btn.id.replace('sb-',''));if(savedIds.includes(id))btn.classList.add('saved');});
   // If the URL was opened WITH search state (shared link, refresh, or a
   // Back/Forward landing here), the server-side render above only ever
   // produced the plain unfiltered top-20 — re-fetch client-side with the

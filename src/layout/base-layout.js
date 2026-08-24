@@ -3,7 +3,7 @@
 // categories/companies/skills/countries/search, admin login screen). Wires
 // together nav, footer, the Post-a-Job modal, and the shared design tokens.
 
-import { navHtml, mobileHeaderHtml } from '../components/nav.js';
+import { navHtml, mobileHeaderHtml, mobileBottomNavHtml } from '../components/nav.js';
 import { footerHtml } from '../components/footer.js';
 import { postJobModalHtml } from '../components/post-job-modal.js';
 import { SHARED_CSS } from '../styles/shared-css.js';
@@ -41,6 +41,7 @@ export function baseLayout(title, description, canonical, ogImage, content, extr
   const safeTitle = escapeHtml(title);
   const safeDescription = escapeHtml(description);
   const siteName = escapeHtml(settings?.site_name || SETTINGS_DEFAULTS.site_name);
+  const currentPath = (() => { try { return new URL(canonical || BASE_URL, BASE_URL).pathname || '/'; } catch (e) { return '/'; } })();
   const gaTag = settings ? googleAnalyticsTag(settings.ga_measurement_id) : GOOGLE_ANALYTICS_TAG;
   return `<!DOCTYPE html>
 <html lang="en">
@@ -140,6 +141,7 @@ ${ACCOUNTS_CSS}
 <body>
 ${navHtml(settings, menuPages || [], navButtons || [], user)}
 ${mobileHeaderHtml(settings, menuPages || [], navButtons || [], user)}
+${mobileBottomNavHtml(currentPath, user)}
 ${content}
 ${footerHtml(BASE_URL, settings, footerPages)}
 ${postJobModalHtml(categories?.order, categories?.map)}
