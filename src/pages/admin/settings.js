@@ -50,7 +50,7 @@ export async function renderSettingsContent(env) {
 
       <div class="adm-card">
         <div class="adm-card-title">General</div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+        <div class="adm-form-grid">
           ${field('Site Name', 'site_name', s.site_name, { placeholder: SETTINGS_DEFAULTS.site_name })}
           ${field('Tagline', 'site_tagline', s.site_tagline, { placeholder: SETTINGS_DEFAULTS.site_tagline })}
           ${field('Meta Description', 'site_description', s.site_description, { full: true, hint: 'Used as the homepage <meta description> and social share preview text.' })}
@@ -112,7 +112,7 @@ export async function renderSettingsContent(env) {
 
       <div class="adm-card">
         <div class="adm-card-title">Social Links <span style="font-weight:400;color:var(--ink3);font-size:12px">— shown in the site footer once filled in</span></div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+        <div class="adm-form-grid">
           ${field('Twitter / X URL', 'social_twitter', s.social_twitter, { type: 'url', placeholder: 'https://x.com/yourhandle' })}
           ${field('LinkedIn URL', 'social_linkedin', s.social_linkedin, { type: 'url', placeholder: 'https://linkedin.com/company/...' })}
           ${field('Facebook URL', 'social_facebook', s.social_facebook, { type: 'url', placeholder: 'https://facebook.com/...' })}

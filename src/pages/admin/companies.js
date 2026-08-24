@@ -90,7 +90,7 @@ export async function renderCompaniesListContent(env, params) {
       </form>
     </div>
 
-    <div class="adm-card" style="overflow-x:auto">
+    <div class="adm-card adm-table-wrap" style="overflow-x:auto">
       <table style="width:100%;border-collapse:collapse;font-size:12px">
         <thead><tr style="text-align:left;border-bottom:1.5px solid var(--border)">
           <th style="padding:8px 6px;color:var(--ink3);font-size:10.5px;text-transform:uppercase">Company</th>

@@ -60,12 +60,12 @@ export async function renderAdminUsersContent(env, params) {
         ${q ? `<a href="/admin/accounts/users" class="adm-btn">Clear</a>` : ''}
       </form>
     </div>
-    <div class="adm-card" style="overflow-x:auto">
+    <div class="adm-card adm-table-wrap" style="overflow-x:auto">
       <table style="width:100%;border-collapse:collapse;font-size:12px">
         <thead><tr style="text-align:left;border-bottom:1.5px solid var(--border)">
           <th style="padding:8px 6px;color:var(--ink3);font-size:10.5px;text-transform:uppercase">Email</th>
           <th style="padding:8px 6px;color:var(--ink3);font-size:10.5px;text-transform:uppercase">Status</th>
-          <th style="padding:8px 6px;color:var(--ink3);font-size:10.5px;text-transform:uppercase">Email</th>
+          <th style="padding:8px 6px;color:var(--ink3);font-size:10.5px;text-transform:uppercase">Verification</th>
           <th style="padding:8px 6px;color:var(--ink3);font-size:10.5px;text-transform:uppercase">Joined</th>
           <th style="padding:8px 6px;color:var(--ink3);font-size:10.5px;text-transform:uppercase">Last Login</th>
           <th style="padding:8px 6px;color:var(--ink3);font-size:10.5px;text-transform:uppercase">Actions</th>

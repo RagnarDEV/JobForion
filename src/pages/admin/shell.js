@@ -46,18 +46,18 @@ const NAV_GROUPS = [
   { title: 'Website', items: [
     { id: 'homepage', label: 'Homepage', icon: iconHome, href: '/admin/homepage' },
     { id: 'card-styles', label: 'Card Styles', icon: iconPalette, href: '/admin/card-styles' },
-    { id: 'settings', label: 'Settings', icon: iconSettingsGear, href: '/admin/settings' },
+    { id: 'settings', label: 'Site & SEO', icon: iconSettingsGear, href: '/admin/settings' },
   ]},
   { title: 'Monetization', items: [
     { id: 'ads', label: 'Ads', icon: iconMegaphone, href: '/admin/ads' },
   ]},
   { title: 'System & Security', items: [
-    { id: 'system', label: 'System', icon: iconServer, href: '/admin/system' },
+    { id: 'system', label: 'System & Maintenance', icon: iconServer, href: '/admin/system' },
     { id: 'security', label: 'Security', icon: iconShieldCheck, href: '/admin/security' },
   ]},
 ];
-// Flat list — used for the mobile horizontal nav (no grouping there, same
-// as before) and to find the active item's label/group.
+// Flat list — used to find the active item's label/group and to render
+// the grouped mobile drawer without duplicating navigation definitions.
 const NAV_ITEMS = NAV_GROUPS.flatMap(g => g.items);
 
 const DARK_THEME_CSS = `
@@ -68,18 +68,20 @@ const DARK_THEME_CSS = `
   --shadow:0 1px 2px rgba(0,0,0,.4); --shadow-lg:0 10px 30px rgba(0,0,0,.5);
 }
 [data-theme="dark"] body{background:var(--bg)}
+[data-theme="dark"] .adm-sidebar,[data-theme="dark"] .adm-topbar,[data-theme="dark"] .adm-mobile-drawer{background:rgba(19,25,35,.96)}
+[data-theme="dark"] .adm-topbar{border-color:var(--border)}
 `;
 
 const SHELL_CSS = `
 .adm-shell{display:flex;min-height:100vh}
-.adm-sidebar{width:210px;flex-shrink:0;background:var(--surface);border-right:1px solid var(--border);padding:18px 12px;position:sticky;top:0;height:100vh;overflow-y:auto}
+.adm-sidebar{width:244px;flex-shrink:0;background:linear-gradient(180deg,#fff 0%,#fbfaff 100%);border-right:1px solid var(--border);padding:20px 14px;position:sticky;top:0;height:100vh;overflow-y:auto;box-shadow:8px 0 28px rgba(37,24,92,.035)}
 .adm-logo{display:flex;align-items:center;gap:8px;padding:6px 8px 18px;font-family:'Plus Jakarta Sans',sans-serif;font-weight:800;font-size:16px;color:var(--ink)}
 .adm-logo img{width:26px;height:26px;border-radius:7px}
-.adm-nav-link{display:flex;align-items:center;gap:9px;padding:9px 10px;border-radius:9px;font-size:13px;font-weight:600;color:var(--ink2);text-decoration:none;margin-bottom:2px}
-.adm-nav-link:hover{background:var(--surface2)}
-.adm-nav-link.active{background:var(--brand);color:#fff}
+.adm-nav-link{display:flex;align-items:center;gap:10px;padding:10px 11px;border-radius:10px;font-size:12.5px;font-weight:700;color:var(--ink2);text-decoration:none;margin-bottom:3px;transition:background .18s,color .18s,transform .18s}
+.adm-nav-link:hover{background:var(--brand-soft);color:var(--brand);transform:translateX(1px)}
+.adm-nav-link.active{background:linear-gradient(110deg,var(--brand),var(--brand2));color:#fff;box-shadow:0 7px 16px rgba(99,57,230,.16)}
 .adm-main{flex:1;min-width:0}
-.adm-topbar{display:flex;align-items:center;justify-content:flex-end;gap:8px;padding:14px 20px;border-bottom:1px solid var(--border)}
+.adm-topbar{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:13px 28px;border-bottom:1px solid var(--border);background:rgba(255,255,255,.9);backdrop-filter:blur(14px);position:sticky;top:0;z-index:80}.adm-topbar-left,.adm-topbar-actions{display:flex;align-items:center;gap:10px}.adm-breadcrumbs{display:flex;align-items:center;gap:8px;color:var(--ink3);font-size:11px;font-weight:700}.adm-breadcrumbs a{color:var(--brand);text-decoration:none}.adm-breadcrumbs strong{color:var(--ink)}.adm-view-site{display:inline-flex;align-items:center;min-height:34px;padding:0 11px;border:1px solid var(--border2);border-radius:8px;color:var(--ink2);font-size:11px;font-weight:800;text-decoration:none;background:var(--surface)}.adm-mobile-trigger{display:none;width:36px;height:36px;border:1px solid var(--border2);border-radius:9px;background:var(--surface);color:var(--ink);cursor:pointer;font-size:17px}.adm-mobile-backdrop,.adm-mobile-drawer{display:none}
 .theme-toggle{width:34px;height:34px;border-radius:9px;border:1px solid var(--border2);background:var(--surface);color:var(--ink2);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:15px}
 #toast-host{position:fixed;bottom:18px;right:18px;z-index:999;display:flex;flex-direction:column;gap:8px}
 .toast{background:var(--ink);color:var(--bg);font-size:13px;font-weight:600;padding:11px 16px;border-radius:10px;box-shadow:var(--shadow-lg);opacity:0;transform:translateY(8px);transition:all .25s}
@@ -93,9 +95,7 @@ const SHELL_CSS = `
 .adm-sidebar-footer{margin-top:10px;padding-top:10px;border-top:1px solid var(--border)}
 @media(max-width:768px){
   .adm-sidebar{display:none}
-  .adm-mobile-nav{display:flex;gap:8px;overflow-x:auto;padding:10px 14px;border-bottom:1px solid var(--border);background:var(--surface)}
-  .adm-mobile-nav a{flex-shrink:0;display:inline-flex;align-items:center;gap:5px;padding:7px 14px;border-radius:20px;background:var(--surface2);color:var(--ink2);font-size:12.5px;font-weight:700;text-decoration:none;white-space:nowrap}
-  .adm-mobile-nav a.active{background:var(--brand);color:#fff}
+  .adm-topbar{padding:10px 14px}.adm-mobile-trigger{display:inline-flex;align-items:center;justify-content:center}.adm-view-site{display:none}.adm-breadcrumbs{font-size:10px}.adm-mobile-backdrop{position:fixed;inset:0;background:rgba(24,22,50,.42);z-index:190}.adm-mobile-backdrop.open{display:block}.adm-mobile-drawer{display:block;position:fixed;left:0;top:0;bottom:0;width:min(290px,86vw);padding:20px 14px;background:var(--surface);z-index:200;box-shadow:16px 0 40px rgba(37,24,92,.2);transform:translateX(-102%);transition:transform .22s cubic-bezier(.23,1,.32,1);overflow-y:auto}.adm-mobile-drawer.open{transform:translateX(0)}.adm-mobile-drawer .adm-logo{padding-top:4px}.adm-mobile-drawer .adm-nav-link{display:flex}
 }
 `;
 
@@ -147,6 +147,14 @@ const SHELL_SCRIPT = `
     requestAnimationFrame(function(){ el.classList.add('show'); });
     setTimeout(function(){ el.classList.remove('show'); setTimeout(function(){ el.remove(); }, 300); }, 3200);
   };
+  window.jnAdminMenu = function(open){
+    var drawer = document.getElementById('admMobileDrawer');
+    var backdrop = document.getElementById('admMobileBackdrop');
+    if (!drawer || !backdrop) return;
+    var isOpen = open === undefined ? !drawer.classList.contains('open') : open;
+    drawer.classList.toggle('open', isOpen); backdrop.classList.toggle('open', isOpen);
+    document.body.style.overflow = isOpen ? 'hidden' : '';
+  };
   document.addEventListener('DOMContentLoaded', function(){
     var params = new URLSearchParams(window.location.search);
     var flash = params.get('flash');
@@ -163,6 +171,8 @@ const SHELL_SCRIPT = `
 `;
 
 export function adminShell(activeId, content) {
+  const activeItem = NAV_ITEMS.find(item => item.id === activeId) || NAV_ITEMS[0];
+  const activeGroup = NAV_GROUPS.find(group => group.items.some(item => item.id === activeId));
   return `<!DOCTYPE html>
 <html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Admin — JobForion</title><meta name="robots" content="noindex, nofollow">${ICON_HEAD}
@@ -214,7 +224,10 @@ export function adminShell(activeId, content) {
 @media(max-width:640px){
   .bulk-bar{position:fixed;left:10px;right:10px;bottom:10px;top:auto;margin-bottom:0}
 }
-@media(max-width:768px){.adm-grid{grid-template-columns:1fr}}
+  .adm-wrap{animation:adm-enter .22s ease-out}.adm-hdr{padding-top:6px}.adm-title{letter-spacing:-.5px}.adm-card{box-shadow:var(--shadow-card);transition:border-color .18s,box-shadow .18s}.adm-card:hover{border-color:#d8d0f1;box-shadow:var(--shadow-card-hover)}.adm-card-title{letter-spacing:-.1px}.adm-kpi{position:relative;overflow:hidden}.adm-kpi:after{content:'';position:absolute;right:-18px;top:-24px;width:76px;height:76px;border-radius:50%;background:var(--brand-soft);opacity:.7}.adm-kpi-label,.adm-kpi-value,.adm-kpi-sub{position:relative;z-index:1}.adm-table-wrap{overflow-x:auto;border:1px solid var(--border);border-radius:12px}.adm-table-wrap table{min-width:920px}.adm-table-wrap th{white-space:nowrap}.adm-table-wrap td,.adm-table-wrap th{padding:11px 9px}.adm-table-wrap tbody tr{border-bottom:1px solid var(--border);transition:background .15s}.adm-table-wrap tbody tr:hover{background:var(--brand-soft)}.adm-status{display:inline-flex;align-items:center;gap:5px;border-radius:99px;padding:4px 9px;font-size:10px;font-weight:800;white-space:nowrap}.adm-form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.adm-form-grid>label{min-width:0}.adm-section-kicker{margin-bottom:8px;color:var(--brand);font-size:10px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase}.adm-danger{border-color:rgba(255,111,138,.4)!important;color:var(--coral)!important}.adm-note{padding:13px 15px;border:1px solid var(--border);border-radius:11px;background:var(--surface2);color:var(--ink2);font-size:12px;line-height:1.7}.adm-quick-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px}.adm-quick-card{display:flex;align-items:center;gap:9px;min-width:0;padding:12px;border:1px solid var(--border);border-radius:11px;color:var(--ink2);background:var(--surface);font-size:11px;font-weight:800;text-decoration:none;transition:transform .18s,border-color .18s,background .18s}.adm-quick-card:hover{transform:translateY(-1px);border-color:#cfc3f6;background:var(--brand-soft);color:var(--brand)}.adm-quick-card svg{flex-shrink:0;color:var(--brand)}.adm-list-link{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 0;border-bottom:1px solid var(--border);color:var(--ink);text-decoration:none}.adm-list-link:last-child{border-bottom:0}.adm-list-link span{min-width:0}.adm-list-link b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px}.adm-list-link small{display:block;margin-top:3px;color:var(--ink3);font-size:10px}.adm-list-link em{flex-shrink:0;color:var(--ink3);font-size:10px;font-style:normal}.adm-overview-grid{align-items:start}@keyframes adm-enter{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}@media(prefers-reduced-motion:reduce){.adm-wrap{animation:none}.adm-card,.adm-nav-link{transition:none}}
+  @media(max-width:900px){.adm-quick-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+  @media(max-width:768px){.adm-grid{grid-template-columns:1fr}.adm-wrap{padding:20px 14px 56px}.adm-hdr{align-items:flex-start}.adm-form-grid{grid-template-columns:1fr}.adm-breadcrumb-group{display:none}.adm-table-wrap{margin-left:-2px;margin-right:-2px}.adm-table-wrap table{min-width:760px}}
+  @media(max-width:480px){.adm-title{font-size:21px}.adm-sub{font-size:11px}.adm-quick-grid{grid-template-columns:1fr}.adm-btn{justify-content:center}.adm-topbar-actions{gap:6px}.adm-wrap [style*="grid-template-columns"]{grid-template-columns:1fr!important}.adm-wrap [style*="display:flex"]{min-width:0}}
 </style></head><body>
 <div id="toast-host"></div>
 <div class="adm-shell">
@@ -229,12 +242,12 @@ export function adminShell(activeId, content) {
     </div>
   </aside>
   <main class="adm-main">
-    <nav class="adm-mobile-nav">
-      ${NAV_ITEMS.map(n => `<a href="${n.href}" class="${n.id === activeId ? 'active' : ''}">${n.icon({ size: 13 })} ${n.label}</a>`).join('')}
-    </nav>
     <div class="adm-topbar">
-      <button class="theme-toggle" id="themeToggleBtn" onclick="jnToggleTheme()" title="Toggle dark mode">🌙</button>
+      <div class="adm-topbar-left"><button class="adm-mobile-trigger" type="button" onclick="jnAdminMenu()" aria-label="Open admin navigation">☰</button><div class="adm-breadcrumbs"><a href="/admin">Admin</a><span>›</span><strong>${activeItem.label}</strong><span class="adm-breadcrumb-group">${activeGroup ? `· ${activeGroup.title}` : ''}</span></div></div>
+      <div class="adm-topbar-actions"><a class="adm-view-site" href="/" target="_blank" rel="noopener">View live site</a><button class="theme-toggle" id="themeToggleBtn" onclick="jnToggleTheme()" title="Toggle dark mode" aria-label="Toggle dark mode">☼</button></div>
     </div>
+    <div class="adm-mobile-backdrop" id="admMobileBackdrop" onclick="jnAdminMenu(false)"></div>
+    <aside class="adm-mobile-drawer" id="admMobileDrawer" aria-label="Admin navigation"><div class="adm-logo"><img src="/favicon.svg" alt="JobForion">JobForion</div>${NAV_GROUPS.map(g => `<div class="adm-nav-group-title">${g.title}</div>${g.items.map(n => `<a href="${n.href}" class="adm-nav-link${n.id === activeId ? ' active' : ''}" onclick="jnAdminMenu(false)">${n.icon({ size: 15 })} ${n.label}</a>`).join('')}`).join('')}<div class="adm-sidebar-footer"><a href="/admin/logout" class="adm-nav-link">${iconLogOut({ size: 15 })} Logout</a></div></aside>
     ${content}
   </main>
 </div>

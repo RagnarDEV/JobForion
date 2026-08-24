@@ -7,7 +7,6 @@ import { getCategories } from '../../lib/categories.js';
 import { ensureTable } from '../../db/schema.js';
 import { escapeHtml } from '../../lib/entities.js';
 import { PROVIDERS } from '../../providers/index.js';
-import { BLOG_POSTS } from '../../data/blog-posts.js';
 import { JOB_STATUS_META, JOB_STATUS_ORDER, REJECTION_REASONS } from '../../config/constants.js';
 import { getRecentActivity, ACTION_LABELS } from '../../lib/activity-log.js';
 
@@ -24,10 +23,10 @@ function barChart(rows) {
 }
 
 const kpi = (label, val, sub, color = 'var(--brand)') => `
-  <div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:18px;box-shadow:var(--shadow)">
-    <div style="font-size:11px;font-weight:700;color:var(--ink3);letter-spacing:.5px;text-transform:uppercase;margin-bottom:8px">${label}</div>
-    <div style="font-family:'Plus Jakarta Sans',sans-serif;font-size:26px;font-weight:700;color:${color}">${val}</div>
-    ${sub ? `<div style="font-size:11px;color:var(--ink3);margin-top:4px">${sub}</div>` : ''}
+  <div class="adm-card adm-kpi" style="border-top:3px solid ${color}">
+    <div class="adm-kpi-label" style="font-size:10px;font-weight:800;color:var(--ink3);letter-spacing:.8px;text-transform:uppercase;margin-bottom:8px">${label}</div>
+    <div class="adm-kpi-value" style="font-family:'Plus Jakarta Sans',sans-serif;font-size:27px;font-weight:800;color:${color}">${val}</div>
+    ${sub ? `<div class="adm-kpi-sub" style="font-size:11px;color:var(--ink3);margin-top:5px">${sub}</div>` : ''}
   </div>`;
 
 function healthRow(label, status, detail) {
@@ -63,7 +62,7 @@ export async function renderDashboardContent(env) {
   await ensureTable(env);
   const q = (sql, ...params) => env.DB.prepare(sql).bind(...params).all();
 
-  const [{ results: totalJobsR }, { results: jobsTodayR }, { results: jobsWeekR }, { results: jobsMonthR }, { results: subsR }, { results: companiesR }, { results: hotR }] = await Promise.all([
+  const [{ results: totalJobsR }, { results: jobsTodayR }, { results: jobsWeekR }, { results: jobsMonthR }, { results: subsR }, { results: companiesR }, { results: hotR }, { results: usersR }, { results: articlesR }, { results: recentJobsR }, { results: recentUsersR }, { results: recentCompaniesR }] = await Promise.all([
     q("SELECT COUNT(*) c FROM jobs"),
     q("SELECT COUNT(*) c FROM jobs WHERE created_at >= datetime('now','-1 day')"),
     q("SELECT COUNT(*) c FROM jobs WHERE created_at >= datetime('now','-7 day')"),
@@ -71,6 +70,11 @@ export async function renderDashboardContent(env) {
     q("SELECT COUNT(*) c FROM subscribers"),
     q("SELECT COUNT(DISTINCT LOWER(company)) c FROM jobs WHERE company IS NOT NULL AND company != ''"),
     q("SELECT COUNT(*) c FROM jobs WHERE salary_max_usd >= 150000"),
+    q("SELECT COUNT(*) c FROM users"),
+    q("SELECT COUNT(*) c FROM blog_posts WHERE status = 'published'"),
+    q("SELECT id, title, company, location, created_at, status FROM jobs ORDER BY id DESC LIMIT 6"),
+    q("SELECT id, email, status, email_verified, created_at FROM users ORDER BY id DESC LIMIT 6"),
+    q("SELECT company, COUNT(*) c, MAX(created_at) created_at FROM jobs WHERE company IS NOT NULL AND company != '' GROUP BY LOWER(company), company ORDER BY created_at DESC LIMIT 6"),
   ]);
 
   const [{ results: totalVisitsR }, { results: visitsTodayR }, { results: visits7dR }, { results: uniqCountriesR }] = await Promise.all([
@@ -175,8 +179,9 @@ export async function renderDashboardContent(env) {
   <div class="adm-wrap">
     <div class="adm-hdr">
       <div>
-        <div class="adm-title">📊 Dashboard</div>
-        <div class="adm-sub">Live overview of JobForion performance</div>
+        <div class="adm-section-kicker">CONTROL CENTER</div>
+        <div class="adm-title">Platform overview</div>
+        <div class="adm-sub">Live operational view of the JobForion platform</div>
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <form method="POST" action="/api/sync" onsubmit="return confirm('Run job sync now?')" style="display:inline">
@@ -190,15 +195,17 @@ export async function renderDashboardContent(env) {
     </div>
 
     <div class="adm-card" style="margin-bottom:16px">
-      <div class="adm-card-title">Quick Actions</div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <a class="adm-btn" href="/admin/sources">🔌 Add Company / Manage Sources</a>
-        <a class="adm-btn" href="/admin/jobs">💼 Manage Jobs</a>
-        <a class="adm-btn" href="/admin/companies">🏢 Manage Companies</a>
-        <a class="adm-btn" href="/admin/homepage">🏠 Homepage Sections</a>
-        <a class="adm-btn" href="/admin/ads">📢 Manage Ads</a>
-        <a class="adm-btn" href="/admin/settings">⚙️ Website Settings</a>
-        <a class="adm-btn" href="/admin/system">🖥️ System</a>
+      <div class="adm-section-kicker">OPERATIONS</div>
+      <div class="adm-card-title" style="font-size:17px;margin-bottom:12px">Quick actions</div>
+      <div class="adm-quick-grid">
+        <a class="adm-quick-card" href="/admin/sources">🔌 <span>Manage sources</span></a>
+        <a class="adm-quick-card" href="/admin/jobs">💼 <span>Manage jobs</span></a>
+        <a class="adm-quick-card" href="/admin/companies">🏢 <span>Manage companies</span></a>
+        <a class="adm-quick-card" href="/admin/homepage">🏠 <span>Homepage sections</span></a>
+        <a class="adm-quick-card" href="/admin/ads">📢 <span>Manage ads</span></a>
+        <a class="adm-quick-card" href="/admin/settings">⚙️ <span>Website settings</span></a>
+        <a class="adm-quick-card" href="/admin/system">🖥️ <span>System health</span></a>
+        <a class="adm-quick-card" href="/admin/security">🛡️ <span>Activity log</span></a>
       </div>
     </div>
 
@@ -216,7 +223,8 @@ export async function renderDashboardContent(env) {
       ${kpi('Pending Postings', (pendingR[0]?.c || 0).toLocaleString(), 'Awaiting review', 'var(--coral)')}
       ${kpi('Companies', (companiesR[0]?.c || 0).toLocaleString(), 'Distinct employers', 'var(--cyan)')}
       ${kpi('Skills', skillsCount.toLocaleString(), 'Distinct, sampled', 'var(--green)')}
-      ${kpi('Blog Articles', BLOG_POSTS.length.toLocaleString(), 'Published')}
+      ${kpi('Published Articles', (articlesR[0]?.c || 0).toLocaleString(), 'From Blog CMS', 'var(--pink)')}
+      ${kpi('Users', (usersR[0]?.c || 0).toLocaleString(), 'Registered accounts', 'var(--cyan)')}
       ${kpi('Subscribers', (subsR[0]?.c || 0).toLocaleString(), 'Job alert emails', 'var(--pink)')}
       ${kpi('Total Visits', (totalVisitsR[0]?.c || 0).toLocaleString(), `${visitsTodayR[0]?.c || 0} today`, 'var(--cyan)')}
       ${kpi('Visits (7d)', (visits7dR[0]?.c || 0).toLocaleString(), `${uniqCountriesR[0]?.c || 0} countries reached`, 'var(--green)')}
@@ -251,7 +259,7 @@ export async function renderDashboardContent(env) {
       }).join('')}
     </div>` : ''}
 
-    <div class="adm-grid">
+    <div class="adm-grid adm-overview-grid">
       <div class="adm-card" style="grid-column:span 2">
         <div class="adm-card-title">System Health</div>
         ${workerHealth}
@@ -312,6 +320,18 @@ export async function renderDashboardContent(env) {
       <div class="adm-card">
         <div class="adm-card-title">Jobs by Source</div>
         ${(sourceBreakdownR || []).length ? barChart(sourceBreakdownR.map(r => ({ label: r.s, count: r.c }))) : '<div class="adm-empty">No source data yet — runs after the next sync</div>'}
+      </div>
+      <div class="adm-card">
+        <div class="adm-card-title">Recent Jobs</div>
+        ${(recentJobsR || []).length ? recentJobsR.map(j => `<a class="adm-list-link" href="/job/${j.id}" target="_blank" rel="noopener"><span><b>${escapeHtml(j.title || 'Untitled job')}</b><small>${escapeHtml(j.company || 'Unknown company')} · ${escapeHtml(j.location || 'Remote')}</small></span><em>${j.created_at ? new Date(j.created_at).toLocaleDateString() : '—'}</em></a>`).join('') : '<div class="adm-empty">No jobs yet</div>'}
+      </div>
+      <div class="adm-card">
+        <div class="adm-card-title">Recent Users</div>
+        ${(recentUsersR || []).length ? recentUsersR.map(u => `<div class="adm-list-link"><span><b>${escapeHtml(u.email || 'Unknown user')}</b><small>${u.email_verified ? 'Verified' : 'Pending verification'} · ${escapeHtml(u.status || '—')}</small></span><em>${u.created_at ? new Date(u.created_at).toLocaleDateString() : '—'}</em></div>`).join('') : '<div class="adm-empty">No users yet</div>'}
+      </div>
+      <div class="adm-card">
+        <div class="adm-card-title">Recent Companies</div>
+        ${(recentCompaniesR || []).length ? recentCompaniesR.map(c => `<div class="adm-list-link"><span><b>${escapeHtml(c.company || 'Unknown company')}</b><small>${c.c} active listing${c.c === 1 ? '' : 's'}</small></span><em>${c.created_at ? new Date(c.created_at).toLocaleDateString() : '—'}</em></div>`).join('') : '<div class="adm-empty">No companies yet</div>'}
       </div>
       <div class="adm-card">
         <div class="adm-card-title">Recent Activity <span style="font-weight:400;color:var(--ink3);font-size:12px">— <a href="/admin/security" style="color:var(--brand)">full log →</a></span></div>

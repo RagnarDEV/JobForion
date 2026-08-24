@@ -46,6 +46,8 @@ export async function renderSystemContent(env) {
     "SELECT COUNT(*) c FROM jobs WHERE salary IS NOT NULL AND salary != '' AND salary_min_usd IS NULL"
   );
   const salaryRemaining = salaryRemainingRows?.[0]?.c || 0;
+  const emailConfigured = Boolean(env.BREVO_API_KEY && env.EMAIL_FROM_ADDRESS);
+  const storageConfigured = Boolean(env.COMPANY_ASSETS);
 
   // ── Data Integrity report (plan §29) — read-only diagnostics only.
   // Nothing here is auto-fixed or deleted; an admin decides what (if
@@ -95,6 +97,12 @@ export async function renderSystemContent(env) {
           <button class="adm-btn" type="submit">🗑 Purge Cache</button>
         </form>
         <div style="font-size:10.5px;color:var(--ink3);margin-top:8px">Best-effort: clears the known set of cached URLs. Query-string variants (e.g. filtered/paginated views) expire naturally within their normal TTL.</div>
+      </div>
+      <div class="adm-card">
+        <div class="adm-card-title">Service Status</div>
+        <div class="health-row"><span class="adm-row-label"><span class="health-dot ${emailConfigured ? 'health-ok' : 'health-warn'}"></span>Transactional email</span><span class="adm-row-val">${emailConfigured ? 'Brevo ready' : 'Not configured'}</span></div>
+        <div class="health-row"><span class="adm-row-label"><span class="health-dot ${storageConfigured ? 'health-ok' : 'health-warn'}"></span>Company asset storage</span><span class="adm-row-val">${storageConfigured ? 'R2 connected' : 'URL fallback'}</span></div>
+        <div style="font-size:10.5px;color:var(--ink3);margin-top:8px">Credentials and provider keys are intentionally never displayed here.</div>
       </div>
       <div class="adm-card" style="grid-column:span 2">
         <div class="adm-card-title">Database — Row Counts</div>

@@ -199,7 +199,7 @@ export async function renderJobsListContent(env, params) {
       </form>
     </div>
 
-    <div class="adm-card" style="overflow-x:auto">
+    <div class="adm-card adm-table-wrap" style="overflow-x:auto">
       <form id="bulkForm" method="POST" action="/admin/jobs/bulk" onsubmit="return jnBulkSubmit(event)">
         <input type="hidden" name="bulk_action" id="bulkActionField">
         <input type="hidden" name="job_type_value" id="bulkJobTypeField">
