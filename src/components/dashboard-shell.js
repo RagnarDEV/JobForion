@@ -11,24 +11,25 @@
 
 import { escapeHtml } from '../lib/entities.js';
 
-export function dashboardShell({ activeId, navItems, title, subtitle, content, headerActions = '', switchPill = '' }) {
+export function dashboardShell({ activeId, navItems, title, subtitle, content, headerActions = '', switchPill = '', user = null }) {
+  const displayName = user?.full_name || user?.email || 'Your account';
+  const initials = String(displayName).split(/\s+/).filter(Boolean).slice(0, 2).map(part => part[0]).join('').toUpperCase() || 'J';
+  const userBar = user ? `<div class="dash-userbar"><div class="dash-userbar-copy"><span class="dash-kicker">YOUR JOBFORION ACCOUNT</span><span class="dash-userbar-name">${escapeHtml(displayName)}</span></div><div class="dash-userbar-actions"><span class="dash-avatar" aria-hidden="true">${escapeHtml(initials)}</span><a href="/user/profile" class="dash-userbar-link">Profile</a><form method="POST" action="/logout"><button type="submit" class="dash-userbar-link dash-logout-link">Sign out</button></form></div></div>` : '';
   return `
-<div class="page" style="max-width:1180px;padding-top:20px">
-  <div id="dash-toast-host" style="position:fixed;bottom:18px;right:18px;z-index:999"></div>
+<div class="page dash-page">
+  <div id="dash-toast-host" class="dash-toast-host"></div>
   ${switchPill}
-  <nav class="dash-mobile-nav">
-    ${navItems.map(n => `<a href="${n.href}" class="${n.id === activeId ? 'active' : ''}">${n.icon({ size: 13 })} ${escapeHtml(n.label)}</a>`).join('')}
+  ${userBar}
+  <nav class="dash-mobile-nav" aria-label="Account navigation">
+    ${navItems.map(n => `<a href="${n.href}" class="${n.id === activeId ? 'active' : ''}"${n.id === activeId ? ' aria-current="page"' : ''}>${n.icon({ size: 13 })} ${escapeHtml(n.label)}</a>`).join('')}
   </nav>
   <div class="dash-shell">
-    <aside class="dash-sidebar">
-      ${navItems.map(n => `<a href="${n.href}" class="dash-nav-link${n.id === activeId ? ' active' : ''}">${n.icon({ size: 16 })} ${escapeHtml(n.label)}</a>`).join('')}
+    <aside class="dash-sidebar" aria-label="Account navigation">
+      <div class="dash-sidebar-label">ACCOUNT</div>${navItems.map(n => `<a href="${n.href}" class="dash-nav-link${n.id === activeId ? ' active' : ''}"${n.id === activeId ? ' aria-current="page"' : ''}>${n.icon({ size: 16 })} <span>${escapeHtml(n.label)}</span></a>`).join('')}
     </aside>
     <main class="dash-main">
       <div class="dash-hdr">
-        <div>
-          <div class="dash-title">${escapeHtml(title)}</div>
-          ${subtitle ? `<div class="dash-sub">${escapeHtml(subtitle)}</div>` : ''}
-        </div>
+        <div><h1 class="dash-title">${escapeHtml(title)}</h1>${subtitle ? `<p class="dash-sub">${escapeHtml(subtitle)}</p>` : ''}</div>
         ${headerActions}
       </div>
       ${content}

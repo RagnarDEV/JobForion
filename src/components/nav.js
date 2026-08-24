@@ -1,18 +1,20 @@
 // Shared desktop navigation, mobile header/menu, and mobile bottom navigation.
 
-import { iconSearch, iconBuilding, iconFolder, iconBookmark, iconFileText, iconPlus, iconLock, iconMenu, iconGlobe, iconX, iconUser, iconLayoutDashboard, iconHome, iconBriefcase } from '../assets/icons.js';
+import { iconSearch, iconBuilding, iconFolder, iconBookmark, iconFileText, iconPlus, iconLock, iconMenu, iconGlobe, iconX, iconUser, iconLayoutDashboard, iconHome, iconBriefcase, iconBell } from '../assets/icons.js';
 import { escapeHtml } from '../lib/entities.js';
 import { SETTINGS_DEFAULTS } from '../lib/settings.js';
 
 function authLinksHtml(user, mobile = false) {
   if (!user) {
     return mobile
-      ? `<a href="/login">${iconUser({ size: 16 })} Log in</a><a href="/register" class="mob-menu-post-btn">${iconPlus({ size: 16 })} Create account</a>`
+      ? `<a href="/login">${iconUser({ size: 16 })} Sign in</a><a href="/register" class="mob-menu-post-btn">${iconPlus({ size: 16 })} Create account</a>`
       : `<a href="/login" class="nav-link">Sign in</a><a href="/register" class="nav-link">Create account</a>`;
   }
+  const label = escapeHtml(user.email || 'Account');
+  const initials = escapeHtml((user.email || 'J').slice(0, 1).toUpperCase());
   return mobile
-    ? `<a href="/user/dashboard">${iconLayoutDashboard({ size: 16 })} Dashboard</a><form method="POST" action="/logout" style="margin:0"><button type="submit" style="width:100%">${iconX({ size: 16 })} Log out</button></form>`
-    : `<a href="/user/dashboard" class="nav-link">${iconLayoutDashboard({ size: 14 })} Dashboard</a>`;
+    ? `<a href="/user/dashboard"><span class="nav-user-avatar">${initials}</span> Dashboard</a><a href="/user/profile">${iconUser({ size: 16 })} My Profile</a><a href="/user/saved-jobs">${iconBookmark({ size: 16 })} Saved Jobs</a><a href="/user/applications">${iconBriefcase({ size: 16 })} Applications</a><a href="/user/job-alerts">${iconBell({ size: 16 })} Job Alerts</a><form method="POST" action="/logout" style="margin:0"><button type="submit" style="width:100%">${iconX({ size: 16 })} Sign out</button></form>`
+    : `<div class="nav-account"><a href="/user/dashboard" class="nav-account-trigger"><span class="nav-user-avatar">${initials}</span><span class="nav-account-label">${label}</span></a><div class="nav-account-menu"><a href="/user/dashboard">${iconLayoutDashboard({ size: 14 })} Dashboard</a><a href="/user/profile">${iconUser({ size: 14 })} My Profile</a><a href="/user/saved-jobs">${iconBookmark({ size: 14 })} Saved Jobs</a><a href="/user/applications">${iconBriefcase({ size: 14 })} Applications</a><a href="/user/job-alerts">${iconBell({ size: 14 })} Job Alerts</a><form method="POST" action="/logout"><button type="submit">${iconX({ size: 14 })} Sign out</button></form></div></div>`;
 }
 
 export function navHtml(settings, menuPages = [], navButtons = [], user = null) {
@@ -31,7 +33,7 @@ export function navHtml(settings, menuPages = [], navButtons = [], user = null) 
     <a href="/categories" class="nav-link">Categories</a>
     <a href="/blog" class="nav-link">Resources</a>
     ${extraLinks}
-    <button class="nav-link" onclick="if(window.goView){goView('saved')}else{location='/' }">Saved jobs</button>
+    <a href="${user ? '/user/saved-jobs' : '/login?next=%2Fuser%2Fsaved-jobs'}" class="nav-link">${iconBookmark({ size: 14 })} Saved jobs</a>
     ${authLinksHtml(user, false)}
     <button class="nav-cta" onclick="openPostJobModal()">${iconPlus({ size: 14 })} Post a job</button>
   </div>
@@ -48,14 +50,14 @@ export function mobileHeaderHtml(settings, menuPages = [], navButtons = [], user
 <div class="mob-hdr">
   <a href="/" class="mob-logo"><img src="/favicon.svg" alt="${siteName}">${siteName}</a>
   <button class="mob-burger" onclick="toggleMobMenu()" id="mobBurgerBtn" aria-label="Open navigation menu">${iconMenu({ size: 18 })}</button>
-  <a href="${user ? '/user/dashboard' : '/login'}" class="mob-account-indicator" aria-label="${user ? 'Open dashboard' : 'Log in'}"><span></span></a>
+  <a href="${user ? '/user/dashboard' : '/login'}" class="mob-account-indicator" aria-label="${user ? 'Open dashboard' : 'Sign in'}"><span>${user ? escapeHtml((user.email || 'J').slice(0, 1).toUpperCase()) : ''}</span></a>
 </div>
 <div class="mob-menu" id="mobMenu" aria-label="Mobile navigation">
   <a href="/">${iconSearch({ size: 16 })} Find jobs</a>
   <a href="/companies">${iconBuilding({ size: 16 })} Companies</a>
   <a href="/?remote_type=fully_remote">${iconGlobe({ size: 16 })} Remote jobs</a>
   <a href="/categories">${iconFolder({ size: 16 })} Categories</a>
-  <button onclick="if(window.goView){goView('saved');closeMobMenu();}else{location='/'}">${iconBookmark({ size: 16 })} Saved jobs</button>
+  <a href="${user ? '/user/saved-jobs' : '/login?next=%2Fuser%2Fsaved-jobs'}">${iconBookmark({ size: 16 })} Saved jobs</a>
   <a href="/blog">${iconFileText({ size: 16 })} Resources</a>
   <a href="/privacy">${iconLock({ size: 16 })} Privacy</a>
   ${extraMenuItems}
@@ -87,12 +89,13 @@ export function mobileBottomNavHtml(currentPath = '/', user = null) {
   const path = currentPath || '/';
   const active = path.startsWith('/job') ? 'jobs' : path.startsWith('/companies') ? 'companies' : path.startsWith('/user/saved') ? 'saved' : path.startsWith('/user/applications') ? 'jobs' : path.startsWith('/user') ? 'profile' : 'home';
   const profileHref = user ? '/user/dashboard' : '/login';
+  const savedHref = user ? '/user/saved-jobs' : '/login?next=%2Fuser%2Fsaved-jobs';
   const item = (key, href, label, markup, click = '') => `<a href="${href}" class="mobile-bottom-item${active === key ? ' active' : ''}"${active === key ? ' aria-current="page"' : ''}${click ? ` onclick="${click}"` : ''}>${markup}<span>${label}</span></a>`;
   return `<nav class="mobile-bottom-nav" aria-label="Mobile primary navigation">
     ${item('home', '/', 'Home', iconHome({ size: 18 }))}
-    ${item('jobs', '/', 'Jobs', iconBriefcase({ size: 18 }), "if(window.goView){goView('jobs');event.preventDefault();}")}
+    ${item('jobs', '/jobs', 'Jobs', iconBriefcase({ size: 18 }))}
     ${item('companies', '/companies', 'Companies', iconBuilding({ size: 18 }))}
-    ${item('saved', '/', 'Saved', iconBookmark({ size: 18 }), "if(window.goView){goView('saved');event.preventDefault();}")}
+    ${item('saved', savedHref, 'Saved', iconBookmark({ size: 18 }))}
     ${item('profile', profileHref, 'Profile', iconUser({ size: 18 }))}
   </nav>`;
 }

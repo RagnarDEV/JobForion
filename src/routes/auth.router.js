@@ -29,6 +29,11 @@ function clientKey(request, bucket) {
   return `auth:${bucket}:${ip}`;
 }
 
+function safeNext(value) {
+  const candidate = String(value || '').trim();
+  return /^\/(?!\/)/.test(candidate) ? candidate.slice(0, 300) : '';
+}
+
 async function pageCtx(env) {
   const [settings, categories] = await Promise.all([getSettings(env), getCategoryData(env)]);
   return { settings, categories };
@@ -108,19 +113,20 @@ export async function handleAuthRoute(url, request, env, base) {
     const csrfToken = await getCsrfToken(env, null);
 
     if (request.method === 'GET') {
-      return new Response(await renderLoginPage({ csrfToken, ...(await pageCtx(env)) }), { headers: HTML });
+      return new Response(await renderLoginPage({ csrfToken, next: safeNext(url.searchParams.get('next')), notice: url.searchParams.get('reset') === '1' ? 'Your password was reset. Sign in with your new password.' : '', ...(await pageCtx(env)) }), { headers: HTML });
     }
 
     const form = await request.formData();
+    const next = safeNext(form.get('next'));
     const submittedCsrf = (form.get('_csrf') || '').toString();
     if (!(await verifyCsrf(env, null, submittedCsrf))) {
-      return new Response(await renderLoginPage({ csrfToken, error: 'Your session expired — please try again.', ...(await pageCtx(env)) }), { status: 400, headers: HTML });
+      return new Response(await renderLoginPage({ csrfToken, next, error: 'Your session expired — please try again.', ...(await pageCtx(env)) }), { status: 400, headers: HTML });
     }
 
     const rl = await checkRateLimit(env, clientKey(request, 'login'), { maxRequests: 8, windowMinutes: 15 });
     if (!rl.allowed) {
       await logActivity(env, 'user_login_rate_limited', (form.get('email') || '').toString());
-      return new Response(await renderLoginPage({ csrfToken, error: 'Too many attempts. Please try again in a few minutes.', ...(await pageCtx(env)) }), { status: 429, headers: HTML });
+      return new Response(await renderLoginPage({ csrfToken, next, error: 'Too many attempts. Please try again in a few minutes.', ...(await pageCtx(env)) }), { status: 429, headers: HTML });
     }
 
     const email = (form.get('email') || '').toString().trim().toLowerCase();
@@ -131,15 +137,15 @@ export async function handleAuthRoute(url, request, env, base) {
       await logActivity(env, 'user_login_failed', email);
       // Identical message regardless of whether the email exists — see
       // file header.
-      return new Response(await renderLoginPage({ csrfToken, error: 'Incorrect email or password.', ...(await pageCtx(env)) }), { status: 401, headers: HTML });
+      return new Response(await renderLoginPage({ csrfToken, next, error: 'Incorrect email or password.', ...(await pageCtx(env)) }), { status: 401, headers: HTML });
     }
     if (user.status === 'suspended') {
-      return new Response(await renderLoginPage({ csrfToken, error: 'This account has been suspended. Contact support for help.', ...(await pageCtx(env)) }), { status: 403, headers: HTML });
+      return new Response(await renderLoginPage({ csrfToken, next, error: 'This account has been suspended. Contact support for help.', ...(await pageCtx(env)) }), { status: 403, headers: HTML });
     }
 
     await logActivity(env, 'user_login_success', email, { userId: user.id });
     const { cookie } = await createSession(env, user.id, request);
-    return new Response(null, { status: 302, headers: { 'Location': `${base}/user/dashboard`, 'Set-Cookie': cookie } });
+    return new Response(null, { status: 302, headers: { 'Location': `${base}${next || '/user/dashboard'}`, 'Set-Cookie': cookie } });
   }
 
   // ── /logout ───────────────────────────────────────────────────

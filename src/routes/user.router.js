@@ -26,6 +26,21 @@ async function ctx(env) {
   return { settings, categories };
 }
 
+function splitProfileList(value, max = 30) {
+  return String(value || '').split(/\r?\n|,/).map(item => item.trim().slice(0, 240)).filter(Boolean).slice(0, max);
+}
+
+function profilePreferences(form) {
+  const preferences = {};
+  const remote = String(form.get('preferred_remote_type') || '').trim();
+  const employment = String(form.get('preferred_employment_type') || '').trim();
+  const country = String(form.get('preferred_country') || '').trim().slice(0, 100);
+  if (remote) preferences.remote_type = remote;
+  if (employment) preferences.employment_type = employment;
+  if (country) preferences.country = country;
+  return preferences;
+}
+
 export async function handleUserRoute(url, request, env, base) {
   if (!url.pathname.startsWith('/user/')) return null;
 
@@ -45,7 +60,7 @@ export async function handleUserRoute(url, request, env, base) {
 
   // ── Overview ──
   if (url.pathname === '/user/dashboard' && request.method === 'GET') {
-    return new Response(await renderUserOverview(env, user, pageCtx), { headers: HTML });
+    return new Response(await renderUserOverview(env, user, pageCtx, { welcome: url.searchParams.get('welcome') === '1' }), { headers: HTML });
   }
 
   // ── Profile ──
@@ -56,8 +71,9 @@ export async function handleUserRoute(url, request, env, base) {
     const { form, ok } = await requireCsrf(request);
     if (!ok) return new Response(await renderUserProfile(env, user, pageCtx, { csrfToken, error: 'Your session expired — please try again.' }), { status: 400, headers: HTML });
     await updateUserProfile(env, user.id, {
-      full_name: form.get('full_name'), job_title: form.get('job_title'), country: form.get('country'), city: form.get('city'),
-      bio: form.get('bio'), skills: (form.get('skills') || '').toString().split(',').map(s => s.trim()).filter(Boolean),
+      full_name: form.get('full_name'), avatar_url: form.get('avatar_url'), job_title: form.get('job_title'), country: form.get('country'), city: form.get('city'),
+      bio: form.get('bio'), skills: splitProfileList(form.get('skills'), 50), experience: splitProfileList(form.get('experience'), 30),
+      education: splitProfileList(form.get('education'), 20), languages: splitProfileList(form.get('languages'), 20), job_preferences: profilePreferences(form),
       linkedin_url: form.get('linkedin_url'), portfolio_url: form.get('portfolio_url'), resume_url: form.get('resume_url'),
     });
     return new Response(await renderUserProfile(env, user, pageCtx, { csrfToken, saved: true }), { headers: HTML });
@@ -81,7 +97,8 @@ export async function handleUserRoute(url, request, env, base) {
     const { form, ok } = await requireCsrf(request);
     if (!ok) return new Response(await renderJobAlerts(env, user, pageCtx, { csrfToken, error: 'Your session expired — please try again.' }), { status: 400, headers: HTML });
     await createJobAlert(env, user.id, {
-      keywords: form.get('keywords'), country: form.get('country'), remote_type: form.get('remote_type'), frequency: form.get('frequency'),
+      keywords: form.get('keywords'), category: form.get('category'), skills: form.get('skills'), country: form.get('country'),
+      remote_type: form.get('remote_type'), employment_type: form.get('employment_type'), salary_min: form.get('salary_min'), frequency: form.get('frequency'),
     });
     return new Response(null, { status: 302, headers: { 'Location': '/user/job-alerts' } });
   }

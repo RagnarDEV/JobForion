@@ -1,93 +1,57 @@
-// src/pages/auth.js
-// Server-rendered auth pages (no SPA/JS framework, matching the rest of
-// the site). Every form is a plain <form method="POST"> with a hidden
-// CSRF field (lib/accounts/csrf.js) so it degrades gracefully and is
-// protected the same way regardless of JS being enabled.
+// Server-rendered auth pages. Forms intentionally remain plain POST forms so the
+// existing CSRF, rate-limit, session and email flows remain the source of truth.
 
 import { baseLayout } from '../layout/base-layout.js';
 import { csrfField } from '../lib/accounts/csrf.js';
 import { escapeHtml } from '../lib/entities.js';
 import { BASE_URL } from '../config/constants.js';
 
-function authShell({ title, sub, body, foot, error, ok }) {
-  return `
-<div class="auth-wrap">
-  <div class="auth-card">
-    <div class="auth-title">${title}</div>
-    ${sub ? `<div class="auth-sub">${sub}</div>` : ''}
-    ${error ? `<div class="auth-err">${escapeHtml(error)}</div>` : ''}
-    ${ok ? `<div class="auth-ok">${escapeHtml(ok)}</div>` : ''}
-    ${body}
-    ${foot ? `<div class="auth-foot">${foot}</div>` : ''}
-  </div>
-</div>`;
+const AUTH_PAGE_CSS = `<style>
+.auth-screen{min-height:calc(100vh - 190px);display:grid;place-items:center;padding:42px 20px 80px;background:linear-gradient(180deg,#fbfaff 0%,#fff 76%)}
+.auth-layout{width:min(100%,980px);display:grid;grid-template-columns:minmax(0,1fr) 410px;gap:28px;align-items:center}.auth-intro{padding:18px 26px}.auth-eyebrow{margin:0 0 14px;color:var(--brand);font-size:10px;font-weight:800;letter-spacing:2px}.auth-intro h1{max-width:470px;margin:0 0 15px;color:var(--ink);font:800 clamp(31px,4vw,48px)/1.08 'Space Grotesk',sans-serif;letter-spacing:-1.6px}.auth-intro p{max-width:450px;margin:0;color:var(--ink2);font-size:15px;line-height:1.7}.auth-benefits{display:grid;gap:10px;margin:24px 0 0;padding:0;list-style:none;color:var(--ink2);font-size:12px;font-weight:700}.auth-benefits li{display:flex;align-items:center;gap:9px}.auth-benefits li:before{content:'✓';display:grid;place-items:center;width:20px;height:20px;border-radius:50%;background:var(--brand-soft);color:var(--brand);font-weight:900}.auth-card{width:100%;padding:30px;background:var(--surface);border:1px solid var(--border);border-radius:18px;box-shadow:0 18px 52px rgba(38,26,97,.1)}.auth-brand{display:flex;align-items:center;gap:9px;margin-bottom:22px;color:var(--ink);font:800 16px 'Space Grotesk',sans-serif}.auth-mark{display:grid;place-items:center;width:30px;height:30px;border-radius:9px;background:var(--brand);color:#fff;font:800 16px 'Space Grotesk',sans-serif;box-shadow:0 6px 14px rgba(99,57,230,.22)}.auth-title{margin:0 0 7px;color:var(--ink);font:800 24px/1.15 'Space Grotesk',sans-serif;letter-spacing:-.5px}.auth-sub{margin:0 0 22px;color:var(--ink3);font-size:12.5px;line-height:1.6}.auth-err,.auth-ok{display:flex;align-items:flex-start;gap:8px;margin:0 0 16px;padding:11px 12px;border-radius:10px;font-size:12px;line-height:1.5}.auth-err{border:1px solid rgba(255,92,122,.25);background:rgba(255,92,122,.08);color:#c33b5d}.auth-ok{border:1px solid rgba(15,174,121,.25);background:rgba(15,174,121,.08);color:#087c59}.auth-err:before{content:'!';display:grid;place-items:center;width:17px;height:17px;flex:0 0 17px;border-radius:50%;background:currentColor;color:#fff;font-weight:900;font-size:11px}.auth-ok:before{content:'✓';font-weight:900}.auth-form{display:grid;gap:14px}.auth-field{display:grid;gap:7px}.auth-field label{color:var(--ink2);font-size:11px;font-weight:800}.auth-input-wrap{position:relative}.auth-field input{width:100%;min-height:44px;padding:0 12px;border:1px solid var(--border2);border-radius:9px;background:#fff;color:var(--ink);font:inherit;font-size:13px;outline:none;transition:border-color .18s,box-shadow .18s}.auth-field input:focus{border-color:var(--brand);box-shadow:0 0 0 3px var(--brand-soft)}.auth-field input.has-toggle{padding-right:72px}.auth-password-toggle{position:absolute;right:8px;top:50%;transform:translateY(-50%);border:0;background:transparent;color:var(--brand);font:800 10px 'Manrope',sans-serif;cursor:pointer;padding:6px}.auth-links{display:flex;justify-content:space-between;gap:12px;margin-top:-3px;font-size:11px}.auth-links a,.auth-foot a,.auth-legal a{color:var(--brand);font-weight:800;text-decoration:none}.auth-links a:hover,.auth-foot a:hover,.auth-legal a:hover{text-decoration:underline}.auth-submit{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;min-height:44px;margin-top:3px;border:0;border-radius:9px;background:var(--brand);color:#fff;font:800 12px 'Manrope',sans-serif;cursor:pointer;box-shadow:0 8px 18px rgba(99,57,230,.18);transition:transform .18s,filter .18s}.auth-submit:hover{filter:brightness(1.05);transform:translateY(-1px)}.auth-submit:focus-visible,.auth-password-toggle:focus-visible{outline:3px solid var(--brand-soft);outline-offset:2px}.auth-foot{margin-top:20px;padding-top:18px;border-top:1px solid var(--border);color:var(--ink3);font-size:11.5px;text-align:center}.auth-legal{margin:15px 0 0;color:var(--ink3);font-size:10.5px;line-height:1.6;text-align:center}.auth-success-mark{display:grid;place-items:center;width:52px;height:52px;margin:0 auto 15px;border-radius:50%;background:var(--brand-soft);color:var(--brand);font-size:25px;font-weight:900}.auth-card-centered{text-align:center}.auth-card-centered .auth-sub{margin-bottom:8px}.auth-back-link{display:inline-flex;margin-top:18px;color:var(--brand);font-size:11.5px;font-weight:800;text-decoration:none}.auth-back-link:hover{text-decoration:underline}
+@media(max-width:760px){.auth-screen{min-height:calc(100vh - 120px);padding:24px 14px 60px}.auth-layout{display:block;max-width:480px}.auth-intro{display:none}.auth-card{padding:25px 19px;border-radius:15px}.auth-title{font-size:22px}}
+</style>`;
+
+function authShell({ title, sub, body, foot, error, ok, introTitle = 'Your next opportunity starts here.', introText = 'A focused account experience for saving roles, tracking applications, and keeping your search moving.' }) {
+  return `<div class="auth-screen">${AUTH_PAGE_CSS}<div class="auth-layout"><div class="auth-intro"><p class="auth-eyebrow">JOBFORION ACCOUNT</p><h1>${introTitle}</h1><p>${introText}</p><ul class="auth-benefits"><li>Save roles and return to them anytime.</li><li>Track applications from one place.</li><li>Get job alerts matched to your search.</li></ul></div><div class="auth-card"><div class="auth-brand"><span class="auth-mark" aria-hidden="true">J</span><span>JobForion</span></div><h1 class="auth-title">${title}</h1>${sub ? `<p class="auth-sub">${sub}</p>` : ''}${error ? `<div class="auth-err" role="alert">${escapeHtml(error)}</div>` : ''}${ok ? `<div class="auth-ok" role="status">${escapeHtml(ok)}</div>` : ''}${body}${foot ? `<div class="auth-foot">${foot}</div>` : ''}</div></div></div>`;
 }
 
-export async function renderLoginPage({ csrfToken, error, settings, categories }) {
-  const body = `
-    <form method="POST" action="/login">
-      ${csrfField(csrfToken)}
-      <div class="pj-group"><label class="pj-label">Email</label><input class="pj-input" type="email" name="email" required autofocus placeholder="you@example.com"></div>
-      <div class="pj-group"><label class="pj-label">Password</label><input class="pj-input" type="password" name="password" required placeholder="••••••••"></div>
-      <div class="auth-links"><span></span><a href="/forgot-password">Forgot password?</a></div>
-      <button class="pj-submit" type="submit">Log In →</button>
-    </form>`;
-  return baseLayout('Log In — JobForion', 'Log in to your JobForion account.', `${BASE_URL}/login`, '', authShell({
-    title: '👋 Welcome back', sub: 'Log in to manage your saved jobs, applications, and alerts.', body, error,
-    foot: `Don't have an account? <a href="/register">Create one</a>`,
-  }), '', 'noindex, follow', settings, categories);
+function field({ label, name, type = 'text', placeholder = '', value = '', autocomplete = '', required = true, minlength = '' }) {
+  const min = minlength ? ` minlength="${escapeHtml(minlength)}"` : '';
+  return `<div class="auth-field"><label for="auth-${name}">${escapeHtml(label)}</label><input id="auth-${name}" type="${escapeHtml(type)}" name="${escapeHtml(name)}" value="${escapeHtml(value)}"${placeholder ? ` placeholder="${escapeHtml(placeholder)}"` : ''}${autocomplete ? ` autocomplete="${escapeHtml(autocomplete)}"` : ''}${required ? ' required' : ''}${min}></div>`;
+}
+
+function passwordField({ label, name, placeholder, autocomplete, minlength = '' }) {
+  const id = `auth-${name}`;
+  return `<div class="auth-field"><label for="${id}">${escapeHtml(label)}</label><div class="auth-input-wrap"><input class="has-toggle" id="${id}" type="password" name="${escapeHtml(name)}"${placeholder ? ` placeholder="${escapeHtml(placeholder)}"` : ''}${autocomplete ? ` autocomplete="${escapeHtml(autocomplete)}"` : ''} required${minlength ? ` minlength="${escapeHtml(minlength)}"` : ''}><button type="button" class="auth-password-toggle" data-password-target="${id}" aria-controls="${id}" aria-label="Show password">Show</button></div></div>`;
+}
+
+function passwordScript() {
+  return `<script>(function(){document.querySelectorAll('[data-password-target]').forEach(function(button){button.addEventListener('click',function(){var input=document.getElementById(button.getAttribute('data-password-target'));var visible=input.type==='text';input.type=visible?'password':'text';button.textContent=visible?'Show':'Hide';button.setAttribute('aria-label',visible?'Show password':'Hide password');});});})();</script>`;
+}
+
+export async function renderLoginPage({ csrfToken, error, settings, categories, next = '', notice = '' }) {
+  const safeNext = /^\/(?!\/)/.test(next || '') ? next : '';
+  const body = `<form method="POST" action="/login" class="auth-form">${csrfField(csrfToken)}${safeNext ? `<input type="hidden" name="next" value="${escapeHtml(safeNext)}">` : ''}${field({ label: 'Email address', name: 'email', type: 'email', placeholder: 'you@example.com', autocomplete: 'email' })}${passwordField({ label: 'Password', name: 'password', placeholder: 'Enter your password', autocomplete: 'current-password' })}<div class="auth-links"><span></span><a href="/forgot-password">Forgot password?</a></div><button class="auth-submit" type="submit">Sign in <span aria-hidden="true">→</span></button></form>${passwordScript()}`;
+  return baseLayout('Sign In — JobForion', 'Sign in to your JobForion account.', `${BASE_URL}/login`, '', authShell({ title: 'Welcome back', sub: 'Sign in to manage saved jobs, applications, and alerts.', body, error, ok: notice, foot: `New to JobForion? <a href="/register">Create an account</a>` }), '', 'noindex, follow', settings, categories);
 }
 
 export async function renderRegisterPage({ csrfToken, error, settings, categories }) {
-  const body = `
-    <form method="POST" action="/register">
-      ${csrfField(csrfToken)}
-      <div class="pj-group"><label class="pj-label">Email</label><input class="pj-input" type="email" name="email" required autofocus placeholder="you@example.com"></div>
-      <div class="pj-group"><label class="pj-label">Password</label><input class="pj-input" type="password" name="password" required minlength="8" placeholder="At least 8 characters"></div>
-      <div class="pj-group"><label class="pj-label">Confirm Password</label><input class="pj-input" type="password" name="confirm_password" required minlength="8" placeholder="Re-enter your password"></div>
-      <button class="pj-submit" type="submit">Create Account →</button>
-    </form>
-    <p style="font-size:11px;color:var(--ink3);margin-top:12px;text-align:center">By creating an account you agree to our <a href="/terms" style="color:var(--brand)">Terms</a> and <a href="/privacy" style="color:var(--brand)">Privacy Policy</a>.</p>`;
-  return baseLayout('Create Account — JobForion', 'Create a free JobForion account to save jobs, track applications, and get alerts.', `${BASE_URL}/register`, '', authShell({
-    title: '🚀 Create your account', sub: 'Takes less than a minute. You can complete your profile later.', body, error,
-    foot: `Already have an account? <a href="/login">Log in</a>`,
-  }), '', 'noindex, follow', settings, categories);
+  const body = `<form method="POST" action="/register" class="auth-form">${csrfField(csrfToken)}${field({ label: 'Email address', name: 'email', type: 'email', placeholder: 'you@example.com', autocomplete: 'email' })}${passwordField({ label: 'Password', name: 'password', placeholder: 'At least 8 characters', autocomplete: 'new-password', minlength: '8' })}${passwordField({ label: 'Confirm password', name: 'confirm_password', placeholder: 'Re-enter your password', autocomplete: 'new-password', minlength: '8' })}<button class="auth-submit" type="submit">Create account <span aria-hidden="true">→</span></button></form>${passwordScript()}<p class="auth-legal">By creating an account you agree to our <a href="/terms">Terms</a> and <a href="/privacy">Privacy Policy</a>.</p>`;
+  return baseLayout('Create Account — JobForion', 'Create a free JobForion account to save jobs, track applications, and get alerts.', `${BASE_URL}/register`, '', authShell({ title: 'Create your account', sub: 'It takes less than a minute. You can complete your profile later.', body, error, foot: `Already have an account? <a href="/login">Sign in</a>` }), '', 'noindex, follow', settings, categories);
 }
 
 export async function renderForgotPasswordPage({ csrfToken, sent, settings, categories }) {
-  const body = sent
-    ? `<p style="font-size:13.5px;color:var(--ink2);line-height:1.7">If an account exists for that email, we've sent a password reset link. It expires in 1 hour.</p>`
-    : `<form method="POST" action="/forgot-password">
-      ${csrfField(csrfToken)}
-      <div class="pj-group"><label class="pj-label">Email</label><input class="pj-input" type="email" name="email" required autofocus placeholder="you@example.com"></div>
-      <button class="pj-submit" type="submit">Send Reset Link →</button>
-    </form>`;
-  return baseLayout('Forgot Password — JobForion', 'Reset your JobForion account password.', `${BASE_URL}/forgot-password`, '', authShell({
-    title: '🔑 Forgot your password?', sub: sent ? '' : "Enter your email and we'll send you a reset link.", body,
-    foot: `<a href="/login">← Back to log in</a>`,
-  }), '', 'noindex, follow', settings, categories);
+  const body = sent ? `<div class="auth-card-centered"><div class="auth-success-mark" aria-hidden="true">✓</div><p class="auth-sub">If an account exists for that email, we sent a password reset link. It expires in 1 hour.</p><a class="auth-back-link" href="/login">← Back to sign in</a></div>` : `<form method="POST" action="/forgot-password" class="auth-form">${csrfField(csrfToken)}${field({ label: 'Email address', name: 'email', type: 'email', placeholder: 'you@example.com', autocomplete: 'email' })}<button class="auth-submit" type="submit">Send reset link <span aria-hidden="true">→</span></button></form>`;
+  return baseLayout('Forgot Password — JobForion', 'Reset your JobForion account password.', `${BASE_URL}/forgot-password`, '', authShell({ title: 'Reset your password', sub: sent ? '' : 'Enter your email and we will send a secure reset link.', body, foot: sent ? '' : `<a href="/login">← Back to sign in</a>` }), '', 'noindex, follow', settings, categories);
 }
 
 export async function renderResetPasswordPage({ csrfToken, token, error, invalid, settings, categories }) {
-  const body = invalid
-    ? `<p style="font-size:13.5px;color:var(--ink2);line-height:1.7">This reset link is invalid or has expired. Request a new one below.</p>`
-    : `<form method="POST" action="/reset-password">
-      ${csrfField(csrfToken)}
-      <input type="hidden" name="token" value="${escapeHtml(token)}">
-      <div class="pj-group"><label class="pj-label">New Password</label><input class="pj-input" type="password" name="password" required minlength="8" autofocus placeholder="At least 8 characters"></div>
-      <div class="pj-group"><label class="pj-label">Confirm New Password</label><input class="pj-input" type="password" name="confirm_password" required minlength="8"></div>
-      <button class="pj-submit" type="submit">Reset Password →</button>
-    </form>`;
-  return baseLayout('Reset Password — JobForion', 'Choose a new password for your JobForion account.', `${BASE_URL}/reset-password`, '', authShell({
-    title: '🔒 Reset your password', body, error,
-    foot: invalid ? `<a href="/forgot-password">Request a new link</a>` : `<a href="/login">← Back to log in</a>`,
-  }), '', 'noindex, follow', settings, categories);
+  const body = invalid ? `<div class="auth-card-centered"><div class="auth-success-mark" aria-hidden="true">!</div><p class="auth-sub">This reset link is invalid or has expired. Request a new one to continue.</p><a class="auth-back-link" href="/forgot-password">Request a new link</a></div>` : `<form method="POST" action="/reset-password" class="auth-form">${csrfField(csrfToken)}<input type="hidden" name="token" value="${escapeHtml(token || '')}">${passwordField({ label: 'New password', name: 'password', placeholder: 'At least 8 characters', autocomplete: 'new-password', minlength: '8' })}${passwordField({ label: 'Confirm new password', name: 'confirm_password', placeholder: 'Re-enter your password', autocomplete: 'new-password', minlength: '8' })}<button class="auth-submit" type="submit">Set new password <span aria-hidden="true">→</span></button></form>${passwordScript()}`;
+  return baseLayout('Reset Password — JobForion', 'Choose a new password for your JobForion account.', `${BASE_URL}/reset-password`, '', authShell({ title: 'Choose a new password', sub: invalid ? '' : 'Use a strong password you do not reuse elsewhere.', body, error, foot: invalid ? '' : `<a href="/login">← Back to sign in</a>` }), '', 'noindex, follow', settings, categories);
 }
 
 export async function renderVerifyEmailPage({ success, message, settings, categories }) {
-  const body = `<p style="font-size:13.5px;color:var(--ink2);line-height:1.7">${escapeHtml(message)}</p>`;
-  return baseLayout('Verify Email — JobForion', 'Verify your JobForion account email address.', `${BASE_URL}/verify-email`, '', authShell({
-    title: success ? '✅ Email verified' : '⚠️ Verification issue', body,
-    foot: `<a href="/user/dashboard">Go to your dashboard →</a>`,
-  }), '', 'noindex, follow', settings, categories);
+  const body = `<div class="auth-card-centered"><div class="auth-success-mark" aria-hidden="true">${success ? '✓' : '!'}</div><p class="auth-sub">${escapeHtml(message)}</p><a class="auth-back-link" href="${success ? '/user/dashboard' : '/user/settings'}">${success ? 'Go to your dashboard' : 'Open account settings'} →</a></div>`;
+  return baseLayout(success ? 'Email Verified — JobForion' : 'Email Verification — JobForion', 'Verify your JobForion account email address.', `${BASE_URL}/verify-email`, '', authShell({ title: success ? 'Email verified' : 'Verification issue', sub: '', body }), '', 'noindex, follow', settings, categories);
 }
