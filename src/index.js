@@ -25,6 +25,7 @@ import { runBlogExpirationCleanup } from './lib/blog-automation/expiration.js';
 import { runJobAlertsDispatch } from './lib/job-alerts-dispatcher.js';
 
 import { handleAssetsRoute, handleR2AssetRoute, ASSET_PATHS } from './routes/assets.router.js';
+import { handleLogoProxyRoute } from './lib/logo-proxy.js';
 import { handleFeedRoute } from './routes/feed.router.js';
 import { handleAdminRoute } from './routes/admin.router.js';
 import { handleAuthRoute } from './routes/auth.router.js';
@@ -35,6 +36,7 @@ import { handlePagesRoute } from './routes/pages.router.js';
 import { handleApiRoute } from './routes/api.router.js';
 
 const NON_TRACKED_STATIC_PATHS = new Set([...ASSET_PATHS, '/feed.rss']);
+const LOGO_PROXY_PREFIX = '/logo/';
 
 // ════════════════════════════════════════════════════════════════
 // SECURITY HEADERS — applied to every response this Worker returns
@@ -55,10 +57,13 @@ const NON_TRACKED_STATIC_PATHS = new Set([...ASSET_PATHS, '/feed.rss']);
 // in depth against a successful injection trying to pull in attacker-
 // controlled external resources. The allow-list below is exactly the set
 // of third-party origins this site actually loads from — Google
-// Analytics, Google Fonts, Adsterra ads, the two favicon services used
-// for company logos (job-card.js/home.js), and Cloudflare R2's default
+// Analytics, Google Fonts, Adsterra ads, and Cloudflare R2's default
 // public `*.r2.dev` domain (company logo/cover uploads — see
-// company.router.js + routes/assets.router.js's handleR2AssetRoute). If
+// company.router.js + routes/assets.router.js's handleR2AssetRoute).
+// Company logo favicons are NOT in this list on purpose: lib/logo-proxy.js
+// fetches those Worker-side (edge -> Google) and serves them from our own
+// origin at /logo/<slug>.png, so the visitor's browser never contacts
+// Google directly for a logo — no img-src entry needed for that path. If
 // R2_PUBLIC_BASE_URL is later pointed at a CUSTOM domain instead of the
 // default r2.dev one, that domain must be added to img-src below too, or
 // uploaded company images will render broken (silently blocked, not a
@@ -74,7 +79,7 @@ const SECURITY_HEADERS = {
     "script-src 'self' 'unsafe-inline' https://www.googletagmanager.com https://www.google-analytics.com https://www.highperformanceformat.com",
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
     "font-src 'self' https://fonts.gstatic.com",
-    "img-src 'self' https://www.google.com https://icons.duckduckgo.com https://www.google-analytics.com https://*.r2.dev",
+    "img-src 'self' https://www.google-analytics.com https://*.r2.dev",
     "connect-src 'self' https://www.google-analytics.com https://analytics.google.com",
     "frame-src https://www.highperformanceformat.com",
     "object-src 'none'",
@@ -132,6 +137,13 @@ export default {
     const r2Response = await handleR2AssetRoute(url, env);
     if (r2Response) return withSecurityHeaders(r2Response, env);
 
+    // ── automatic company logo proxy (see lib/logo-proxy.js) — no D1,
+    // no auth, pure fetch-and-edge-cache, so it runs before ensureTable ──
+    if (url.pathname.startsWith(LOGO_PROXY_PREFIX)) {
+      const logoResponse = await handleLogoProxyRoute(url, ctx);
+      if (logoResponse) return withSecurityHeaders(logoResponse, env);
+    }
+
     // ── maintenance mode (toggled from /admin/settings, no redeploy) ──
     // /admin/* is always exempt — otherwise a site owner who enables
     // maintenance mode could lock themselves out of the one place that
@@ -161,6 +173,7 @@ export default {
     const trackable = ['GET'].includes(request.method) &&
       !url.pathname.startsWith('/api/') && !url.pathname.startsWith('/admin') &&
       !url.pathname.startsWith('/sitemap') && !url.pathname.startsWith('/r2-asset/') &&
+      !url.pathname.startsWith(LOGO_PROXY_PREFIX) &&
       !NON_TRACKED_STATIC_PATHS.has(url.pathname);
     if (trackable && ctx?.waitUntil) ctx.waitUntil(recordVisit(env, request, url));
 
