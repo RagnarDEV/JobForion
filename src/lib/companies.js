@@ -169,7 +169,8 @@ export async function listPublicCompanies(env, { q = '', country = '', industry 
 
   const { results } = await env.DB.prepare(
     `SELECT c.*,
-       (SELECT COUNT(*) FROM jobs WHERE (jobs.company_id = c.id OR (jobs.company_id IS NULL AND LOWER(jobs.company) = LOWER(c.name))) AND ${PUBLIC_JOB_STATUS_SQL}) as job_count
+       (SELECT COUNT(*) FROM jobs WHERE (jobs.company_id = c.id OR (jobs.company_id IS NULL AND LOWER(jobs.company) = LOWER(c.name))) AND ${PUBLIC_JOB_STATUS_SQL}) as job_count,
+       (SELECT COUNT(*) FROM jobs WHERE (jobs.company_id = c.id OR (jobs.company_id IS NULL AND LOWER(jobs.company) = LOWER(c.name))) AND jobs.remote_type IN ('fully_remote', 'hybrid') AND ${PUBLIC_JOB_STATUS_SQL}) as remote_job_count
      FROM companies c WHERE ${whereSql}
      ORDER BY c.featured DESC, c.verified DESC, job_count DESC, c.name ASC
      LIMIT ? OFFSET ?`
