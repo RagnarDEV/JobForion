@@ -9,7 +9,7 @@ import { renderMainHTML } from '../pages/home.js';
 import { getPostById, getPostBySlug, wasAutoPostSlug } from '../lib/blog-cms.js';
 import { getPageBySlug, RESERVED_SLUGS } from '../lib/pages-cms.js';
 import { baseLayout } from '../layout/base-layout.js';
-import { BASE_URL } from '../config/constants.js';
+import { BASE_URL, PUBLIC_JOB_STATUS_SQL } from '../config/constants.js';
 import { getSettings } from '../lib/settings.js';
 import { getCategoryData } from '../lib/categories.js';
 import { getSessionUser } from '../lib/accounts/session.js';
@@ -110,7 +110,22 @@ export async function handlePagesRoute(url, request, env, base) {
     // description in its single list request; Workable/Workday/iCIMS
     // degrade to a short/empty description by design rather than costing
     // a second request per job (see each provider's own comments).
-    const { results: related } = await env.DB.prepare("SELECT * FROM jobs WHERE id != ? AND status = 'active' ORDER BY RANDOM() LIMIT 4").bind(jobMatch[1]).all();
+    const relatedParts = ["id != ?", PUBLIC_JOB_STATUS_SQL];
+    const relatedBinds = [jobMatch[1]];
+    const relevanceParts = [];
+    if (job.company) { relevanceParts.push('company = ?'); relatedBinds.push(job.company); }
+    if (job.remote_type) { relevanceParts.push('remote_type = ?'); relatedBinds.push(job.remote_type); }
+    if (job.employment_type) { relevanceParts.push('employment_type = ?'); relatedBinds.push(job.employment_type); }
+    const titleWord = String(job.title || '').toLowerCase().split(/[^a-z0-9]+/).filter(w => w.length >= 4)[0];
+    if (titleWord) { relevanceParts.push('LOWER(title) LIKE ?'); relatedBinds.push(`%${titleWord}%`); }
+    const relatedWhere = relevanceParts.length ? `${relatedParts.join(' AND ')} AND (${relevanceParts.join(' OR ')})` : relatedParts.join(' AND ');
+    const orderBy = relevanceParts.length ? `CASE ${job.company ? 'WHEN company = ? THEN 0 ' : ''}${job.remote_type ? 'WHEN remote_type = ? THEN 1 ' : ''}${job.employment_type ? 'WHEN employment_type = ? THEN 2 ' : ''}${titleWord ? 'WHEN LOWER(title) LIKE ? THEN 3 ' : ''}ELSE 4 END ASC, id DESC` : 'id DESC';
+    const orderBinds = [];
+    if (job.company) orderBinds.push(job.company);
+    if (job.remote_type) orderBinds.push(job.remote_type);
+    if (job.employment_type) orderBinds.push(job.employment_type);
+    if (titleWord) orderBinds.push(`%${titleWord}%`);
+    const { results: related } = await env.DB.prepare(`SELECT * FROM jobs WHERE ${relatedWhere} ORDER BY ${orderBy} LIMIT 4`).bind(...relatedBinds, ...orderBinds).all();
     return new Response(await renderJobPage(job, related, base, env, user), { headers: { "Content-Type": "text/html; charset=utf-8" } });
   }
 

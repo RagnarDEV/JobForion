@@ -20,6 +20,11 @@ export async function listSavedJobs(env, userId, { limit = 50, offset = 0 } = {}
   return results || [];
 }
 
+export async function listSavedJobIds(env, userId) {
+  const { results } = await env.DB.prepare(`SELECT job_id FROM saved_jobs WHERE user_id = ? ORDER BY created_at DESC`).bind(userId).all();
+  return (results || []).map(row => Number(row.job_id)).filter(Number.isFinite);
+}
+
 export async function countSavedJobs(env, userId) {
   const { results } = await env.DB.prepare(`SELECT COUNT(*) c FROM saved_jobs WHERE user_id = ?`).bind(userId).all();
   return results?.[0]?.c || 0;

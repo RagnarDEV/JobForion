@@ -238,9 +238,9 @@ export function jobCardSSR(job, idx, categoryMap = CATEGORY_META, categoryOrder 
   let skillsList = [];
   try { skillsList = JSON.parse(job.skills || '[]'); } catch (e) {}
   const skillsTagsHtml = skillsList.slice(0, 3).map(s => `<span class="tag tag-type">${escapeHtml(s)}</span>`).join('');
-  return `<a href="/job/${job.id}" class="job-card${jobTypeCardClass(job.job_type)}" style="--cat-color:${meta.color};${cardStyleAttr};animation:fadeInUp .3s ease ${Math.min(idx, 6) * .04}s both">
+  return `<article class="job-card${jobTypeCardClass(job.job_type)}" style="--cat-color:${meta.color};${cardStyleAttr};animation:fadeInUp .3s ease ${Math.min(idx, 6) * .04}s both">
     <div class="card-inner" style="padding:${jtStyle.card_padding}px 16px">
-      <div class="card-row1">
+      <a href="/job/${job.id}" class="card-row1" aria-label="View ${escapeHtml(job.title)} at ${escapeHtml(job.company)}">
         ${logoImgHtml(job.company, `${jtStyle.logo_size}px`, 'co-logo', logoOverride)}
         <div class="card-body">
           <div class="card-badges">
@@ -260,14 +260,14 @@ export function jobCardSSR(job, idx, categoryMap = CATEGORY_META, categoryOrder 
           </div>
           ${jobType === 'Sponsored' && job.job_type_note ? `<div class="jt-note">${escapeHtml(job.job_type_note)}</div>` : ''}
         </div>
-      </div>
+      </a>
       <div class="card-right">
         <div class="card-secondary-meta">${timeAgo ? `<span class="card-time-corner">${iconClock({ size: 11 })} ${timeAgo}</span>` : ''}${job.location ? `<span class="card-location-inline">${iconMapPin({ size: 10 })} ${escapeHtml(job.location)}</span>` : ''}</div>
         ${job.salary ? '<div class="salary-badge">' + escapeHtml(job.salary) + '</div>' : ''}
-        <button class="act-btn card-save-btn" id="sb-${job.id}" onclick="event.preventDefault();event.stopPropagation();if(window.toggleSave){window.toggleSave(${job.id})}else{var a=JSON.parse(localStorage.getItem('jn_saved')||'[]'),i=a.indexOf(${job.id});if(i<0){a.push(${job.id});this.classList.add('saved')}else{a.splice(i,1);this.classList.remove('saved')}localStorage.setItem('jn_saved',JSON.stringify(a))}" aria-label="Save job" title="Save job">${iconBookmark({ size: 16 })}</button>
+        <button class="act-btn card-save-btn" id="sb-${job.id}" onclick="event.preventDefault();event.stopPropagation();if(window.toggleSave){window.toggleSave(${job.id})}" aria-label="Save job" title="Save job">${iconBookmark({ size: 16 })}</button>
       </div>
     </div>
-  </a>`;
+  </article>`;
 }
 
 // ══════════════════════════════════════════════════════════════════

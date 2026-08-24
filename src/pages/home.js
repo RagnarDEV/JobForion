@@ -454,7 +454,8 @@ function jobTypeCardClass(t){
 }
 let pg=1,cat='',srch='',advT,srchT;
 let jobs=${JSON.stringify(initialJobs)},total=${initialTotal};
-let savedIds=JSON.parse(localStorage.getItem('jn_saved')||'[]');
+const IS_AUTHENTICATED=${user ? 'true' : 'false'};
+let savedIds=IS_AUTHENTICATED?[]:JSON.parse(localStorage.getItem('jn_saved')||'[]');
 let adv={};
 let hasLoadedOnce=true;
 
@@ -522,7 +523,7 @@ function goView(v){
   if(v==='saved'){showView('vSaved');renderSaved();return;}
 }
 window.goView=goView;
-
+if(IS_AUTHENTICATED){fetch('/api/user/saved-jobs').then(function(res){return res.ok?res.json():null;}).then(function(data){if(data&&Array.isArray(data.job_ids)){savedIds=data.job_ids;syncSaveButtons();}}).catch(function(){});}
 function renderSkeletons(){
   return Array(4).fill(0).map(()=>\`
     <div class="job-card" style="pointer-events:none">
@@ -553,9 +554,9 @@ function renderJobsList(){
     const bg=pastelFor(j);
     const jts=jtStyleFor(j.job_type);
     const locFlag=j.location?clientCountryFlag(j.location.split(',').pop().trim()):'';
-    return\`<a href="/job/\${j.id}" class="job-card\${jobTypeCardClass(j.job_type)}" style="--cat-color:\${meta.color};\${jtCardStyleAttr(j.job_type,bg)};animation:fadeInUp .3s ease \${Math.min(idx,6)*.04}s both">
+    return\`<article class="job-card\${jobTypeCardClass(j.job_type)}" style="--cat-color:\${meta.color};\${jtCardStyleAttr(j.job_type,bg)};animation:fadeInUp .3s ease \${Math.min(idx,6)*.04}s both">
       <div class="card-inner" style="padding:\${jts.card_padding}px 16px">
-        <div class="card-row1">
+        <a href="/job/\${j.id}" class="card-row1" aria-label="View \${esc(j.title)} at \${esc(j.company)}">
           \${logoHtml(j.company,jts.logo_size+'px')}
           <div class="card-body">
             <div class="card-badges">
@@ -575,10 +576,10 @@ function renderJobsList(){
             </div>
             \${normalizeJobType(j.job_type)==='Sponsored'&&j.job_type_note?'<div class="jt-note">'+esc(j.job_type_note)+'</div>':''}
           </div>
-        </div>
+        </a>
         \${'<div class="card-right"><div class="card-secondary-meta">'+(timeAgo?'<span class="card-time-corner">'+ICONS.clock+' '+timeAgo+'</span>':'')+(j.location?'<span class="card-location-inline">'+ICONS.mapPin+' '+esc(j.location)+'</span>':'')+'</div>'+(j.salary?'<div class="salary-badge">'+esc(j.salary)+'</div>':'')+'<button class="act-btn card-save-btn" id="sb-'+j.id+'" onclick="event.preventDefault();event.stopPropagation();toggleSave('+j.id+')" aria-label="Save job" title="Save job">'+ICONS.bookmark+'</button></div>'}
       </div>
-    </a>\`;
+    </article>\`;
   }).join('');
 }
 
@@ -667,13 +668,17 @@ async function loadJobs(pushHistory){
       return;
     }
     renderJobsList();
+    syncSaveButtons();
     renderPagination();
   }catch(e){
     document.getElementById('jobsList').innerHTML=\`<div class="empty"><div class="e-icon">\${ICONS.alertTriangle}</div><h3>Failed to load</h3><p>Refresh and try again</p></div>\`;
   }
 }
 
+function syncSaveButtons(){document.querySelectorAll('.card-save-btn[id^="sb-"]').forEach(btn=>{const id=Number(btn.id.slice(3));btn.classList.toggle('saved',savedIds.includes(id));});}
+function redirectToLogin(){const next=window.location.pathname+window.location.search;window.location.href='/login?next='+encodeURIComponent(next);}
 function toggleSave(id){
+  if(!IS_AUTHENTICATED){showToast('Sign in to save jobs','info');setTimeout(redirectToLogin,450);return;}
   const idx=savedIds.indexOf(id);
   const nowSaved = idx < 0;
   if(idx>=0){savedIds.splice(idx,1);showToast('Removed from saved','info');}
@@ -681,10 +686,7 @@ function toggleSave(id){
   localStorage.setItem('jn_saved',JSON.stringify(savedIds));
   const btn=document.getElementById('sb-'+id);
   if(btn)btn.classList.toggle('saved',savedIds.includes(id));
-  // Best-effort server-side persistence for signed-in visitors — see
-  // /api/user/saved-jobs (routes/api.router.js). Silently no-ops (401)
-  // for anonymous visitors, who already get the localStorage behavior above.
-  fetch('/api/user/saved-jobs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({job_id:id,action:nowSaved?'save':'unsave'})}).catch(function(){});
+  fetch('/api/user/saved-jobs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({job_id:id,action:nowSaved?'save':'unsave'})}).then(function(res){if(!res.ok)throw new Error('save failed');}).catch(function(){showToast('Unable to update saved jobs','info');});
 }
 window.toggleSave=toggleSave;
 function shareJob(id){
@@ -704,22 +706,22 @@ function renderSaved(){
     return;
   }
   document.getElementById('savedList').innerHTML=saved.map(j=>\`
-    <a href="/job/\${j.id}" class="job-card">
+    <article class="job-card">
       <div class="card-inner">
-        <div class="card-row1">
+        <a href="/job/\${j.id}" class="card-row1" aria-label="View \${esc(j.title)} at \${esc(j.company)}">
           \${logoHtml(j.company)}
           <div class="card-body">
             <div class="job-title-card">\${esc(j.title)}</div>
             <div class="job-co-card">\${esc(j.company)}</div>
             <div class="job-meta-row">\${remoteTag(j.remote_type)}</div>
           </div>
-        </div>
+        </a>
         <div class="card-right">
           \${j.salary?'<div class="salary-badge">'+esc(j.salary)+'</div>':'<div></div>'}
-          <button class="act-btn saved" onclick="event.preventDefault();toggleSave(\${j.id});renderSaved()">\${ICONS.bookmark}</button>
+          <button class="act-btn saved" aria-label="Remove saved job" onclick="event.preventDefault();toggleSave(\${j.id});renderSaved()">\${ICONS.bookmark}</button>
         </div>
       </div>
-    </a>\`).join('');
+    </article>\`).join('');
 }
 
 function clearAllSaved(){savedIds=[];localStorage.removeItem('jn_saved');renderSaved();showToast('All cleared','info');}

@@ -154,8 +154,8 @@ export function jobPostingSchema(job, base, overrides = {}) {
     "description": overrides.description || job.description || `${job.title} at ${job.company}. ${job.location || 'Remote'}.`,
     "identifier": { "@type": "PropertyValue", "name": job.company, "value": String(job.job_handle || job.id) },
     "hiringOrganization": { "@type": "Organization", "name": job.company },
-    "datePosted": job.created_at ? new Date(job.created_at).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
-    "validThrough": new Date(Date.now() + 1000 * 60 * 60 * 24 * 45).toISOString().split('T')[0],
+    ...(job.created_at ? { "datePosted": new Date(job.created_at).toISOString().split('T')[0] } : {}),
+    ...(job.expires_at ? { "validThrough": new Date(job.expires_at).toISOString().split('T')[0] } : {}),
     "url": canonical,
     // Required for Google's "Work from home jobs" experience.
     // applicantLocationRequirements is intentionally omitted (no

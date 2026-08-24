@@ -11,17 +11,27 @@ import { getSettings } from '../lib/settings.js';
 import { logActivity } from '../lib/activity-log.js';
 import { verifyAdminCookie } from '../auth/admin-auth.js';
 import { getSessionUser } from '../lib/accounts/session.js';
-import { saveJob, unsaveJob } from '../lib/saved-jobs.js';
+import { saveJob, unsaveJob, listSavedJobIds } from '../lib/saved-jobs.js';
 import { recordApplication } from '../lib/applications.js';
 import { getVerifiedCompanyNameSet } from '../lib/companies.js';
 
 export async function handleApiRoute(url, request, env) {
   // ── Account-aware saved-jobs toggle ─────────────────────────────
-  // Complements the existing localStorage-based "Saved" button (still
-  // used by anonymous visitors — see pages/home.js's client script,
-  // completely unchanged) — when a session cookie is present, saves are
-  // ALSO persisted server-side so they survive across devices. No
-  // existing behavior is removed; this is additive.
+  // Authenticated saves are persisted server-side so they survive across
+  // devices. Anonymous clients are directed to the existing login flow by
+  // the page renderers; this endpoint remains intentionally 401-only for
+  // unauthenticated requests.
+  if (url.pathname === '/api/user/saved-jobs' && request.method === 'GET') {
+    const session = await getSessionUser(env, request);
+    if (!session) return new Response(JSON.stringify({ success: false, error: 'Not signed in', job_ids: [] }), { status: 401, headers: { "Content-Type": "application/json" } });
+    try {
+      const job_ids = await listSavedJobIds(env, session.user.id);
+      return new Response(JSON.stringify({ success: true, job_ids }), { headers: { "Content-Type": "application/json" } });
+    } catch (e) {
+      return new Response(JSON.stringify({ success: false, error: 'Unable to load saved jobs', job_ids: [] }), { status: 500, headers: { "Content-Type": "application/json" } });
+    }
+  }
+
   if (url.pathname === '/api/user/saved-jobs' && request.method === 'POST') {
     const session = await getSessionUser(env, request);
     if (!session) return new Response(JSON.stringify({ success: false, error: 'Not signed in' }), { status: 401, headers: { "Content-Type": "application/json" } });
