@@ -445,14 +445,22 @@ let hasLoadedOnce=true;
 
 function initials(n){return(n||'?').split(/\s+/).filter(Boolean).slice(0,2).map(w=>w[0]||'').join('').toUpperCase()||'?';}
 function escHtml(v){return String(v??'').replace(/[&<>\"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[c]));}
+function slugifyClient(v){
+  return (String(v||'').toLowerCase().trim().replace(/[^a-z0-9\\s-]/g,'').replace(/\\s+/g,'-').replace(/-+/g,'-').replace(/^-|-$/g,'').slice(0,80))||'na';
+}
 function logoHtml(co,sz='54px',jobLogo=''){
   const name=String(co||'?');
-  const logo=jobLogo||COMPANY_LOGOS[name.toLowerCase()]||'';
+  // Priority mirrors job-card.js's logoImgHtml(): admin/employer override
+  // -> automatic /logo/<slug>.png proxy (Worker-side fetch, edge-cached,
+  // never a direct third-party request from this browser) -> monogram.
+  const override=jobLogo||COMPANY_LOGOS[name.toLowerCase()]||'';
+  const slug=slugifyClient(name);
+  const logo=override||(slug&&slug!=='na'?'/logo/'+slug+'.png':'');
   const ini=initials(name);
   const fs=Math.round(parseInt(sz)*.32)+'px';
   if(!logo)return \`<div class="co-logo monogram-logo" role="img" aria-label="\${escHtml(name)}" style="width:\${sz};height:\${sz};display:flex;align-items:center;justify-content:center;font-size:\${fs};font-weight:800;color:#6339E6">\${escHtml(ini)}</div>\`;
   return \`<div class="co-logo" style="width:\${sz};height:\${sz}">
-    <img src="\${escHtml(logo)}" alt="\${escHtml(name)}" style="width:100%;height:100%;object-fit:contain;padding:6px" onerror="this.onerror=null;this.style.display='none';this.nextElementSibling.style.display='flex'">
+    <img src="\${escHtml(logo)}" alt="\${escHtml(name)}" loading="lazy" style="width:100%;height:100%;object-fit:contain;padding:6px" onerror="this.onerror=null;this.style.display='none';this.nextElementSibling.style.display='flex'">
     <span style="display:none;width:100%;height:100%;align-items:center;justify-content:center;font-size:\${fs};font-weight:800;color:#6339E6">\${escHtml(ini)}</span>
   </div>\`;
 }
