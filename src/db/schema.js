@@ -155,6 +155,18 @@ export async function ensureTable(env) {
     )
   `).run();
 
+  // Legacy/admin-managed logos for provider-only company names. The real
+  // `companies.logo_url` column remains authoritative for active company
+  // profiles; this table is the existing compatibility path used when a
+  // provider job has no linked companies row yet.
+  await env.DB.prepare(`
+    CREATE TABLE IF NOT EXISTS company_logos (
+      company_lower TEXT PRIMARY KEY,
+      logo_url TEXT NOT NULL,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `).run();
+
   // ── Job Lifecycle Management ──────────────────────────────────
   // updated_at: bumped on every successful sync touch (new insert OR
   // refresh of an existing row) — this is what "not updated in 30 days"

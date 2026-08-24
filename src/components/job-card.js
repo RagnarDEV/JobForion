@@ -14,6 +14,16 @@ import { DEFAULT_CARD_STYLES, buildCardStyleAttr, buildBadgeStyleAttr } from '..
 // every call with no argument.
 const EMPTY_SET = new Set();
 
+function safeLogoUrl(value) {
+  const raw = String(value || '').trim();
+  if (!raw || raw.startsWith('//')) return '';
+  if (raw.startsWith('/')) return raw;
+  try {
+    const parsed = new URL(raw);
+    return ['http:', 'https:'].includes(parsed.protocol) ? parsed.toString() : '';
+  } catch (e) { return ''; }
+}
+
 export function logoImgHtml(company, size = '64px', cls = 'job-logo', overrideUrl = null) {
   const safeCompany = escapeHtml(company);
   const fs = Math.round(parseInt(size) * .34) + 'px';
@@ -22,8 +32,9 @@ export function logoImgHtml(company, size = '64px', cls = 'job-logo', overrideUr
   // professional monogram fallback. Without a trusted URL, no guessed
   // company domain is requested.
   const ini = (company || '?').split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0] || '').join('').toUpperCase() || '?';
-  if (overrideUrl) {
-    const safeOverride = escapeHtml(overrideUrl);
+  const trustedOverride = safeLogoUrl(overrideUrl);
+  if (trustedOverride) {
+    const safeOverride = escapeHtml(trustedOverride);
     return `<div class="${cls}" style="width:${size};height:${size}">
     <img src="${safeOverride}" alt="${safeCompany}"
       style="width:100%;height:100%;object-fit:contain;padding:7px"
@@ -32,6 +43,15 @@ export function logoImgHtml(company, size = '64px', cls = 'job-logo', overrideUr
   </div>`;
   }
   return `<div class="${cls} monogram-logo" role="img" aria-label="${safeCompany}" style="width:${size};height:${size};display:flex;align-items:center;justify-content:center;font-size:${fs};font-weight:800;color:var(--brand)">${escapeHtml(ini)}</div>`;
+}
+
+export function jobLocationHtml(jobOrLocation, { compact = false, className = '' } = {}) {
+  const location = typeof jobOrLocation === 'object' ? jobOrLocation?.location : jobOrLocation;
+  const value = String(location || '').trim();
+  if (!value) return '';
+  const flag = countryFlag(value.split(',').pop().trim());
+  const compactStyle = compact ? ' style="font-size:11px;color:var(--ink3);background:transparent;padding:0;max-width:180px;overflow:hidden;text-overflow:ellipsis"' : '';
+  return `<span class="tag tag-loc job-location${compact ? ' job-location-compact' : ''}${className ? ` ${escapeHtml(className)}` : ''}" title="Job location"${compactStyle}>${flag} ${escapeHtml(value)}</span>`;
 }
 
 export function remoteTagHtml(t) {
@@ -57,14 +77,14 @@ export function jobRowMini(job, logoOverrides = {}) {
     ? `<span title="${escapeHtml(JOB_TYPE_META[jobType].label)}" style="margin-right:4px;flex-shrink:0">${JOB_TYPE_META[jobType].icon}</span>`
     : '';
   const remoteBadge = job.remote_type ? remoteTagHtml(job.remote_type) : '';
-  const logoOverride = logoOverrides[(job.company || '').toLowerCase()] || null;
+  const logoOverride = job.company_logo_url || logoOverrides[(job.company || '').toLowerCase()] || null;
   return `<a href="/job/${job.id}" class="related-card${jobTypeCardClass(job.job_type)}" style="display:flex;align-items:center;gap:14px;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:13px 16px;text-decoration:none">
     <div style="flex-shrink:0;display:flex">${logoImgHtml(job.company, '40px', 'related-logo', logoOverride)}</div>
     <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:4px">
       <div style="display:flex;align-items:center;font-size:13.5px;font-weight:700;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${tierIcon}${escapeHtml(job.title)}</div>
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0">
         <span style="font-size:12px;font-weight:600;color:var(--brand);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:160px">${escapeHtml(job.company)}</span>
-        ${job.location ? `<span style="font-size:11px;color:var(--ink3);display:inline-flex;align-items:center;gap:3px;white-space:nowrap">${iconMapPin({ size: 10 })}${escapeHtml(job.location)}</span>` : ''}
+        ${jobLocationHtml(job, { compact: true })}
         ${remoteBadge}
       </div>
     </div>
@@ -217,7 +237,7 @@ export function jobCardSSR(job, idx, categoryMap = CATEGORY_META, categoryOrder 
   const meta = categoryMap[catKey] || FALLBACK_CATEGORY_META;
   const isNew = job.created_at && Date.now() - new Date(job.created_at).getTime() < 86400000;
   const isHot = isHotJob(job);
-  const logoOverride = logoOverrides[(job.company || '').toLowerCase()] || null;
+  const logoOverride = job.company_logo_url || logoOverrides[(job.company || '').toLowerCase()] || null;
   const timeAgo = timeAgoServer(job.created_at);
   const jobType = normalizeJobType(job.job_type);
   const jtStyle = cardStyles[jobType] || DEFAULT_CARD_STYLES[jobType];
@@ -229,7 +249,7 @@ export function jobCardSSR(job, idx, categoryMap = CATEGORY_META, categoryOrder 
   // one win within the same inline style attribute.
   const freeTint = jobType === 'Free' ? pastelForJob(job, featuredEnabled) : null;
   const cardStyleAttr = buildCardStyleAttr(jtStyle) + (freeTint ? `;background:${freeTint}` : '');
-  const locationFlag = job.location ? countryFlag(job.location.split(',').pop().trim()) : '';
+
   // job.skills comes straight off a raw D1 row (SELECT * FROM jobs) in
   // every caller of this function — it's stored as a JSON string
   // (JSON.stringify at sync time, see db/sync.js), never a parsed array,
@@ -253,7 +273,7 @@ export function jobCardSSR(job, idx, categoryMap = CATEGORY_META, categoryOrder 
           <div class="job-title-card">${escapeHtml(job.title)}</div>
           <div class="job-co-card">${escapeHtml(job.company)} ${verifiedCompanySet.has((job.company || '').toLowerCase()) ? `<span class="verified-ico" title="Verified Company">${iconBadgeCheck({ size: 12 })}</span>` : ''}</div>
           <div class="job-meta-row">
-            ${job.location ? `<span class="tag tag-loc">${locationFlag} ` + escapeHtml(job.location) + '</span>' : ''}
+            ${jobLocationHtml(job)}
             ${remoteTagHtml(job.remote_type)}
             ${job.employment_type ? '<span class="tag tag-type">' + escapeHtml(job.employment_type.replace(/_/g, ' ')) + '</span>' : ''}
             ${skillsTagsHtml}
@@ -262,7 +282,7 @@ export function jobCardSSR(job, idx, categoryMap = CATEGORY_META, categoryOrder 
         </div>
       </a>
       <div class="card-right">
-        <div class="card-secondary-meta">${timeAgo ? `<span class="card-time-corner">${iconClock({ size: 11 })} ${timeAgo}</span>` : ''}${job.location ? `<span class="card-location-inline">${iconMapPin({ size: 10 })} ${escapeHtml(job.location)}</span>` : ''}</div>
+        <div class="card-secondary-meta">${timeAgo ? `<span class="card-time-corner">${iconClock({ size: 11 })} ${timeAgo}</span>` : ''}</div>
         ${job.salary ? '<div class="salary-badge">' + escapeHtml(job.salary) + '</div>' : ''}
         <button class="act-btn card-save-btn" id="sb-${job.id}" onclick="event.preventDefault();event.stopPropagation();if(window.toggleSave){window.toggleSave(${job.id})}" aria-label="Save job" title="Save job">${iconBookmark({ size: 16 })}</button>
       </div>

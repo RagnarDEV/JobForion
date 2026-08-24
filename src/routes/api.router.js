@@ -14,6 +14,7 @@ import { getSessionUser } from '../lib/accounts/session.js';
 import { saveJob, unsaveJob, listSavedJobIds } from '../lib/saved-jobs.js';
 import { recordApplication } from '../lib/applications.js';
 import { getVerifiedCompanyNameSet } from '../lib/companies.js';
+import { attachCompanyLogos } from '../lib/company-logos.js';
 
 export async function handleApiRoute(url, request, env) {
   // ── Account-aware saved-jobs toggle ─────────────────────────────
@@ -268,7 +269,8 @@ export async function handleApiRoute(url, request, env) {
       env.DB.prepare(`SELECT COUNT(*) as total FROM jobs${where}`).bind(...params).all(),
       getVerifiedCompanyNameSet(env), // 60s-cached, see lib/companies.js — drives the "✓ Verified" badge client-side (plan §8)
     ]);
-    const jobsWithVerified = (results || []).map(j => ({ ...j, is_verified: verifiedCompanySet.has((j.company || '').toLowerCase()) }));
+    const hydratedJobs = await attachCompanyLogos(env, results || []);
+    const jobsWithVerified = hydratedJobs.map(j => ({ ...j, is_verified: verifiedCompanySet.has((j.company || '').toLowerCase()) }));
     const totalCount = cr[0]?.total || 0;
     // Additive response fields (plan §25) — `jobs`/`total`/`page`/`sort`
     // are unchanged from before Stage 9, so any existing caller of this
