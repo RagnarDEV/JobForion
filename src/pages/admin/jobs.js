@@ -7,6 +7,7 @@ import { BASE_URL, JOB_TYPE_META, JOB_TYPE_ORDER, JOB_TYPE_SORT_SQL, JOB_STATUS_
 import { getCategories } from '../../lib/categories.js';
 import { ensureTable } from '../../db/schema.js';
 import { escapeHtml } from '../../lib/entities.js';
+import { getJobIntelligence } from '../../lib/job-intelligence.js';
 
 const PAGE_SIZE = 30;
 // Sorting (plan §19, Stage 5): now defined once in config/constants.js
@@ -288,6 +289,35 @@ export async function renderJobsListContent(env, params) {
   </script>`;
 }
 
+function intelligenceItems(items, empty = 'No items identified.') {
+  const values = Array.isArray(items) ? items.filter(Boolean) : [];
+  return values.length ? `<ul style="margin:6px 0 0 18px;padding:0;line-height:1.7">${values.map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ul>` : `<div style="color:var(--ink3);margin-top:5px">${empty}</div>`;
+}
+
+function renderJobIntelligenceCard(j, intelligence) {
+  const hasFresh = Boolean(intelligence?.fresh && intelligence?.data);
+  const data = intelligence?.data || {};
+  const stale = Boolean(intelligence?.stored && !hasFresh);
+  return `<div class="adm-card" style="margin-bottom:14px;border-color:${hasFresh ? 'rgba(52,211,153,.35)' : 'var(--border)'}">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
+      <div>
+        <div class="adm-card-title" style="margin-bottom:3px">Job Intelligence <span style="font-weight:400;color:var(--ink3);font-size:11px">— on-demand internal analysis</span></div>
+        <div style="font-size:11px;color:var(--ink2)">${hasFresh ? `Updated ${escapeHtml(intelligence.stored?.updated_at || 'recently')}` : stale ? 'Source job changed; analysis is stale.' : 'No analysis has been generated for this job yet.'}</div>
+      </div>
+      <form method="POST" action="/admin/jobs/intelligence"><input type="hidden" name="id" value="${j.id}"><input type="hidden" name="force" value="1"><button class="adm-btn ${hasFresh ? '' : 'adm-btn-primary'}" type="submit">${hasFresh ? 'Regenerate analysis' : 'Analyze this job'}</button></form>
+    </div>
+    ${hasFresh ? `<div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:14px;font-size:12px;color:var(--ink2)">
+      <div><strong style="color:var(--ink)">Summary</strong><p style="margin:5px 0;line-height:1.6">${escapeHtml(data.summary)}</p></div>
+      <div><strong style="color:var(--ink)">Candidate profile</strong><p style="margin:5px 0;line-height:1.6">${escapeHtml(data.candidate_profile || 'Not specified')}</p></div>
+      <div><strong style="color:var(--ink)">Responsibilities</strong>${intelligenceItems(data.responsibilities)}</div>
+      <div><strong style="color:var(--ink)">Requirements</strong>${intelligenceItems(data.requirements)}</div>
+      <div><strong style="color:var(--ink)">Skills</strong>${intelligenceItems(data.skills)}</div>
+      <div><strong style="color:var(--ink)">Signals</strong><div style="margin-top:5px;line-height:1.7">Seniority: ${escapeHtml(data.seniority || 'Not specified')}<br>Work mode: ${escapeHtml(data.work_mode || 'Not specified')}<br>Salary: ${escapeHtml(data.salary_signal || 'Not specified')}</div></div>
+      <div style="grid-column:1/-1"><strong style="color:var(--ink)">Missing information</strong>${intelligenceItems(data.missing_information, 'The model did not flag missing information.')}</div>
+    </div>` : `<div style="margin-top:12px;font-size:12px;color:var(--ink2);line-height:1.7">The analysis uses only this job's stored fields and is never run during public page rendering. It is retained separately from the job record.</div>`}
+  </div>`;
+}
+
 export async function renderJobEditContent(env, id) {
   await ensureTable(env);
   const { results } = await env.DB.prepare('SELECT * FROM jobs WHERE id = ?').bind(id).all();
@@ -297,6 +327,7 @@ export async function renderJobEditContent(env, id) {
   }
   let skills = [];
   try { skills = JSON.parse(j.skills || '[]'); } catch (e) {}
+  const intelligence = await getJobIntelligence(env, j);
 
   return `
   <div class="adm-wrap" style="max-width:680px">
@@ -307,6 +338,7 @@ export async function renderJobEditContent(env, id) {
       </div>
       <a href="/admin/jobs" class="adm-btn">← Back</a>
     </div>
+    ${renderJobIntelligenceCard(j, intelligence)}
     <form method="POST" action="/admin/jobs/update" class="adm-card" style="display:flex;flex-direction:column;gap:12px">
       <input type="hidden" name="id" value="${j.id}">
       <label style="font-size:11px;font-weight:700;color:var(--ink3);text-transform:uppercase">Title

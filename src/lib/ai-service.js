@@ -43,11 +43,12 @@ function safeContext(context) {
 export function validateAiRequest(request = {}) {
   const rawTask = typeof request.task === 'string' ? request.task.trim() : '';
   const rawInput = typeof request.input === 'string' ? request.input.trim() : '';
+  const rawPromptVersion = typeof request.promptVersion === 'string' ? request.promptVersion.trim() : '';
   if (!rawTask || !rawInput) return { ok: false, code: 'ai_invalid_input', message: 'Task and input are required.' };
   if (rawTask.length > AI_LIMITS.maxTaskChars || rawInput.length > AI_LIMITS.maxInputChars) {
     return { ok: false, code: 'ai_invalid_input', message: 'AI input is too large.' };
   }
-  return { ok: true, task: safeText(rawTask, AI_LIMITS.maxTaskChars), input: safeText(rawInput, AI_LIMITS.maxInputChars), context: safeContext(request.context) };
+  return { ok: true, task: safeText(rawTask, AI_LIMITS.maxTaskChars), input: safeText(rawInput, AI_LIMITS.maxInputChars), promptVersion: safeText(rawPromptVersion || AI_PROMPT_VERSION, 80), context: safeContext(request.context) };
 }
 
 function buildMessages({ task, input, context }) {
@@ -111,7 +112,7 @@ async function hashKey(value) {
 async function makeCacheKey(request, options) {
   const digest = await hashKey(JSON.stringify({
     model: AI_MODEL_ID,
-    promptVersion: AI_PROMPT_VERSION,
+    promptVersion: request.promptVersion || AI_PROMPT_VERSION,
     task: request.task,
     input: request.input,
     context: request.context || '',
@@ -174,12 +175,12 @@ export async function runAiRequest(env, request, runtime = {}) {
 
   const settings = runtime.settings || {};
   if (settings.ai_enabled === '0' || settings.ai_enabled === false) {
-    const result = safeFailure('ai_disabled', startedAt);
+    const result = safeFailure('ai_disabled', startedAt, { prompt_version: validated.promptVersion });
     recordUsage(runtime.feature, result, validated.input.length);
     return result;
   }
   if (!isAiConfigured(env)) {
-    const result = safeFailure('ai_not_configured', startedAt);
+    const result = safeFailure('ai_not_configured', startedAt, { prompt_version: validated.promptVersion });
     recordUsage(runtime.feature, result, validated.input.length);
     return result;
   }
@@ -194,7 +195,7 @@ export async function runAiRequest(env, request, runtime = {}) {
       const cached = await cache.match(cacheKey);
       if (cached) {
         const cachedResult = await cached.json();
-        cachedResult.metadata = { ...(cachedResult.metadata || {}), duration_ms: Date.now() - startedAt, cache_hit: true };
+        cachedResult.metadata = { ...(cachedResult.metadata || {}), prompt_version: validated.promptVersion, duration_ms: Date.now() - startedAt, cache_hit: true };
         recordUsage(runtime.feature, cachedResult, validated.input.length);
         return cachedResult;
       }
@@ -203,7 +204,7 @@ export async function runAiRequest(env, request, runtime = {}) {
     const raw = await env.AI.run(AI_MODEL_ID, { messages, ...options });
     const text = extractText(raw);
     if (!text) {
-      const result = safeFailure('ai_empty_response', startedAt);
+      const result = safeFailure('ai_empty_response', startedAt, { prompt_version: validated.promptVersion });
       recordUsage(runtime.feature, result, validated.input.length);
       return result;
     }
@@ -213,7 +214,7 @@ export async function runAiRequest(env, request, runtime = {}) {
       error: null,
       metadata: {
         model: AI_MODEL_ID,
-        prompt_version: AI_PROMPT_VERSION,
+        prompt_version: validated.promptVersion,
         service_version: AI_SERVICE_VERSION,
         duration_ms: Date.now() - startedAt,
         cache_hit: false,
@@ -229,7 +230,7 @@ export async function runAiRequest(env, request, runtime = {}) {
   } catch (error) {
     const message = String(error?.message || error || '').toLowerCase();
     const code = /quota|rate.?limit|too many/.test(message) ? 'ai_rate_limited' : 'ai_request_failed';
-    const result = safeFailure(code, startedAt);
+    const result = safeFailure(code, startedAt, { prompt_version: validated.promptVersion });
     recordUsage(runtime.feature, result, validated.input.length);
     return result;
   }
