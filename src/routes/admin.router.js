@@ -36,6 +36,7 @@ import { handleAdminSecurityRoute } from './admin/security.router.js';
 import { handleAdminDashboardRoute } from './admin/dashboard.router.js';
 import { handleAdminAiRoute } from './admin/ai.router.js';
 import { handleAdminJobIntelligenceRoute } from './admin/job-intelligence.router.js';
+import { handleAdminAssistantRoute } from './admin/admin-assistant.router.js';
 
 // Order matters only for cost/specificity, same rationale as index.js:
 // auth first (must work even before a session exists), the dashboard
@@ -44,6 +45,7 @@ import { handleAdminJobIntelligenceRoute } from './admin/job-intelligence.router
 const ADMIN_SUB_ROUTERS = [
   handleAdminAuthRoute,
   handleAdminJobIntelligenceRoute,
+  handleAdminAssistantRoute,
   handleAdminJobsRoute,
   handleAdminCompaniesRoute,
   handleAdminAccountsRoute,
