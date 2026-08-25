@@ -80,6 +80,7 @@ export const ACTION_LABELS = {
   job_alert_dispatch_error: 'Job alert dispatch error',
   ai_smoke_test: 'AI foundation smoke test',
   ai_job_intelligence: 'Job Intelligence analysis',
+  user_job_matching: 'User job matching run',
 };
 
 // action: short machine-readable key, e.g. 'login_failed', 'job_deleted'.

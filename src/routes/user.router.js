@@ -15,8 +15,9 @@ import { isPasswordStrongEnough } from '../lib/accounts/password.js';
 import { generateToken, sha256Hex } from '../lib/accounts/tokens.js';
 import { sendEmail, verificationEmailContent } from '../lib/accounts/email.js';
 import { createJobAlert, updateJobAlert, deleteJobAlert } from '../lib/job-alerts.js';
+import { getUserMatches, generateUserMatches } from '../lib/matching.js';
 import {
-  renderUserOverview, renderUserProfile, renderSavedJobs, renderApplications, renderJobAlerts, renderUserSettings,
+  renderUserOverview, renderUserProfile, renderUserMatches, renderSavedJobs, renderApplications, renderJobAlerts, renderUserSettings,
 } from '../pages/user-dashboard.js';
 
 const HTML = { "Content-Type": "text/html; charset=utf-8" };
@@ -77,6 +78,25 @@ export async function handleUserRoute(url, request, env, base) {
       linkedin_url: form.get('linkedin_url'), portfolio_url: form.get('portfolio_url'), resume_url: form.get('resume_url'),
     });
     return new Response(await renderUserProfile(env, user, pageCtx, { csrfToken, saved: true }), { headers: HTML });
+  }
+
+  // ── Job Matches ──
+  if (url.pathname === '/user/matches' && request.method === 'GET') {
+    const errorKey = url.searchParams.get('error');
+    const errorMessage = errorKey === 'profile' ? 'Add a professional title, bio, skills, or experience before matching.' : errorKey === 'jobs' ? 'There are no active jobs available for matching right now.' : errorKey ? 'Matching is temporarily unavailable. Please try again later.' : undefined;
+    return new Response(await renderUserMatches(env, user, pageCtx, { csrfToken, ok: url.searchParams.get('ok') === '1', error: errorMessage }), { headers: HTML });
+  }
+  if (url.pathname === '/user/matches/generate' && request.method === 'POST') {
+    const { ok } = await requireCsrf(request);
+    if (!ok) return new Response(await renderUserMatches(env, user, pageCtx, { csrfToken, error: 'Your session expired — please try again.' }), { status: 400, headers: HTML });
+    const rl = await checkRateLimit(env, `matching:${user.id}`, { maxRequests: 3, windowMinutes: 30 });
+    if (!rl.allowed) return new Response(await renderUserMatches(env, user, pageCtx, { csrfToken, error: 'Too many matching requests. Try again later.' }), { status: 429, headers: HTML });
+    const profile = await getUserProfile(env, user.id);
+    const result = await generateUserMatches(env, user.id, profile, pageCtx.settings, { force: true });
+    await logActivity(env, 'user_job_matching', user.email, { status: result.success ? 'success' : 'failed', error_code: result.error?.code || null, cache_hit: result.metadata?.cache_hit === true });
+    if (result.success) return new Response(null, { status: 302, headers: { Location: '/user/matches?ok=1' } });
+    const error = result.error?.code === 'matching_profile_incomplete' ? 'profile' : result.error?.code === 'matching_no_jobs' ? 'jobs' : 'unavailable';
+    return new Response(null, { status: 302, headers: { Location: `/user/matches?error=${error}` } });
   }
 
   // ── Saved Jobs ──

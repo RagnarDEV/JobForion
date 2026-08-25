@@ -21,13 +21,15 @@ import { getLogoOverrides, attachCompanyLogos } from '../lib/company-logos.js';
 import { hydrateHotPay } from '../lib/hot-pay.js';
 import { getSettings } from '../lib/settings.js';
 import { getVerifiedCompanyNameSet } from '../lib/companies.js';
+import { getUserMatches } from '../lib/matching.js';
 import {
-  iconLayoutDashboard, iconUser, iconBookmark, iconBriefcase, iconBell, iconSettingsGear,
+  iconLayoutDashboard, iconUser, iconBookmark, iconBriefcase, iconBell, iconSettingsGear, iconSparkle,
 } from '../assets/icons.js';
 
 const NAV = [
   { id: 'overview', label: 'Overview', icon: iconLayoutDashboard, href: '/user/dashboard' },
   { id: 'profile', label: 'My Profile', icon: iconUser, href: '/user/profile' },
+  { id: 'matches', label: 'Job Matches', icon: iconSparkle, href: '/user/matches' },
   { id: 'saved', label: 'Saved Jobs', icon: iconBookmark, href: '/user/saved-jobs' },
   { id: 'applications', label: 'Applications', icon: iconBriefcase, href: '/user/applications' },
   { id: 'alerts', label: 'Job Alerts', icon: iconBell, href: '/user/job-alerts' },
@@ -129,6 +131,25 @@ export async function renderUserProfile(env, user, ctx, { csrfToken, saved, erro
       <div class="account-inline-actions" style="margin-top:22px"><button class="pj-submit" type="submit" style="max-width:220px">Save profile</button><a class="dash-btn" href="/user/dashboard">Cancel</a></div>
     </form>`;
   return wrap('profile', 'My Profile', 'Keep your professional profile ready for the next opportunity.', content, switchPill, user, ctx);
+}
+
+// ── Job Matches ──────────────────────────────────────────────────
+function matchList(items, empty) {
+  const values = Array.isArray(items) ? items : [];
+  return values.length ? `<ul style="margin:5px 0 0 17px;padding:0;line-height:1.65">${values.map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ul>` : `<span style="color:var(--ink3)">${empty}</span>`;
+}
+
+export async function renderUserMatches(env, user, ctx, { csrfToken, ok, error } = {}) {
+  const profile = await getUserProfile(env, user.id);
+  const profileReady = Boolean(profile?.job_title || profile?.bio || (Array.isArray(profile?.skills) && profile.skills.length) || (Array.isArray(profile?.experience) && profile.experience.length));
+  const [matches, { switchPill }] = await Promise.all([profileReady ? getUserMatches(env, user.id, profile) : Promise.resolve({ fresh: false, data: null, stored: null, candidateCount: 0 }), shellCtx(env, user, 'matches')]);
+  const notice = ok ? '<div class="auth-ok" role="status">Your matches are up to date.</div>' : error ? `<div class="auth-err" role="alert">${escapeHtml(error)}</div>` : '';
+  const rows = matches.fresh && matches.data?.matches?.length ? matches.data.matches.map(match => {
+    const job = match.job;
+    return `<article class="dash-card" style="padding:16px"><div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px"><div><div class="dash-card-title" style="margin-bottom:3px"><a href="/job/${job.id}" style="color:var(--ink);text-decoration:none">${escapeHtml(job.title)}</a></div><div style="font-size:12px;color:var(--ink2)">${escapeHtml(job.company)}${job.location ? ` · ${escapeHtml(job.location)}` : ''}</div></div><span class="status-badge status-active">${match.score}% match</span></div><p style="font-size:12.5px;color:var(--ink2);line-height:1.7;margin:13px 0">${escapeHtml(match.why)}</p><div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;font-size:11.5px;color:var(--ink2)"><div><strong style="color:var(--ink)">Strengths</strong>${matchList(match.strengths, 'No specific strengths identified.')}</div><div><strong style="color:var(--ink)">Gaps to review</strong>${matchList(match.gaps, 'No specific gaps identified.')}</div></div><div style="margin-top:14px"><a class="dash-btn dash-btn-primary" href="/job/${job.id}">Review role →</a></div></article>`;
+  }).join('') : '';
+  const content = `${notice}<section class="account-page-intro"><div><span class="dash-kicker">PERSONALIZED JOB SEARCH</span><h2>Job matches</h2><p>Review active roles that align with the professional information you chose to share.</p></div><form id="matching-request" method="POST" action="/user/matches/generate">${csrfField(csrfToken)}<button class="dash-btn dash-btn-primary" type="submit" ${profileReady ? '' : 'disabled'}>${matches.fresh ? 'Refresh matches' : 'Find my matches'} →</button></form></section>${!profileReady ? `<div class="dash-card" style="border-color:rgba(245,166,35,.35)"><div class="dash-card-title">Complete your profile first</div><p style="font-size:12.5px;color:var(--ink2);line-height:1.7">Add a professional title, short bio, skills, or experience so matching has useful evidence. Sensitive personal attributes are not used for matching.</p><a class="dash-btn" href="/user/profile">Update my profile →</a></div>` : rows ? `<div style="display:grid;gap:14px">${rows}</div>` : `<div class="dash-card"><div class="dash-card-title">No matches generated yet</div><p style="font-size:12.5px;color:var(--ink2);line-height:1.7">Matching uses your saved profile and the currently active JobForion roles. It runs only when you request it and stores results separately from your profile.</p><a href="#matching-request" class="dash-btn dash-btn-primary">Find matches above</a></div>`}${matches.stored?.updated_at ? `<p style="font-size:11px;color:var(--ink3);margin-top:12px">Last matching run: ${escapeHtml(formatAccountDate(matches.stored.updated_at))}</p>` : ''}`;
+  return wrap('matches', 'Job Matches', 'Private, on-demand recommendations based on your profile.', content, switchPill, user, ctx);
 }
 
 // ── Saved Jobs ──────────────────────────────────────────────────
