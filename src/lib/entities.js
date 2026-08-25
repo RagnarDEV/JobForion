@@ -93,6 +93,19 @@ export function slugify(str) {
     .slice(0, 80) || 'na';
 }
 
+// External destinations are data, not markup. Only absolute HTTP(S) URLs
+// with a real hostname are accepted for job applications and provider links;
+// javascript:, data:, protocol-relative, and malformed values render as no
+// link instead of becoming an executable href.
+export function safeExternalUrl(value) {
+  const raw = String(value || '').trim();
+  if (!/^https?:\/\//i.test(raw) || /[\s"'<>]/.test(raw)) return '';
+  try {
+    const parsed = new URL(raw);
+    return ['http:', 'https:'].includes(parsed.protocol) && parsed.hostname ? parsed.toString() : '';
+  } catch (e) { return ''; }
+}
+
 // ── Companies ──────────────────────────────────────────────────
 // PERFORMANCE: bounded to the most recent 8000 jobs rather than scanning the
 // entire (ever-growing) jobs table. An unbounded GROUP BY over the full

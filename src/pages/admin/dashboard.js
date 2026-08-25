@@ -192,7 +192,7 @@ export async function renderDashboardContent(env) {
         <form method="POST" action="/api/sync" onsubmit="return confirm('Run job sync now?')" style="display:inline">
           <button class="adm-btn adm-btn-primary" type="submit">↻ Sync Jobs Now</button>
         </form>
-        <form method="POST" action="/admin/cleanup" onsubmit="return confirm('Run cleanup now? This permanently deletes expired/stale jobs.')" style="display:inline">
+        <form method="POST" action="/admin/cleanup" onsubmit="return confirm('Run cleanup now? It advances expired jobs through the retention lifecycle; only archived jobs past retention are permanently deleted.')" style="display:inline">
           <button class="adm-btn" type="submit" style="border-color:var(--coral);color:var(--coral)">🧹 Run Cleanup Now</button>
         </form>
         <a href="/admin/logout" class="adm-btn">Logout</a>

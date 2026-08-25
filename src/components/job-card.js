@@ -25,7 +25,7 @@ function safeLogoUrl(value) {
   } catch (e) { return ''; }
 }
 
-export function logoImgHtml(company, size = '64px', cls = 'job-logo', overrideUrl = null) {
+export function logoImgHtml(company, size = '64px', cls = 'job-logo', overrideUrl = null, website = '') {
   const safeCompany = escapeHtml(company);
   const fs = Math.round(parseInt(size) * .34) + 'px';
   const ini = (company || '?').split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0] || '').join('').toUpperCase() || '?';
@@ -35,7 +35,7 @@ export function logoImgHtml(company, size = '64px', cls = 'job-logo', overrideUr
   // lib/logo-proxy.js so the visitor's browser only ever talks to our own
   // origin, never a third party — (3) monogram initials if both 404/fail.
   const trustedOverride = safeLogoUrl(overrideUrl);
-  const src = trustedOverride || logoProxyPath(company);
+  const src = trustedOverride || logoProxyPath(company, website);
   if (src) {
     const safeSrc = escapeHtml(src);
     return `<div class="${cls}" style="width:${size};height:${size}">
@@ -81,7 +81,7 @@ export function jobRowMini(job, logoOverrides = {}) {
   const remoteBadge = job.remote_type ? remoteTagHtml(job.remote_type) : '';
   const logoOverride = job.company_logo_url || logoOverrides[(job.company || '').toLowerCase()] || null;
   return `<a href="/job/${job.id}" class="related-card${jobTypeCardClass(job.job_type)}" style="display:flex;align-items:center;gap:14px;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:13px 16px;text-decoration:none">
-    <div style="flex-shrink:0;display:flex">${logoImgHtml(job.company, '40px', 'related-logo', logoOverride)}</div>
+    <div style="flex-shrink:0;display:flex">${logoImgHtml(job.company, '40px', 'related-logo', logoOverride, job.company_website)}</div>
     <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:4px">
       <div style="display:flex;align-items:center;font-size:13.5px;font-weight:700;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${tierIcon}${escapeHtml(job.title)}</div>
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0">
@@ -256,7 +256,7 @@ export function jobCardSSR(job, idx, categoryMap = CATEGORY_META, categoryOrder 
   return `<article class="job-card${jobTypeCardClass(job.job_type)}" style="--cat-color:${meta.color};${cardStyleAttr};animation:fadeInUp .3s ease ${Math.min(idx, 6) * .04}s both">
     <div class="card-inner" style="padding:${jtStyle.card_padding}px 16px">
       <a href="/job/${job.id}" class="card-row1" aria-label="View ${escapeHtml(job.title)} at ${escapeHtml(job.company)}">
-        ${logoImgHtml(job.company, `${jtStyle.logo_size}px`, 'co-logo', logoOverride)}
+        ${logoImgHtml(job.company, `${jtStyle.logo_size}px`, 'co-logo', logoOverride, job.company_website)}
         <div class="card-body">
           <div class="card-badges">
             ${jobTypeBadgeHtml(job.job_type, cardStyles)}

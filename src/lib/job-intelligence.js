@@ -2,7 +2,7 @@
 // Phase 12.2 — on-demand, admin-triggered intelligence for one existing job.
 // Public listing/detail routes do not call this module.
 
-import { ensureTable } from '../db/schema.js';
+import { ensureAiTables } from '../db/schema.js';
 import {
   AI_LIMITS,
   AI_MODEL_ID,
@@ -12,31 +12,8 @@ import {
 
 export const JOB_INTELLIGENCE_TASK = 'job_intelligence_v1';
 export const JOB_INTELLIGENCE_PROMPT_VERSION = 'job-intelligence-v1';
-const TABLE_READY = Symbol('job_intelligence_table_ready');
-let tableReady = false;
-
-const INTELLIGENCE_TABLE_SQL = `
-  CREATE TABLE IF NOT EXISTS job_intelligence (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    job_id INTEGER NOT NULL UNIQUE,
-    source_fingerprint TEXT NOT NULL,
-    model TEXT NOT NULL,
-    prompt_version TEXT NOT NULL,
-    service_version TEXT NOT NULL,
-    status TEXT NOT NULL DEFAULT 'ready',
-    result_json TEXT,
-    error_code TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  )
-`;
-
 async function ensureIntelligenceTable(env) {
-  if (tableReady) return TABLE_READY;
-  await ensureTable(env);
-  await env.DB.prepare(INTELLIGENCE_TABLE_SQL).run();
-  tableReady = true;
-  return TABLE_READY;
+  await ensureAiTables(env);
 }
 
 function text(value, max = 500) {

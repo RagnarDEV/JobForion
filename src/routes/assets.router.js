@@ -23,12 +23,13 @@ export const ASSET_PATHS = ['/favicon.svg', '/favicon.ico', '/favicon-32.png', '
 export async function handleR2AssetRoute(url, env) {
   if (!url.pathname.startsWith('/r2-asset/')) return null;
   if (!env.COMPANY_ASSETS) return new Response('Not found', { status: 404 });
-  const key = decodeURIComponent(url.pathname.slice('/r2-asset/'.length));
+  let key;
+  try { key = decodeURIComponent(url.pathname.slice('/r2-asset/'.length)); } catch (e) { return new Response('Not found', { status: 404 }); }
   // Defense in depth: this key space is only ever written by
   // company.router.js under the fixed `companies/<id>/<kind>-<ts>.<ext>`
   // shape, so reject anything containing `..` or starting outside that
   // prefix rather than trusting the path segment as a free-form R2 key.
-  if (!key || key.includes('..') || !key.startsWith('companies/')) return new Response('Not found', { status: 404 });
+  if (!key || key.length > 180 || key.includes('..') || !/^companies\/\d+\/(?:logo|cover)-\d+\.(?:png|jpg|webp)$/.test(key)) return new Response('Not found', { status: 404 });
   try {
     const object = await env.COMPANY_ASSETS.get(key);
     if (!object) return new Response('Not found', { status: 404 });

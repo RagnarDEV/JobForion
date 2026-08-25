@@ -126,8 +126,6 @@ export default {
     }
 
     const base = `${url.protocol}//${url.host}`;
-    await ensureTable(env);
-    await ensureAccountTables(env);
 
     // ── static brand assets (favicons, manifest, robots.txt) ──
     const assetResponse = handleAssetsRoute(url, base);
@@ -143,6 +141,11 @@ export default {
       const logoResponse = await handleLogoProxyRoute(url, ctx);
       if (logoResponse) return withSecurityHeaders(logoResponse, env);
     }
+
+    // D1 schema bootstrap is needed by settings, feeds, admin, accounts and
+    // content routes, but not by static/R2/logo requests handled above.
+    await ensureTable(env);
+    await ensureAccountTables(env);
 
     // ── maintenance mode (toggled from /admin/settings, no redeploy) ──
     // /admin/* is always exempt — otherwise a site owner who enables

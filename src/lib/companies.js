@@ -6,6 +6,7 @@
 // an orphaned, unmanageable row.
 
 import { slugify } from './entities.js';
+import { isSafeCompanyImageUrl } from './company-logos.js';
 import { JOB_TYPE_SORT_SQL, PUBLIC_JOB_STATUS_SQL, JOB_LISTING_COLUMNS } from '../config/constants.js';
 
 // Job-matching condition shared by every "jobs that belong to this real
@@ -19,6 +20,12 @@ import { JOB_TYPE_SORT_SQL, PUBLIC_JOB_STATUS_SQL, JOB_LISTING_COLUMNS } from '.
 // every current consumer of this constant is public-facing (the company
 // profile page) — a paused/closed/expired job must not show there either.
 export const COMPANY_JOB_MATCH_SQL = `(jobs.company_id = ? OR (jobs.company_id IS NULL AND LOWER(jobs.company) = LOWER(?))) AND ${PUBLIC_JOB_STATUS_SQL}`;
+
+function cleanCompanyImageUrl(value) {
+  const url = String(value || '').trim().slice(0, 500);
+  if (url && !isSafeCompanyImageUrl(url)) throw new Error('A valid HTTP(S) or site-relative image URL is required.');
+  return url;
+}
 
 async function uniqueCompanySlug(env, name, excludeId = null) {
   const base = slugify(name) || 'company';
@@ -93,8 +100,8 @@ export async function updateCompanyProfile(env, companyId, {
   ).bind(
     cleanName, slug, String(website || '').slice(0, 300), String(industry || '').slice(0, 100),
     String(country || '').slice(0, 100), String(city || '').slice(0, 100), String(company_size || '').slice(0, 40),
-    String(description || '').slice(0, 3000), String(logo_url || '').slice(0, 500), String(linkedin_url || '').slice(0, 300),
-    String(cover_image_url || '').slice(0, 500), cleanYear, String(headquarters || '').slice(0, 200),
+    String(description || '').slice(0, 3000), cleanCompanyImageUrl(logo_url), String(linkedin_url || '').slice(0, 300),
+    cleanCompanyImageUrl(cover_image_url), cleanYear, String(headquarters || '').slice(0, 200),
     String(contact_email || '').slice(0, 150), String(phone || '').slice(0, 40),
     String(twitter_url || '').slice(0, 300), String(facebook_url || '').slice(0, 300),
     companyId

@@ -3,32 +3,13 @@
 // There is deliberately no public-route or per-listing inference here.
 
 import { JOB_LISTING_COLUMNS, PUBLIC_JOB_STATUS_SQL } from '../config/constants.js';
+import { ensureAiTables } from '../db/schema.js';
 import { AI_LIMITS, AI_MODEL_ID, AI_SERVICE_VERSION, runAiRequest } from './ai-service.js';
 
 export const MATCHING_TASK = 'job_matching_v1';
 export const MATCHING_PROMPT_VERSION = 'matching-v1';
-const MATCH_TABLE_SQL = `
-  CREATE TABLE IF NOT EXISTS user_job_matches (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL UNIQUE,
-    profile_fingerprint TEXT NOT NULL,
-    candidate_fingerprint TEXT NOT NULL,
-    model TEXT NOT NULL,
-    prompt_version TEXT NOT NULL,
-    service_version TEXT NOT NULL,
-    status TEXT NOT NULL DEFAULT 'ready',
-    result_json TEXT,
-    error_code TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  )
-`;
-let matchTableReady = false;
-
 async function ensureMatchTable(env) {
-  if (matchTableReady) return;
-  await env.DB.prepare(MATCH_TABLE_SQL).run();
-  matchTableReady = true;
+  await ensureAiTables(env);
 }
 
 function text(value, max = 500) {

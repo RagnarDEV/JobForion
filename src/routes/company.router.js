@@ -37,6 +37,24 @@ async function readValidatedImage(file, mimeType) {
   return bytes;
 }
 
+export function r2KeyFromUrl(value, env) {
+  const raw = String(value || '').trim();
+  if (!raw) return null;
+  let path = '';
+  if (raw.startsWith('/r2-asset/')) {
+    path = raw.slice('/r2-asset/'.length);
+  } else {
+    try {
+      const parsed = new URL(raw);
+      const configured = String(env?.R2_PUBLIC_BASE_URL || '').trim();
+      if (!configured || parsed.origin !== new URL(configured).origin) return null;
+      path = parsed.pathname.replace(/^\//, '');
+    } catch (e) { return null; }
+  }
+  try { path = decodeURIComponent(path); } catch (e) { return null; }
+  return /^companies\/\d+\/(?:logo|cover)-\d+\.(?:png|jpg|webp)$/.test(path) && !path.includes('..') ? path : null;
+}
+
 async function pageCtx(env, userId) {
   const [settings, categories, companies] = await Promise.all([getSettings(env), getCategoryData(env), listUserCompanies(env, userId)]);
   return { settings, categories, companies };
@@ -175,15 +193,23 @@ export async function handleCompanyRoute(url, request, env, base) {
     } catch (e) {
       return new Response(await renderCompanyProfilePage(user, company, ctx, { csrfToken, canEdit: true, uploadError: 'Upload failed — please try again.' }), { status: 500, headers: HTML });
     }
+    const previousUrl = kind === 'logo' ? company.logo_url : company.cover_image_url;
     // R2_PUBLIC_BASE_URL is the public bucket domain (r2.dev subdomain or
     // a custom domain mapped to the bucket) — set once via
     // `wrangler secret put R2_PUBLIC_BASE_URL`, see wrangler.toml notes.
     const publicBase = (env.R2_PUBLIC_BASE_URL || '').replace(/\/$/, '');
     const publicUrl = publicBase ? `${publicBase}/${key}` : `/r2-asset/${key}`;
-    await updateCompanyProfile(env, company.id, {
-      ...company,
-      [kind === 'logo' ? 'logo_url' : 'cover_image_url']: publicUrl,
-    });
+    try {
+      await updateCompanyProfile(env, company.id, {
+        ...company,
+        [kind === 'logo' ? 'logo_url' : 'cover_image_url']: publicUrl,
+      });
+    } catch (e) {
+      await env.COMPANY_ASSETS.delete(key).catch(() => {});
+      return new Response(await renderCompanyProfilePage(user, company, ctx, { csrfToken, canEdit: true, uploadError: 'Image was uploaded but could not be linked to the company. Please try again.' }), { status: 500, headers: HTML });
+    }
+    const previousKey = r2KeyFromUrl(previousUrl, env);
+    if (previousKey && previousKey !== key) await env.COMPANY_ASSETS.delete(previousKey).catch(() => {});
     await logActivity(env, kind === 'logo' ? 'company_logo_uploaded' : 'company_cover_uploaded', company.name, { companyId: company.id, userId: user.id });
     const fresh = await getCompanyById(env, company.id);
     return new Response(await renderCompanyProfilePage(user, fresh, ctx, { csrfToken, canEdit: true, saved: true }), { headers: HTML });

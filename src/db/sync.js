@@ -95,7 +95,10 @@ let subrequestsUsed = 0;
 function estimateSubrequests(capForThisProvider, apiKey) {
   const identifierCount = Math.max(1, String(apiKey || '').split(',').map(s => s.trim()).filter(Boolean).length);
   const chunks = Math.ceil(capForThisProvider / DB_BATCH_SIZE);
-  return identifierCount + chunks * 2;
+  // Worst-case budget includes the initial fetch plus every retry. This is
+  // intentionally conservative: a transiently failing source must not
+  // consume headroom reserved for later sources in the same invocation.
+  return identifierCount * (RETRIES + 1) + chunks * 2;
 }
 
 // ────────────────────────────────────────────────────────────────
@@ -526,10 +529,17 @@ export async function syncJobs(env, { onlyProvider = null } = {}) {
       if (remainingCap <= 0) break; // this provider has already hit its per-run cap
       try {
         let jobs = await withRetry(
-          () => provider.fetchJobs({ apiKey: source.api_key, query: q, timeoutMs: TIMEOUT_MS }),
+          async () => {
+            // Count every attempt, including failed retries, against the
+            // invocation budget. The previous accounting only incremented
+            // after a successful fetch, so repeated timeouts/429s could make
+            // the governor believe there was more headroom than Cloudflare
+            // actually had.
+            subrequestsUsed += identifierCount;
+            return provider.fetchJobs({ apiKey: source.api_key, query: q, timeoutMs: TIMEOUT_MS });
+          },
           RETRIES
         );
-        subrequestsUsed += identifierCount; // the actual fetch(es) for this provider's identifier(s)
         if (jobs.length > remainingCap) {
           const total = jobs.length;
           jobs = rotatingCapSlice(jobs, remainingCap);

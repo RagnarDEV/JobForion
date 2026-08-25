@@ -20,6 +20,7 @@
 import { baseLayout } from '../layout/base-layout.js';
 import { logoImgHtml, jobCardSSR, directoryGridHtml } from '../components/job-card.js';
 import { companyCardHtml, companyCardStyles, companyEmptyState } from '../components/company-card.js';
+import { logoProxyPath } from '../lib/logo-proxy.js';
 import {
   listCompanies, findCompanyBySlug,
   listSkills, findSkillBySlug, jobsBySkill, countJobsBySkill,
@@ -295,12 +296,12 @@ function safeExternalUrl(value) {
 function safeImageUrl(value) {
   const raw = String(value || '').trim();
   if (!raw) return '';
-  if (raw.startsWith('/')) return raw;
+  if (raw.startsWith('/') && !raw.startsWith('//')) return raw;
   return safeExternalUrl(raw);
 }
 
 function companyLogoUrl(company, logoOverride = null) {
-  return safeImageUrl(logoOverride || company.logo_url || '');
+  return safeImageUrl(logoOverride || company.logo_url || '') || logoProxyPath(company.name, company.website) || '';
 }
 
 function companyCoverHtml(company) {

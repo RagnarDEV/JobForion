@@ -2,7 +2,7 @@
 
 import { logoImgHtml, jobLocationHtml, remoteTagHtml, catForTitleServer, jobTypeBadgeHtml, jobTypeCardClass, normalizeJobType, jobCardSSR } from '../components/job-card.js';
 import { baseLayout } from '../layout/base-layout.js';
-import { slugify, escapeHtml, cleanDescription, parseSalaryRange, categorySalaryStats, companySnapshot } from '../lib/entities.js';
+import { slugify, escapeHtml, safeExternalUrl, cleanDescription, parseSalaryRange, categorySalaryStats, companySnapshot } from '../lib/entities.js';
 import { adSlot } from '../components/ad-slot.js';
 import { jobPostingSchema } from '../lib/schema.js';
 import { iconBadgeCheck, iconSparkle, iconFlame, iconDollarSign, iconArrowRight, iconBookmark, iconLink, iconTrendingUp, iconBuilding, iconBriefcase, iconClock, iconGlobe } from '../assets/icons.js';
@@ -148,10 +148,12 @@ export async function renderJobPage(job, related, base, env, user = null) {
   const requirementsHtml = skills.length ? `<div id="requirements" class="job-section-anchor"><div class="sec-label">Skills &amp; requirements</div><div class="skills-wrap">${skills.map(s => `<a href="/skills/${slugify(s)}" class="skill-tag" style="text-decoration:none">${escapeHtml(s)}</a>`).join('')}</div></div>` : '';
   const benefitsHtml = job.benefits ? `<div id="benefits" class="job-section-anchor job-benefits-summary"><div class="sec-label">Benefits</div><div class="desc-wrap">${richDescriptionHtml(job.benefits)}</div></div>` : '';
   const companyLogoUrl = job.company_logo_url || publicCompany?.logo_url || jobLogoOverride || null;
+  const companyWebsite = publicCompany?.website || job.company_website || '';
   const companyHref = publicCompany ? `/companies/${slugify(job.company)}` : '';
   const companyNameHtml = companyHref ? `<a href="${companyHref}" style="color:inherit">${escapeHtml(job.company)}</a>` : escapeHtml(job.company);
   const companyDescriptionHtml = publicCompany?.description ? `<p>${escapeHtml(publicCompany.description)}</p>` : '';
-  const applyHtml = job.url ? `<a href="${escapeHtml(job.url)}" target="_blank" rel="noopener noreferrer" class="apply-big" onclick="recordApplyClick(${job.id})">Apply Now ${iconArrowRight({ size: 16 })}</a>` : '';
+  const applyUrl = safeExternalUrl(job.url);
+  const applyHtml = applyUrl ? `<a href="${escapeHtml(applyUrl)}" target="_blank" rel="noopener noreferrer" class="apply-big" onclick="recordApplyClick(${job.id})">Apply Now ${iconArrowRight({ size: 16 })}</a>` : '';
   const postedLabel = job.created_at ? (isNew ? 'Posted recently' : `Posted ${new Date(job.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`) : '';
   const titleCase = value => String(value || '').replace(/_/g, ' ').replace(/\b\w/g, letter => letter.toUpperCase());
   const employmentLabel = job.employment_type ? titleCase(job.employment_type) : '';
@@ -166,8 +168,8 @@ export async function renderJobPage(job, related, base, env, user = null) {
   ].filter(Boolean);
   const jobFactsHtml = jobFacts.length ? `<div class="job-facts">${jobFacts.map(([icon, value, label]) => `<div class="job-fact"><span>${icon}</span><strong>${escapeHtml(String(value))}</strong><small>${label}</small></div>`).join('')}</div>` : '';
   const asideFactsHtml = jobFacts.length ? `<div class="detail-aside-card"><div class="aside-card-title">At a glance</div><div class="aside-facts">${jobFacts.map(([icon, value, label]) => `<div class="aside-fact"><span>${icon}</span><div><strong>${escapeHtml(String(value))}</strong><small>${label}</small></div></div>`).join('')}</div></div>` : '';
-  const asideCompanyHtml = publicCompany ? `<div class="detail-aside-card"><div class="aside-company-head">${logoImgHtml(job.company, '40px', 'aside-company-logo', companyLogoUrl)}<div><strong>${escapeHtml(publicCompany.name || job.company)}</strong>${publicCompany.verified ? `<span class="verified-ico" title="Verified Company">${iconBadgeCheck({ size: 13 })}</span>` : ''}</div></div>${publicCompany.description ? `<p class="aside-company-desc">${escapeHtml(publicCompany.description)}</p>` : ''}<a href="${companyHref}" class="text-link">View company profile ${iconArrowRight({ size: 14 })}</a></div>` : '';
-  const companyPreviewHtml = publicCompany ? `<div id="company" class="job-section-anchor job-company-summary"><div class="company-preview"><div class="company-preview-logo">${logoImgHtml(job.company, '48px', 'co-logo', companyLogoUrl)}</div><div><div class="sec-label">About ${escapeHtml(job.company)}</div>${companyDescriptionHtml}${publicCompany.country || publicCompany.city ? `<p>${escapeHtml([publicCompany.city, publicCompany.country].filter(Boolean).join(', '))}</p>` : ''}${companyInfo?.openPositions ? `<p>${companyInfo.openPositions} open position${companyInfo.openPositions === 1 ? '' : 's'} on JobForion.</p>` : ''}<a href="${companyHref}" class="text-link">View company profile ${iconArrowRight({ size: 14 })}</a></div></div></div>` : '';
+  const asideCompanyHtml = publicCompany ? `<div class="detail-aside-card"><div class="aside-company-head">${logoImgHtml(job.company, '40px', 'aside-company-logo', companyLogoUrl, companyWebsite)}<div><strong>${escapeHtml(publicCompany.name || job.company)}</strong>${publicCompany.verified ? `<span class="verified-ico" title="Verified Company">${iconBadgeCheck({ size: 13 })}</span>` : ''}</div></div>${publicCompany.description ? `<p class="aside-company-desc">${escapeHtml(publicCompany.description)}</p>` : ''}<a href="${companyHref}" class="text-link">View company profile ${iconArrowRight({ size: 14 })}</a></div>` : '';
+  const companyPreviewHtml = publicCompany ? `<div id="company" class="job-section-anchor job-company-summary"><div class="company-preview"><div class="company-preview-logo">${logoImgHtml(job.company, '48px', 'co-logo', companyLogoUrl, companyWebsite)}</div><div><div class="sec-label">About ${escapeHtml(job.company)}</div>${companyDescriptionHtml}${publicCompany.country || publicCompany.city ? `<p>${escapeHtml([publicCompany.city, publicCompany.country].filter(Boolean).join(', '))}</p>` : ''}${companyInfo?.openPositions ? `<p>${companyInfo.openPositions} open position${companyInfo.openPositions === 1 ? '' : 's'} on JobForion.</p>` : ''}<a href="${companyHref}" class="text-link">View company profile ${iconArrowRight({ size: 14 })}</a></div></div></div>` : '';
   const companyTabHtml = publicCompany ? '<a href="#company">About company</a>' : '';
   const asideHtml = `<aside class="job-detail-aside" aria-label="Job summary">${applyHtml ? `<div class="detail-aside-card detail-apply-card">${applyHtml}<button class="job-save-outline" onclick="toggleJobSave(${job.id});return false">${iconBookmark({ size: 16 })} Save job</button></div>` : ''}${asideFactsHtml}${asideCompanyHtml}</aside>`;
 
@@ -187,7 +189,7 @@ export async function renderJobPage(job, related, base, env, user = null) {
   <div class="job-detail-layout"><main class="job-detail-main"><div class="job-hero${jobTypeCardClass(job.job_type)}">
     <div class="job-hero-hdr">
       <div class="job-co-row">
-        ${logoImgHtml(job.company, '64px', 'job-logo', companyLogoUrl)}
+        ${logoImgHtml(job.company, '64px', 'job-logo', companyLogoUrl, companyWebsite)}
         <div style="flex:1"><div class="job-co-name">${companyNameHtml} ${verifiedCompanySet.has((job.company || '').toLowerCase()) ? `<span class="verified-ico" title="Verified Company">${iconBadgeCheck({ size: 14 })}</span>` : ''}${normalizeJobType(job.job_type) === 'Sponsored' ? '<span class="jt-sponsored-tag">Sponsored Company</span>' : ''}</div>${jobLocationHtml(job, { compact: true, className: 'job-co-loc' })}${normalizeJobType(job.job_type) === 'Sponsored' && job.job_type_note ? `<div class="jt-note" style="margin-top:4px">${escapeHtml(job.job_type_note)}</div>` : ''}</div>
         <div class="job-actions">
           <button class="job-act-btn" id="jobSaveBtn" onclick="toggleJobSave(${job.id})" title="Save job">${iconBookmark({ size: 16 })}<span class="job-act-label">Save</span></button>
@@ -220,7 +222,7 @@ export async function renderJobPage(job, related, base, env, user = null) {
   </div>
   ${insightsHtml ? `<div class="insights-wrap">${insightsHtml}</div>` : ''}
   </main>${asideHtml}</div>
-  ${applyHtml ? `<div class="apply-mobile-sticky-wrap"><a class="apply-mobile-sticky" href="${escapeHtml(job.url)}" target="_blank" rel="noopener noreferrer" onclick="recordApplyClick(${job.id})">Apply Now ${iconArrowRight({ size: 16 })}</a></div>` : ''}
+  ${applyUrl ? `<div class="apply-mobile-sticky-wrap"><a class="apply-mobile-sticky" href="${escapeHtml(applyUrl)}" target="_blank" rel="noopener noreferrer" onclick="recordApplyClick(${job.id})">Apply Now ${iconArrowRight({ size: 16 })}</a></div>` : ''}
   ${related.length ? `
     <div class="related-title" style="margin-top:24px">Similar Jobs</div>
     <div class="jobs-list">

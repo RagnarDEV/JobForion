@@ -88,7 +88,7 @@ export async function handleAuthRoute(url, request, env, base) {
     }
 
     const userId = await createUser(env, email, password);
-    await logActivity(env, 'user_registered', email, { userId });
+    await logActivity(env, 'user_registered', `user#${userId}`, { userId });
 
     // Fire-and-forget verification email (see lib/accounts/email.js —
     // no-ops gracefully if no provider is configured yet).
@@ -125,7 +125,7 @@ export async function handleAuthRoute(url, request, env, base) {
 
     const rl = await checkRateLimit(env, clientKey(request, 'login'), { maxRequests: 8, windowMinutes: 15 });
     if (!rl.allowed) {
-      await logActivity(env, 'user_login_rate_limited', (form.get('email') || '').toString());
+      await logActivity(env, 'user_login_rate_limited', 'auth');
       return new Response(await renderLoginPage({ csrfToken, next, error: 'Too many attempts. Please try again in a few minutes.', ...(await pageCtx(env)) }), { status: 429, headers: HTML });
     }
 
@@ -134,7 +134,7 @@ export async function handleAuthRoute(url, request, env, base) {
     const user = await verifyCredentials(env, email, password);
 
     if (!user) {
-      await logActivity(env, 'user_login_failed', email);
+      await logActivity(env, 'user_login_failed', 'auth');
       // Identical message regardless of whether the email exists — see
       // file header.
       return new Response(await renderLoginPage({ csrfToken, next, error: 'Incorrect email or password.', ...(await pageCtx(env)) }), { status: 401, headers: HTML });
@@ -143,7 +143,7 @@ export async function handleAuthRoute(url, request, env, base) {
       return new Response(await renderLoginPage({ csrfToken, next, error: 'This account has been suspended. Contact support for help.', ...(await pageCtx(env)) }), { status: 403, headers: HTML });
     }
 
-    await logActivity(env, 'user_login_success', email, { userId: user.id });
+    await logActivity(env, 'user_login_success', `user#${user.id}`, { userId: user.id });
     const { cookie } = await createSession(env, user.id, request);
     return new Response(null, { status: 302, headers: { 'Location': `${base}${next || '/user/dashboard'}`, 'Set-Cookie': cookie } });
   }
@@ -151,7 +151,7 @@ export async function handleAuthRoute(url, request, env, base) {
   // ── /logout ───────────────────────────────────────────────────
   if (url.pathname === '/logout' && request.method === 'POST') {
     const cookie = await destroySession(env, request);
-    if (session) await logActivity(env, 'user_logout', session.user.email, { userId: session.user.id });
+    if (session) await logActivity(env, 'user_logout', `user#${session.user.id}`, { userId: session.user.id });
     return new Response(null, { status: 302, headers: { 'Location': `${base}/`, 'Set-Cookie': cookie } });
   }
 
@@ -185,7 +185,7 @@ export async function handleAuthRoute(url, request, env, base) {
         await env.DB.prepare(`INSERT INTO password_resets (user_id, token_hash, expires_at) VALUES (?, ?, datetime('now','+1 hour'))`).bind(user.id, resetHash).run();
         const { subject, text, html } = passwordResetEmailContent(base, resetToken);
         await sendEmail(env, { to: email, subject, text, html });
-        await logActivity(env, 'user_password_reset_requested', email, { userId: user.id });
+        await logActivity(env, 'user_password_reset_requested', `user#${user.id}`, { userId: user.id });
       }
     }
 

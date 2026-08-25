@@ -24,11 +24,8 @@ export function normalizeAnnualSalary(job = {}) {
   // must never be treated as a real salary or retried with a fragile regex.
   const storedMin = finiteNonNegative(job.salary_min_usd);
   const storedMax = finiteNonNegative(job.salary_max_usd);
-  if (storedMin !== null && storedMax !== null) {
+  if (storedMin !== null || storedMax !== null) {
     return { annualMinUsd: storedMin, annualMaxUsd: storedMax };
-  }
-  if (storedMax !== null) {
-    return { annualMinUsd: storedMin ?? storedMax, annualMaxUsd: storedMax };
   }
   if (job.salary_min_usd !== null && job.salary_min_usd !== undefined && Number(job.salary_min_usd) < 0) return null;
   if (job.salary_max_usd !== null && job.salary_max_usd !== undefined && Number(job.salary_max_usd) < 0) return null;
@@ -39,11 +36,23 @@ export function normalizeAnnualSalary(job = {}) {
   return { annualMinUsd: parsed.annualMinUsd, annualMaxUsd: parsed.annualMaxUsd };
 }
 
+export function normalizedHotPayValue(annual) {
+  if (!annual) return null;
+  const min = finiteNonNegative(annual.annualMinUsd);
+  const max = finiteNonNegative(annual.annualMaxUsd);
+  // A disclosed minimum is the safest signal. For a genuine range, use its
+  // midpoint rather than the maximum, avoiding false HOT PAY labels based on
+  // the top of a broad range. A maximum is used only when no minimum exists.
+  if (min !== null && max !== null) return min === max ? min : (min + max) / 2;
+  if (min !== null) return min;
+  if (max !== null) return max;
+  return null;
+}
+
 export function isHotPayJob(job = {}, settings = {}) {
   if (settings?.hot_pay_enabled === '0' || settings?.hot_pay_enabled === false) return false;
-  const annual = normalizeAnnualSalary(job);
-  if (!annual || annual.annualMaxUsd === null) return false;
-  return annual.annualMaxUsd >= hotPayThresholdUsd(settings);
+  const value = normalizedHotPayValue(normalizeAnnualSalary(job));
+  return value !== null && value >= hotPayThresholdUsd(settings);
 }
 
 export function annotateHotPay(jobs, settings = {}) {

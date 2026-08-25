@@ -22,7 +22,9 @@ async function resolveCompanyLogos(env, { names = [], ids = [] } = {}) {
   const uniqueIds = [...new Set((ids || []).map(value => String(value || '').trim()).filter(value => /^\d+$/.test(value)))];
   const byName = {};
   const byId = {};
-  if (!uniqueNames.length && !uniqueIds.length) return { byName, byId };
+  const websiteByName = {};
+  const websiteById = {};
+  if (!uniqueNames.length && !uniqueIds.length) return { byName, byId, websiteByName, websiteById };
 
   const companyConditions = [];
   const companyBinds = [];
@@ -40,9 +42,10 @@ async function resolveCompanyLogos(env, { names = [], ids = [] } = {}) {
   // provider jobs with a company_id and older name-only jobs on one path.
   try {
     const { results } = await env.DB.prepare(
-      `SELECT id, name, logo_url
+      `SELECT id, name, logo_url, website
        FROM companies
-       WHERE status = 'active' AND logo_url IS NOT NULL AND TRIM(logo_url) != ''
+       WHERE status = 'active'
+         AND (logo_url IS NOT NULL AND TRIM(logo_url) != '' OR website IS NOT NULL AND TRIM(website) != '')
          AND (${companyConditions.join(' OR ')})`
     ).bind(...companyBinds).all();
     for (const row of results || []) {
@@ -53,6 +56,14 @@ async function resolveCompanyLogos(env, { names = [], ids = [] } = {}) {
         if (id) byId[id] = logo;
         if (name) byName[name] = logo;
       }
+    }
+    for (const row of results || []) {
+      const id = String(row.id || '').trim();
+      const name = normalizeCompanyName(row.name);
+      const website = String(row.website || '').trim();
+      if (!website) continue;
+      if (id) websiteById[id] = website;
+      if (name) websiteByName[name] = website;
     }
   } catch (e) {}
 
@@ -72,7 +83,7 @@ async function resolveCompanyLogos(env, { names = [], ids = [] } = {}) {
       }
     } catch (e) {}
   }
-  return { byName, byId };
+  return { byName, byId, websiteByName, websiteById };
 }
 
 export async function getLogoOverride(env, companyName) {
@@ -103,6 +114,7 @@ export async function attachCompanyLogos(env, jobs) {
     return {
       ...job,
       company_logo_url: logos.byId[idKey] || logos.byName[nameKey] || null,
+      company_website: logos.websiteById[idKey] || logos.websiteByName[nameKey] || null,
     };
   });
 }

@@ -13,7 +13,7 @@ function formatLocation(company) {
 function safeImageUrl(value) {
   const raw = String(value || '').trim();
   if (!raw) return '';
-  if (raw.startsWith('/')) return raw;
+  if (raw.startsWith('/') && !raw.startsWith('//')) return raw;
   try {
     const url = new URL(raw);
     return ['http:', 'https:'].includes(url.protocol) ? url.toString() : '';
@@ -34,7 +34,7 @@ export function companyCardHtml(company, { logoOverride = null } = {}) {
   const logoUrl = safeImageUrl(company.logo_url || logoOverride) || null;
   return `<a href="/companies/${escapeHtml(slug)}" class="company-card" aria-label="View company profile for ${safeName}">
     <div class="company-card-head">
-      ${logoImgHtml(name, '52px', 'company-card-logo', logoUrl)}
+      ${logoImgHtml(name, '52px', 'company-card-logo', logoUrl, company.website)}
       <div class="company-card-title-wrap"><div class="company-card-name">${safeName}${company.verified ? verifiedBadge() : ''}</div>${hasProfile ? '<span class="company-card-profile-label">Company profile</span>' : ''}</div>
     </div>
     ${description ? `<p class="company-card-description">${escapeHtml(description)}</p>` : ''}

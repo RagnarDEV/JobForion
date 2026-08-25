@@ -142,9 +142,9 @@ export async function renderJobsListContent(env, params) {
     <div class="adm-card" style="margin-bottom:14px;border-color:rgba(224,168,58,.4)">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
         <div style="font-size:12.5px;color:var(--ink2)"><b>${staleCount.toLocaleString()}</b> jobs are older than 45 days and may be stale.</div>
-        <form method="POST" action="/admin/jobs/delete-stale" onsubmit="return confirm('Permanently delete ' + ${staleCount} + ' jobs older than the chosen age? This cannot be undone.')" style="display:flex;gap:6px;align-items:center">
+        <form method="POST" action="/admin/jobs/delete-stale" onsubmit="return confirm('Mark ' + ${staleCount} + ' jobs older than the chosen age as expired? They will remain recoverable during the lifecycle window.')" style="display:flex;gap:6px;align-items:center">
           <input class="adm-input" type="number" name="days" value="45" min="7" style="width:70px" title="Age in days">
-          <button class="adm-btn adm-btn-primary" type="submit" style="background:#e0a83a;border-color:#e0a83a">Delete Stale Jobs</button>
+          <button class="adm-btn adm-btn-primary" type="submit" style="background:#e0a83a;border-color:#e0a83a">Expire Stale Jobs</button>
         </form>
       </div>
     </div>` : ''}

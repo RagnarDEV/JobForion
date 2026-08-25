@@ -194,7 +194,7 @@ export async function renderMainHTML(env, base, user = null) {
     featured_companies: topCompanies.length ? `
     <section class="fc-strip">
       <div class="fc-inner"><div class="section-heading compact-heading"><div><p class="eyebrow">CURATED EMPLOYERS</p><h2>Top companies hiring now</h2></div><a class="text-button" href="/companies">View all companies ${iconArrowRight({ size: 14 })}</a></div>
-      <div class="fc-logos">${topCompanies.slice(0, 8).map(c => `<a class="company-tile" href="/companies/${escapeHtml(c.slug || slugify(c.name))}">${logoImgHtml(c.name, '38px', 'company-logo', companyLogoMap[String(c.name || '').toLowerCase()] || null)}<strong>${escapeHtml(c.name)}</strong><small>${Number(c.count || 0).toLocaleString()} open roles</small></a>`).join('')}</div></div>
+      <div class="fc-logos">${topCompanies.slice(0, 8).map(c => `<a class="company-tile" href="/companies/${escapeHtml(c.slug || slugify(c.name))}">${logoImgHtml(c.name, '38px', 'company-logo', companyLogoMap[String(c.name || '').toLowerCase()] || null, c.website)}<strong>${escapeHtml(c.name)}</strong><small>${Number(c.count || 0).toLocaleString()} open roles</small></a>`).join('')}</div></div>
     </section>` : '',
 
     categories_grid: categories.length ? `
@@ -450,14 +450,24 @@ function escHtml(v){return String(v??'').replace(/[&<>\"']/g,c=>({'&':'&amp;','<
 function slugifyClient(v){
   return (String(v||'').toLowerCase().trim().replace(/[^a-z0-9\\s-]/g,'').replace(/\\s+/g,'-').replace(/-+/g,'-').replace(/^-|-$/g,'').slice(0,80))||'na';
 }
-function logoHtml(co,sz='54px',jobLogo=''){
+function logoDomain(value){
+  try{
+    const raw=String(value||'').trim();
+    const parsed=new URL(/^https?:\\/\\//i.test(raw)?raw:'https://'+raw);
+    const host=parsed.hostname.toLowerCase();
+    if(!host||host==='localhost'||host.endsWith('.local')||/^\\d{1,3}(?:\\.\\d{1,3}){3}$/.test(host))return'';
+    return host;
+  }catch(e){return'';}
+}
+function logoHtml(co,sz='54px',jobLogo='',website=''){
   const name=String(co||'?');
   // Priority mirrors job-card.js's logoImgHtml(): admin/employer override
   // -> automatic /logo/<slug>.png proxy (Worker-side fetch, edge-cached,
   // never a direct third-party request from this browser) -> monogram.
   const override=jobLogo||COMPANY_LOGOS[name.toLowerCase()]||'';
   const slug=slugifyClient(name);
-  const logo=override||(slug&&slug!=='na'?'/logo/'+slug+'.png':'');
+  const domain=logoDomain(website);
+  const logo=override||(slug&&slug!=='na'?'/logo/'+slug+'.png'+(domain?'?domain='+encodeURIComponent(domain):''):'');
   const ini=initials(name);
   const fs=Math.round(parseInt(sz)*.32)+'px';
   if(!logo)return \`<div class="co-logo monogram-logo" role="img" aria-label="\${escHtml(name)}" style="width:\${sz};height:\${sz};display:flex;align-items:center;justify-content:center;font-size:\${fs};font-weight:800;color:#6339E6">\${escHtml(ini)}</div>\`;
@@ -549,7 +559,7 @@ function renderJobsList(){
     return\`<article class="job-card\${jobTypeCardClass(j.job_type)}" style="--cat-color:\${meta.color};\${jtCardStyleAttr(j.job_type,bg)};animation:fadeInUp .3s ease \${Math.min(idx,6)*.04}s both">
       <div class="card-inner" style="padding:\${jts.card_padding}px 16px">
         <a href="/job/\${j.id}" class="card-row1" aria-label="View \${esc(j.title)} at \${esc(j.company)}">
-          \${logoHtml(j.company,jts.logo_size+'px',j.company_logo_url)}
+          \${logoHtml(j.company,jts.logo_size+'px',j.company_logo_url,j.company_website)}
           <div class="card-body">
             <div class="card-badges">
               \${jobTypeBadge(j.job_type)}
@@ -700,7 +710,7 @@ function renderSaved(){
     <article class="job-card">
       <div class="card-inner">
         <a href="/job/\${j.id}" class="card-row1" aria-label="View \${esc(j.title)} at \${esc(j.company)}">
-          \${logoHtml(j.company)}
+          \${logoHtml(j.company,'54px','',j.company_website)}
           <div class="card-body">
             <div class="job-title-card">\${esc(j.title)}</div>
             <div class="job-co-card">\${esc(j.company)}</div>

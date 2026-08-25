@@ -16,6 +16,9 @@ import { recordApplication } from '../lib/applications.js';
 import { getVerifiedCompanyNameSet } from '../lib/companies.js';
 import { attachCompanyLogos } from '../lib/company-logos.js';
 import { hydrateHotPay } from '../lib/hot-pay.js';
+import { safeExternalUrl } from '../lib/entities.js';
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export async function handleApiRoute(url, request, env) {
   // ── Account-aware saved-jobs toggle ─────────────────────────────
@@ -38,11 +41,16 @@ export async function handleApiRoute(url, request, env) {
     const session = await getSessionUser(env, request);
     if (!session) return new Response(JSON.stringify({ success: false, error: 'Not signed in' }), { status: 401, headers: { "Content-Type": "application/json" } });
     try {
+      const rl = await checkRateLimit(env, `saved-jobs:${session.user.id}`, { maxRequests: 60, windowMinutes: 1 });
+      if (!rl.allowed) return new Response(JSON.stringify({ success: false, error: 'Too many requests' }), { status: 429, headers: { "Content-Type": "application/json", "Retry-After": String((rl.retryAfterMinutes || 1) * 60) } });
       const { job_id, action } = await request.json();
       const jobId = parseInt(job_id, 10);
-      if (!jobId) return new Response(JSON.stringify({ success: false, error: 'job_id required' }), { status: 400, headers: { "Content-Type": "application/json" } });
-      if (action === 'unsave') await unsaveJob(env, session.user.id, jobId);
-      else await saveJob(env, session.user.id, jobId);
+      if (!Number.isInteger(jobId) || jobId <= 0 || jobId > 2147483647) return new Response(JSON.stringify({ success: false, error: 'job_id required' }), { status: 400, headers: { "Content-Type": "application/json" } });
+      if (action !== 'unsave') {
+        const { results } = await env.DB.prepare(`SELECT id FROM jobs WHERE id = ? AND status = 'active' LIMIT 1`).bind(jobId).all();
+        if (!results?.length) return new Response(JSON.stringify({ success: false, error: 'Job is no longer available' }), { status: 404, headers: { "Content-Type": "application/json" } });
+        await saveJob(env, session.user.id, jobId);
+      } else await unsaveJob(env, session.user.id, jobId);
       return new Response(JSON.stringify({ success: true, saved: action !== 'unsave' }), { headers: { "Content-Type": "application/json" } });
     } catch (e) { return new Response(JSON.stringify({ success: false, error: 'Invalid request' }), { status: 400, headers: { "Content-Type": "application/json" } }); }
   }
@@ -51,10 +59,16 @@ export async function handleApiRoute(url, request, env) {
     const session = await getSessionUser(env, request);
     if (!session) return new Response(JSON.stringify({ success: false, error: 'Not signed in' }), { status: 401, headers: { "Content-Type": "application/json" } });
     try {
+      const rl = await checkRateLimit(env, `applications:${session.user.id}`, { maxRequests: 30, windowMinutes: 1 });
+      if (!rl.allowed) return new Response(JSON.stringify({ success: false, error: 'Too many requests' }), { status: 429, headers: { "Content-Type": "application/json", "Retry-After": String((rl.retryAfterMinutes || 1) * 60) } });
       const { job_id, status, application_type } = await request.json();
       const jobId = parseInt(job_id, 10);
-      if (!jobId) return new Response(JSON.stringify({ success: false, error: 'job_id required' }), { status: 400, headers: { "Content-Type": "application/json" } });
-      await recordApplication(env, session.user.id, jobId, { status: status || 'applied', application_type: application_type || 'external' });
+      if (!Number.isInteger(jobId) || jobId <= 0 || jobId > 2147483647) return new Response(JSON.stringify({ success: false, error: 'job_id required' }), { status: 400, headers: { "Content-Type": "application/json" } });
+      const { results } = await env.DB.prepare(`SELECT id FROM jobs WHERE id = ? LIMIT 1`).bind(jobId).all();
+      if (!results?.length) return new Response(JSON.stringify({ success: false, error: 'Job not found' }), { status: 404, headers: { "Content-Type": "application/json" } });
+      const allowedStatuses = new Set(['saved', 'applied', 'viewed', 'interview', 'rejected', 'hired']);
+      const nextStatus = allowedStatuses.has(String(status || 'applied')) ? String(status || 'applied') : 'applied';
+      await recordApplication(env, session.user.id, jobId, { status: nextStatus, application_type: application_type === 'internal' ? 'internal' : 'external' });
       return new Response(JSON.stringify({ success: true }), { headers: { "Content-Type": "application/json" } });
     } catch (e) { return new Response(JSON.stringify({ success: false, error: 'Invalid request' }), { status: 400, headers: { "Content-Type": "application/json" } }); }
   }
@@ -79,8 +93,10 @@ export async function handleApiRoute(url, request, env) {
         return new Response(JSON.stringify({ success: false, error: "Too many attempts. Please try again later." }), { status: 429, headers: { "Content-Type": "application/json" } });
       }
       const { email, keywords } = await request.json();
-      if (!email || !keywords?.length) return new Response(JSON.stringify({ success: false, error: "Required" }), { headers: { "Content-Type": "application/json" } });
-      await env.DB.prepare("INSERT OR REPLACE INTO subscribers (email,keywords) VALUES (?,?)").bind(email, JSON.stringify(keywords)).run();
+      const cleanEmail = String(email || '').trim().toLowerCase().slice(0, 254);
+      const cleanKeywords = Array.isArray(keywords) ? keywords.map(value => String(value || '').trim().slice(0, 80)).filter(Boolean).slice(0, 20) : [];
+      if (!EMAIL_RE.test(cleanEmail) || !cleanKeywords.length) return new Response(JSON.stringify({ success: false, error: "Required" }), { status: 400, headers: { "Content-Type": "application/json" } });
+      await env.DB.prepare("INSERT OR REPLACE INTO subscribers (email,keywords) VALUES (?,?)").bind(cleanEmail, JSON.stringify(cleanKeywords)).run();
       return new Response(JSON.stringify({ success: true }), { headers: { "Content-Type": "application/json" } });
     } catch (e) {
       // SECURITY: never echo e.message to an anonymous caller — it can
@@ -103,10 +119,10 @@ export async function handleApiRoute(url, request, env) {
       const b = await request.json();
       const title = (b.title || '').toString().slice(0, 150);
       const company = (b.company || '').toString().slice(0, 100);
-      const email = (b.email || '').toString().slice(0, 150);
-      const jobUrl = (b.url || '').toString().slice(0, 400);
-      if (!title || !company || !email || !jobUrl) {
-        return new Response(JSON.stringify({ success: false, error: "Please fill in all required fields." }), { headers: { "Content-Type": "application/json" } });
+      const email = (b.email || '').toString().trim().toLowerCase().slice(0, 254);
+      const jobUrl = safeExternalUrl((b.url || '').toString().slice(0, 400));
+      if (!title || !company || !EMAIL_RE.test(email) || !jobUrl) {
+        return new Response(JSON.stringify({ success: false, error: "Please fill in all required fields." }), { status: 400, headers: { "Content-Type": "application/json" } });
       }
       await env.DB.prepare(
         `INSERT INTO job_postings (title,company,email,url,location,category,employment_type,remote_type,salary,description,status)
@@ -147,19 +163,19 @@ export async function handleApiRoute(url, request, env) {
     // clamped server-side regardless of what the frontend already does
     // client-side (Stage 9's clientside clamp in pages/home.js is a UX
     // nicety, not a security boundary) — a negative/zero/absurdly large
-    // page must never reach a raw OFFSET calculation. There's no hard
-    // upper bound on how deep a page can go (that's a performance
-    // consideration reviewed in Stage 7, not a correctness one), just a
-    // floor of 1 and a guard against non-numeric input.
-    const page = Math.max(1, parseInt(url.searchParams.get("page") || "1", 10) || 1);
+    // page must never reach an unbounded raw OFFSET calculation. It is
+    // clamped to a practical upper bound as well as a floor of 1, so a
+    // crafted request cannot force an arbitrarily deep scan.
+    const page = Math.min(1000, Math.max(1, parseInt(url.searchParams.get("page") || "1", 10) || 1));
     const limit = 20, offset = (page - 1) * limit;
-    const category = url.searchParams.get("category") || "";
-    const search = url.searchParams.get("search") || url.searchParams.get("q") || ""; // `q` accepted as an alias (plan §6's example URL shape) without renaming the param the existing frontend already sends
-    const remoteType = url.searchParams.get("remote_type") || "";
-    const employType = url.searchParams.get("employment_type") || "";
-    const seniority = url.searchParams.get("seniority") || "";
-    const salaryMin = url.searchParams.get("salary_min") || "";
-    const salaryMax = url.searchParams.get("salary_max") || "";
+    const queryValue = (name, max = 120) => String(url.searchParams.get(name) || '').trim().slice(0, max);
+    const category = queryValue("category");
+    const search = queryValue("search") || queryValue("q"); // `q` accepted as an alias (plan §6's example URL shape) without renaming the param the existing frontend already sends
+    const remoteType = queryValue("remote_type", 40);
+    const employType = queryValue("employment_type", 40);
+    const seniority = queryValue("seniority", 80);
+    const salaryMin = queryValue("salary_min", 20);
+    const salaryMax = queryValue("salary_max", 20);
     // Date Posted (plan §5) — a fixed whitelist of day-counts, not an
     // arbitrary integer straight from the query string. The value is
     // still bound as a parameter either way (never string-concatenated
@@ -187,15 +203,15 @@ export async function handleApiRoute(url, request, env) {
     // lib/entities.js: location is either an exact match ("Germany") or
     // ends with ", <country>" ("Berlin, Germany"), since `location` is
     // free text with no normalized country column.
-    const country = url.searchParams.get("country") || "";
+    const country = queryValue("country", 100);
     // Skill filter — matches the same jobs.skills JSON column that
     // jobsBySkill() (lib/entities.js) parses via SQLite's json_each,
     // expressed here as a correlated EXISTS subquery so it composes with
     // the other AND-joined conditions on the single `jobs` table.
-    const skill = url.searchParams.get("skill") || "";
+    const skill = queryValue("skill", 100);
     // Company filter — exact match on the jobs.company column, same value
     // shape produced by listCompanies() (lib/entities.js).
-    const company = url.searchParams.get("company") || "";
+    const company = queryValue("company", 160);
     const conditions = [PUBLIC_JOB_STATUS_SQL], params = [];
     if (category) { conditions.push("LOWER(title) LIKE ?"); params.push(`%${category}%`); }
     if (search) {

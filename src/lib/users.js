@@ -83,7 +83,17 @@ export async function softDeleteUser(env, userId) {
   const anonymizedEmail = `deleted-${userId}-${Date.now()}@deleted.jobforion`;
   await env.DB.prepare(`UPDATE users SET status = 'deleted', email = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`)
     .bind(anonymizedEmail, userId).run();
-  await env.DB.prepare(`DELETE FROM user_sessions WHERE user_id = ?`).bind(userId).run();
+  // AI conversations and matching output are user-private artifacts. They
+  // must not survive account deletion even though the broader account policy
+  // retains non-AI business history for audit/reporting purposes.
+  const cleanup = [
+    env.DB.prepare(`DELETE FROM career_assistant_messages WHERE user_id = ?`).bind(userId),
+    env.DB.prepare(`DELETE FROM career_assistant_threads WHERE user_id = ?`).bind(userId),
+    env.DB.prepare(`DELETE FROM user_job_matches WHERE user_id = ?`).bind(userId),
+    env.DB.prepare(`DELETE FROM user_sessions WHERE user_id = ?`).bind(userId),
+  ];
+  if (typeof env.DB.batch === 'function') await env.DB.batch(cleanup);
+  else for (const statement of cleanup) await statement.run();
 }
 
 // ── Profile ─────────────────────────────────────────────────────

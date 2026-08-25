@@ -519,6 +519,78 @@ export async function ensureTable(env) {
   schemaEnsured = true;
 }
 
+// ── AI feature tables ─────────────────────────────────────────────
+// All AI persistence is declared here, alongside the rest of the D1 schema.
+// Feature modules call ensureAiTables() as a defensive no-op, but they no
+// longer own separate runtime DDL definitions. This keeps the four tables,
+// indexes, and lifecycle reviewable in one place without destructive changes.
+let aiSchemaEnsured = false;
+export async function ensureAiTables(env) {
+  if (aiSchemaEnsured) return;
+  const statements = [
+    `CREATE TABLE IF NOT EXISTS job_intelligence (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      job_id INTEGER NOT NULL UNIQUE,
+      source_fingerprint TEXT NOT NULL,
+      model TEXT NOT NULL,
+      prompt_version TEXT NOT NULL,
+      service_version TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'ready',
+      result_json TEXT,
+      error_code TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )`,
+    `CREATE TABLE IF NOT EXISTS user_job_matches (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL UNIQUE,
+      profile_fingerprint TEXT NOT NULL,
+      candidate_fingerprint TEXT NOT NULL,
+      model TEXT NOT NULL,
+      prompt_version TEXT NOT NULL,
+      service_version TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'ready',
+      result_json TEXT,
+      error_code TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )`,
+    `CREATE TABLE IF NOT EXISTS career_assistant_threads (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL UNIQUE,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )`,
+    `CREATE TABLE IF NOT EXISTS career_assistant_messages (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      thread_id INTEGER NOT NULL,
+      user_id INTEGER NOT NULL,
+      role TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
+      content TEXT NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_career_assistant_messages_user ON career_assistant_messages(user_id, id DESC)`,
+    `CREATE TABLE IF NOT EXISTS content_intelligence (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      content_type TEXT NOT NULL,
+      content_id INTEGER NOT NULL,
+      source_fingerprint TEXT NOT NULL,
+      model TEXT NOT NULL,
+      prompt_version TEXT NOT NULL,
+      service_version TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'ready',
+      result_json TEXT,
+      error_code TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(content_type, content_id)
+    )`,
+  ];
+  if (typeof env.DB.batch === 'function') await env.DB.batch(statements.map(sql => env.DB.prepare(sql)));
+  else for (const sql of statements) await env.DB.prepare(sql).run();
+  aiSchemaEnsured = true;
+}
+
 // ════════════════════════════════════════════════════════════════
 // ACCOUNTS & IDENTITY SYSTEM (Users, Sessions, Companies, Memberships)
 // ════════════════════════════════════════════════════════════════
@@ -828,6 +900,8 @@ export async function ensureAccountTables(env) {
   // admin/company filtering by status, cleanup's source/expiry scan, and
   // the new company-jobs page's "my jobs, this status" lookup.
   await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status)`).run();
+  await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_jobs_status_id ON jobs(status, id DESC)`).run();
+  await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_jobs_status_updated ON jobs(status, updated_at DESC, id DESC)`).run();
   await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_jobs_source ON jobs(source)`).run();
   await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_jobs_created_at ON jobs(created_at)`).run();
   await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_jobs_expires_at ON jobs(expires_at)`).run();
@@ -862,5 +936,6 @@ export async function ensureAccountTables(env) {
   // simpler choice here — not every index needs to be composite.
   await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_jobs_company ON jobs(company)`).run();
 
+  await ensureAiTables(env);
   accountSchemaEnsured = true;
 }

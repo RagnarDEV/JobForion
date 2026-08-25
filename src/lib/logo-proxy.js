@@ -34,10 +34,22 @@ const NEGATIVE_CACHE_CONTROL = 'public, max-age=86400, s-maxage=86400'; // 1 day
 // Route shape: /logo/<slugified-company-name>.png — the slug is derived
 // the same way on both the server (this file) and the client (home.js's
 // inline JS) so a given company always maps to the same cache key.
-export function logoProxyPath(companyName) {
+function websiteHostname(value) {
+  const raw = String(value || '').trim();
+  if (!raw || raw.startsWith('//')) return '';
+  try {
+    const parsed = new URL(/^https?:\/\//i.test(raw) ? raw : `https://${raw}`);
+    const host = parsed.hostname.toLowerCase();
+    if (!['http:', 'https:'].includes(parsed.protocol) || !host || host === 'localhost' || host.endsWith('.local') || /^\d{1,3}(?:\.\d{1,3}){3}$/.test(host)) return '';
+    return host.slice(0, 253);
+  } catch (e) { return ''; }
+}
+
+export function logoProxyPath(companyName, website = '') {
   const slug = slugify(companyName);
   if (!slug || slug === 'na') return null;
-  return `/logo/${slug}.png`;
+  const domain = websiteHostname(website);
+  return domain ? `/logo/${slug}.png?domain=${encodeURIComponent(domain)}` : `/logo/${slug}.png`;
 }
 
 // Best-effort domain guess from a free-text company name. Deliberately
@@ -62,6 +74,12 @@ function guessDomain(companyName) {
 function slugFromPath(pathname) {
   const m = pathname.match(/^\/logo\/([a-z0-9-]{1,80})\.png$/);
   return m ? m[1] : null;
+}
+
+function domainFromUrl(url, slug) {
+  const candidate = String(url.searchParams.get('domain') || '').toLowerCase().trim();
+  if (/^[a-z0-9](?:[a-z0-9.-]{0,251}[a-z0-9])?$/.test(candidate) && candidate.includes('.') && !candidate.includes('..') && !candidate.endsWith('.local')) return candidate;
+  return guessDomain(slug);
 }
 
 // Reverse of the slug isn't recoverable in general (slugify is lossy), so
@@ -106,7 +124,7 @@ export async function handleLogoProxyRoute(url, ctx) {
   const cached = await cache.match(cacheKey);
   if (cached) return cached;
 
-  const domain = guessDomain(slug);
+  const domain = domainFromUrl(url, slug);
   const found = domain ? await fetchFaviconBytes(domain) : null;
 
   if (!found) {

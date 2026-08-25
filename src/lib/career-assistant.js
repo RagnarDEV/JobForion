@@ -2,6 +2,7 @@
 // Phase 12.4 — private, authenticated career guidance assistant.
 // GET only reads history; inference exists only behind the user POST route.
 
+import { ensureAiTables } from '../db/schema.js';
 import { AI_LIMITS, AI_MODEL_ID, AI_SERVICE_VERSION, runAiRequest } from './ai-service.js';
 
 export const CAREER_ASSISTANT_TASK = 'career_assistant_v1';
@@ -15,33 +16,8 @@ export const CAREER_ASSISTANT_LIMITS = Object.freeze({
   maxRequests: 3,
 });
 
-const TABLE_SQL = [
-  `CREATE TABLE IF NOT EXISTS career_assistant_threads (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL UNIQUE,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  )`,
-  `CREATE TABLE IF NOT EXISTS career_assistant_messages (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    thread_id INTEGER NOT NULL,
-    user_id INTEGER NOT NULL,
-    role TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
-    content TEXT NOT NULL,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  )`,
-  `CREATE INDEX IF NOT EXISTS idx_career_assistant_messages_user ON career_assistant_messages(user_id, id DESC)`,
-];
-let tablesReady = false;
-
 async function ensureTables(env) {
-  if (tablesReady) return;
-  if (typeof env.DB.batch === 'function') {
-    await env.DB.batch(TABLE_SQL.map(sql => env.DB.prepare(sql)));
-  } else {
-    for (const sql of TABLE_SQL) await env.DB.prepare(sql).run();
-  }
-  tablesReady = true;
+  await ensureAiTables(env);
 }
 
 function text(value, max) {

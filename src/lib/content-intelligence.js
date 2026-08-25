@@ -2,33 +2,15 @@
 // Phase 12.6 — private, admin-triggered editorial analysis.
 // It never publishes, edits, deletes, or schedules content.
 
+import { ensureAiTables } from '../db/schema.js';
 import { AI_MODEL_ID, AI_SERVICE_VERSION, runAiRequest } from './ai-service.js';
 
 export const CONTENT_INTELLIGENCE_TASK = 'content_intelligence_v1';
 export const CONTENT_INTELLIGENCE_PROMPT_VERSION = 'content-intelligence-v1';
 export const CONTENT_INTELLIGENCE_LIMITS = Object.freeze({ maxBodyChars: 9000, maxTitleChars: 180, maxExcerptChars: 400, maxResultChars: 9000 });
 
-const TABLE_SQL = `CREATE TABLE IF NOT EXISTS content_intelligence (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  content_type TEXT NOT NULL,
-  content_id INTEGER NOT NULL,
-  source_fingerprint TEXT NOT NULL,
-  model TEXT NOT NULL,
-  prompt_version TEXT NOT NULL,
-  service_version TEXT NOT NULL,
-  status TEXT NOT NULL DEFAULT 'ready',
-  result_json TEXT,
-  error_code TEXT,
-  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-  UNIQUE(content_type, content_id)
-)`;
-let tableReady = false;
-
 async function ensureTable(env) {
-  if (tableReady) return;
-  await env.DB.prepare(TABLE_SQL).run();
-  tableReady = true;
+  await ensureAiTables(env);
 }
 
 function text(value, max) {

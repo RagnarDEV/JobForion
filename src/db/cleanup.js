@@ -28,7 +28,7 @@
 // pause/resume actions do the same — so a provider hiccup that briefly
 // drops a job from its feed doesn't strand it in 'expired' forever.
 
-import { ensureTable } from './schema.js';
+import { ensureTable, ensureAccountTables } from './schema.js';
 import { BASE_URL } from '../config/constants.js';
 import { JOBS_PER_SITEMAP } from '../lib/sitemap.js';
 
@@ -64,6 +64,7 @@ async function batchUpdateStatus(env, ids, newStatus) {
 
 export async function cleanupStaleJobs(env) {
   await ensureTable(env);
+  await ensureAccountTables(env);
 
   const breakdown = { expired: 0, archived: 0, deleted: 0 };
   let totalDeleted = 0;
@@ -104,6 +105,16 @@ export async function cleanupStaleJobs(env) {
     for (let i = 0; i < deleteIds.length; i += BATCH_SIZE) {
       const chunk = deleteIds.slice(i, i + BATCH_SIZE);
       const placeholders = chunk.map(() => '?').join(',');
+      // Remove dependent rows first. D1/SQLite does not automatically
+      // cascade these legacy references, so deleting jobs alone would leave
+      // broken Saved Jobs, Applications, and job-intelligence records.
+      const dependents = [
+        env.DB.prepare(`DELETE FROM saved_jobs WHERE job_id IN (${placeholders})`).bind(...chunk),
+        env.DB.prepare(`DELETE FROM applications WHERE job_id IN (${placeholders})`).bind(...chunk),
+        env.DB.prepare(`DELETE FROM job_intelligence WHERE job_id IN (${placeholders})`).bind(...chunk),
+      ];
+      if (typeof env.DB.batch === 'function') await env.DB.batch(dependents);
+      else for (const statement of dependents) await statement.run();
       const r = await env.DB.prepare(`DELETE FROM jobs WHERE id IN (${placeholders})`).bind(...chunk).run();
       totalDeleted += r.meta?.changes || 0;
     }

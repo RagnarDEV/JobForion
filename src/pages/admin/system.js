@@ -91,7 +91,7 @@ export async function renderSystemContent(env) {
         <div class="adm-row"><span class="adm-row-label">Job Alerts Dispatch</span><span class="adm-row-val">Daily · 08:00 UTC</span></div>
         <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
           <form method="POST" action="/api/sync" onsubmit="return confirm('Run job sync now?')"><button class="adm-btn adm-btn-primary" type="submit">↻ Sync Now</button></form>
-          <form method="POST" action="/admin/cleanup" onsubmit="return confirm('Run cleanup now? This permanently deletes expired/stale jobs.')"><button class="adm-btn" type="submit" style="color:var(--coral);border-color:var(--coral)">🧹 Cleanup Now</button></form>
+          <form method="POST" action="/admin/cleanup" onsubmit="return confirm('Run cleanup now? It advances expired jobs through the retention lifecycle; only archived jobs past retention are permanently deleted.')"><button class="adm-btn" type="submit" style="color:var(--coral);border-color:var(--coral)">🧹 Cleanup Now</button></form>
           <form method="POST" action="/admin/system/run-job-alerts" onsubmit="return confirm('Send job alert digests now to every due alert?')"><button class="adm-btn" type="submit">📧 Send Job Alerts Now</button></form>
           <form method="POST" action="/admin/system/ai-smoke-test" onsubmit="return confirm('Run the protected AI foundation smoke test?')"><button class="adm-btn" type="submit" ${!aiEnabled ? 'disabled' : ''}>AI Smoke Test</button></form>
         </div>

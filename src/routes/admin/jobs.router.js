@@ -383,10 +383,20 @@ export async function handleAdminJobsRoute(url, request, env, base) {
       const ok = await verifyAdminCookie(env, request.headers.get('Cookie'));
       if (!ok) return new Response('Unauthorized', { status: 401 });
       const form = await request.formData();
-      const days = Math.max(7, parseInt(form.get('days') || '45', 10) || 45);
-      const r = await env.DB.prepare(`DELETE FROM jobs WHERE created_at < datetime('now', '-' || ? || ' day')`).bind(days).run();
-      await logActivity(env, 'jobs_bulk_deleted', `${r.meta?.changes || 0} jobs older than ${days}d`);
-      return new Response(null, { status: 302, headers: { 'Location': `/admin/jobs?flash=${encodeURIComponent(`Deleted ${r.meta?.changes || 0} stale jobs`)}` } });
+      const days = Math.min(3650, Math.max(7, parseInt(form.get('days') || '45', 10) || 45));
+      // Manual stale cleanup must follow the same soft lifecycle as the
+      // scheduled cleaner. Hard-deleting here used to orphan saved_jobs,
+      // applications, and job_intelligence rows and could remove a live job
+      // solely because its created_at was old. Mark rows expired instead;
+      // the daily cleanup owns the later archived → deleted transition.
+      const r = await env.DB.prepare(
+        `UPDATE jobs SET status = 'expired', updated_at = CURRENT_TIMESTAMP
+         WHERE status NOT IN ('expired', 'archived')
+           AND created_at < datetime('now', '-' || ? || ' day')
+           AND (updated_at IS NULL OR updated_at < datetime('now', '-' || ? || ' day'))`
+      ).bind(days, days).run();
+      await logActivity(env, 'jobs_bulk_status_changed', `${r.meta?.changes || 0} jobs marked expired after ${days}d`);
+      return new Response(null, { status: 302, headers: { 'Location': `/admin/jobs?flash=${encodeURIComponent(`Marked ${r.meta?.changes || 0} stale jobs expired`)}` } });
     } catch (e) { return errorPage(e); }
   }
 
