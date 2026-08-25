@@ -62,13 +62,19 @@ jobforion/
 
 الميزات المطبقة هي: **Job Intelligence** عند الطلب من محرر الوظيفة الإداري، **Matching** داخل حساب المستخدم، **Career Assistant** للمستخدم المصادق عليه، **Admin Assistant** للقراءة التشغيلية فقط، **Content Intelligence** للمراجعة التحريرية دون نشر تلقائي، و**AI Control Center** للعرض والمراقبة فقط. لا يملك أي مساعد صلاحية تنفيذ sync أو cleanup أو حذف أو نشر أو إرسال بريد أو تغيير إعدادات حساسة تلقائيًا.
 
+## Design System وAppearance Theme
+
+يستخدم القالب العام `src/layout/base-layout.js` Theme Resolver مركزيًا من `src/lib/settings.js`. مفاتيح `appearance_*` محفوظة في `site_settings` وتخضع لـallow-list وvalidation قبل الكتابة: ألوان hex، خطوط من قائمة curated، كثافة layout، radius، عرض container، ومسافات البطاقات. عند غياب الإعداد أو فساده يعود الموقع تلقائيًا إلى defaults الآمنة، وتُحقن القيم كـCSS variables داخل نفس `baseLayout` الذي تستخدمه الصفحات العامة؛ لا يوجد arbitrary CSS أو HTML أو JavaScript في لوحة الإدارة.
+
+صفحة `/admin/settings` تتضمن Appearance Theme section مع live preview يستخدم نفس tokens، وزر reset يعيد مفاتيح appearance فقط ولا يلمس jobs أو companies أو users أو AI أو blog. كما أن `job-card-css.js` و`shared-css.js` يستخدمان tokens المركزية في البطاقة والسطوح والـradius والمسافات، بينما بقي `job-card-styles.js` مصدر التحكم التفصيلي المنظم حسب tier.
+
 ## الأمان
 
-تستخدم صفحات الإدارة admin cookie موقعة وحماية CSRF للمسارات النماذجية، وتستخدم صفحات الحساب جلسات HttpOnly وSecure وSameSite مع ownership checks. توجد rate limits تطبيقية للمسارات الحساسة، إضافة إلى حدود إدخال للـAPI وpagination. روابط التقديم الخارجية تمر عبر `safeExternalUrl()` ولا تُقبل `javascript:` أو `data:` أو protocol-relative URLs.
+تستخدم صفحات الإدارة admin cookie موقعة، ويطبق `src/routes/admin.router.js` حارس CSRF مركزيًا على كل admin POST قبل وصوله إلى sub-router. يصدر shell cookie قصيرة العمر للـCSRF ويحقن token في form submissions وadmin fetch requests. تبقى التحققات المحلية في website router كدفاع إضافي لمسارات Appearance وhomepage وcard styles. تستخدم صفحات الحساب جلسات HttpOnly وSecure وSameSite مع ownership checks. توجد rate limits تطبيقية للمسارات الحساسة، إضافة إلى حدود إدخال للـAPI وpagination. روابط التقديم الخارجية تمر عبر `safeExternalUrl()` ولا تُقبل `javascript:` أو `data:` أو protocol-relative URLs.
 
 يضع Worker security headers موحدة تشمل `X-Content-Type-Options` و`X-Frame-Options` و`Referrer-Policy` و`Permissions-Policy` وHSTS وCSP. تسمح CSP بالـinline scripts/styles المطلوبة حاليًا للواجهة SSR، لكنها لا تسمح بمضيفات صور عامة عشوائية؛ الشعارات الخارجية تُجلب عبر Worker logo proxy أو R2 الموثق.
 
-سجلات النشاط لا تخزن نصوص prompts أو الإجابات أو profile data، وتم تقليل PII من سجلات الحساب إلى معرّفات داخلية. عند حذف الحساب تُطهّر محادثات Career Assistant ونتائج Matching والجلسات قبل إكمال soft-delete للهوية.
+سجلات النشاط لا تخزن نصوص prompts أو الإجابات أو profile data، وتم تقليل PII من سجلات الحساب إلى معرّفات داخلية. يعرض Control Center الآن AI Activity (7d) وchart حسب feature من `admin_activity_log` فقط عندما توجد سجلات حقيقية؛ لا تُخترع usage statistics. عند حذف الحساب تُطهّر محادثات Career Assistant ونتائج Matching والجلسات قبل إكمال soft-delete للهوية.
 
 ## الإعداد المحلي
 
@@ -77,10 +83,9 @@ npm install
 npm run dev
 ```
 
-الأسرار المطلوبة بحسب الميزة تُضبط خارج Git، مثل:
+الأسرار المطلوبة بحسب الميزة تُضبط خارج Git. لا تُحفظ API keys أو كلمات المرور أو ملفات `.dev.vars` في المستودع. من أمثلة إعدادات النشر:
 
 ```bash
-npx wrangler secret put API_KEY
 npx wrangler secret put ADMIN_PASSWORD
 npx wrangler secret put R2_PUBLIC_BASE_URL
 ```

@@ -28,7 +28,48 @@
 // the 60s window.
 // ════════════════════════════════════════════════════════════════
 
+export const THEME_DEFAULTS = {
+  appearance_primary_color: '#6339E6',
+  appearance_secondary_color: '#4F2BD0',
+  appearance_accent_color: '#54C4D2',
+  appearance_page_background: '#FFFFFF',
+  appearance_surface: '#FFFFFF',
+  appearance_elevated_surface: '#F8F7FC',
+  appearance_text_primary: '#181632',
+  appearance_text_secondary: '#45415E',
+  appearance_text_muted: '#7D798F',
+  appearance_border_color: '#ECEAF2',
+  appearance_radius: '12',
+  appearance_container_width: '1150',
+  appearance_section_spacing: '46',
+  appearance_card_gap: '14',
+  appearance_density: 'comfortable',
+  appearance_font_family: 'Manrope',
+  appearance_heading_font: 'Space Grotesk',
+};
+
+export const THEME_SETTING_METADATA = Object.freeze({
+  appearance_primary_color: { type: 'color', category: 'appearance', description: 'Primary brand color' },
+  appearance_secondary_color: { type: 'color', category: 'appearance', description: 'Secondary brand color' },
+  appearance_accent_color: { type: 'color', category: 'appearance', description: 'Accent color' },
+  appearance_page_background: { type: 'color', category: 'appearance', description: 'Public page background' },
+  appearance_surface: { type: 'color', category: 'appearance', description: 'Surface color' },
+  appearance_elevated_surface: { type: 'color', category: 'appearance', description: 'Elevated surface color' },
+  appearance_text_primary: { type: 'color', category: 'appearance', description: 'Primary text color' },
+  appearance_text_secondary: { type: 'color', category: 'appearance', description: 'Secondary text color' },
+  appearance_text_muted: { type: 'color', category: 'appearance', description: 'Muted text color' },
+  appearance_border_color: { type: 'color', category: 'appearance', description: 'Border color' },
+  appearance_radius: { type: 'integer', min: 6, max: 24, category: 'layout', description: 'Base component radius' },
+  appearance_container_width: { type: 'integer', min: 960, max: 1440, category: 'layout', description: 'Public content width in pixels' },
+  appearance_section_spacing: { type: 'integer', min: 20, max: 96, category: 'layout', description: 'Section spacing in pixels' },
+  appearance_card_gap: { type: 'integer', min: 6, max: 32, category: 'layout', description: 'Card grid gap in pixels' },
+  appearance_density: { type: 'enum', values: ['compact', 'comfortable', 'spacious'], category: 'layout', description: 'Public layout density' },
+  appearance_font_family: { type: 'font', values: ['Manrope', 'Inter', 'Plus Jakarta Sans', 'Poppins'], category: 'typography', description: 'Body font family' },
+  appearance_heading_font: { type: 'font', values: ['Space Grotesk', 'Plus Jakarta Sans', 'Poppins', 'Sora', 'Outfit'], category: 'typography', description: 'Heading font family' },
+});
+
 export const SETTINGS_DEFAULTS = {
+  ...THEME_DEFAULTS,
   site_name: 'JobForion',
   site_tagline: 'Find Your Next Remote Job',
   site_description: 'JobForion is a curated remote job board with verified positions in development, design, marketing, data and more. Updated every few hours.',
@@ -155,6 +196,40 @@ export const HERO_FONT_OPTIONS = [
 // a future admin-page bug or malicious form submission can't smuggle
 // arbitrary keys into the table.
 export const SETTINGS_KEYS = Object.keys(SETTINGS_DEFAULTS);
+export const THEME_SETTING_KEYS = Object.keys(THEME_DEFAULTS);
+
+const HEX_PATTERN = /^#[0-9a-fA-F]{6}$/;
+const FONT_VALUES = new Set(['Manrope', 'Inter', 'Plus Jakarta Sans', 'Poppins', 'Space Grotesk', 'Sora', 'Outfit']);
+const DENSITY_VALUES = new Set(['compact', 'comfortable', 'spacious']);
+
+function boundedInteger(value, fallback, min, max) {
+  const parsed = parseInt(value, 10);
+  return Number.isFinite(parsed) ? Math.min(max, Math.max(min, parsed)) : fallback;
+}
+
+export function resolveTheme(settings = {}) {
+  const source = { ...THEME_DEFAULTS, ...settings };
+  const color = (key) => HEX_PATTERN.test(String(source[key] || '')) ? String(source[key]).toUpperCase() : THEME_DEFAULTS[key];
+  const font = (key) => FONT_VALUES.has(String(source[key] || '')) ? String(source[key]) : THEME_DEFAULTS[key];
+  const density = DENSITY_VALUES.has(String(source.appearance_density || '')) ? String(source.appearance_density) : THEME_DEFAULTS.appearance_density;
+  return {
+    primary: color('appearance_primary_color'), secondary: color('appearance_secondary_color'), accent: color('appearance_accent_color'),
+    pageBackground: color('appearance_page_background'), surface: color('appearance_surface'), elevatedSurface: color('appearance_elevated_surface'),
+    textPrimary: color('appearance_text_primary'), textSecondary: color('appearance_text_secondary'), textMuted: color('appearance_text_muted'),
+    border: color('appearance_border_color'), radius: boundedInteger(source.appearance_radius, 12, 6, 24),
+    containerWidth: boundedInteger(source.appearance_container_width, 1150, 960, 1440),
+    sectionSpacing: boundedInteger(source.appearance_section_spacing, 46, 20, 96),
+    cardGap: boundedInteger(source.appearance_card_gap, 14, 6, 32), density,
+    fontFamily: font('appearance_font_family'), headingFont: font('appearance_heading_font'),
+  };
+}
+
+export function themeCssVariables(settings = {}) {
+  const theme = resolveTheme(settings);
+  const densityScale = theme.density === 'compact' ? 0.85 : theme.density === 'spacious' ? 1.15 : 1;
+  return `:root{--brand:${theme.primary};--brand2:${theme.secondary};--cyan:${theme.accent};--brand-soft:color-mix(in srgb, ${theme.primary} 10%, transparent);--bg:${theme.pageBackground};--bg2:${theme.elevatedSurface};--surface:${theme.surface};--surface2:${theme.elevatedSurface};--ink:${theme.textPrimary};--ink2:${theme.textSecondary};--ink3:${theme.textMuted};--border:${theme.border};--border2:${theme.border};--r:${theme.radius}px;--radius-sm:8px;--radius-md:${theme.radius}px;--radius-card:${Math.min(28, theme.radius + 2)}px;--container-width:${theme.containerWidth}px;--section-space:${theme.sectionSpacing}px;--card-gap:${theme.cardGap}px;--space-xs:4px;--space-sm:8px;--space-md:16px;--space-lg:24px;--space-xl:32px;--space-2xl:48px;--density-scale:${densityScale};--transition-fast:180ms;--transition-normal:240ms;--layout-header-height:72px;--font-body:'${theme.fontFamily}',sans-serif;--font-heading:'${theme.headingFont}',sans-serif}`;
+}
+
 
 // Subset of SETTINGS_KEYS that render as HTML checkboxes (maintenance_mode
 // + every feature_* flag). Checkboxes are only present in form-encoded
@@ -226,16 +301,29 @@ export async function getSetting(env, key) {
   return all[key] ?? SETTINGS_DEFAULTS[key] ?? '';
 }
 
+function sanitizeSettingValue(key, value) {
+  const raw = String(value ?? '').trim();
+  const meta = THEME_SETTING_METADATA[key];
+  if (!meta) return raw.slice(0, 2000);
+  if (meta.type === 'color') return HEX_PATTERN.test(raw) ? raw.toUpperCase() : THEME_DEFAULTS[key];
+  if (meta.type === 'integer') return String(boundedInteger(raw, parseInt(THEME_DEFAULTS[key], 10), meta.min, meta.max));
+  if (meta.type === 'enum') return meta.values.includes(raw) ? raw : THEME_DEFAULTS[key];
+  if (meta.type === 'font') return FONT_VALUES.has(raw) ? raw : THEME_DEFAULTS[key];
+  return THEME_DEFAULTS[key];
+}
+
 // Bulk upsert. Only keys present in SETTINGS_KEYS are written — anything
 // else in `updates` is silently ignored (defense in depth, see note above).
 export async function setSettings(env, updates) {
-  const entries = Object.entries(updates).filter(([k]) => SETTINGS_KEYS.includes(k));
+  const entries = Object.entries(updates)
+    .filter(([key]) => SETTINGS_KEYS.includes(key))
+    .map(([key, value]) => [key, sanitizeSettingValue(key, value)]);
   if (!entries.length) return;
   const stmts = entries.map(([k, v]) =>
     env.DB.prepare(
       `INSERT INTO site_settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)
        ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP`
-    ).bind(k, String(v))
+    ).bind(k, v)
   );
   await env.DB.batch(stmts);
   cache = null; // force a fresh read on this isolate's next getSettings() call

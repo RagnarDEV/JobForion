@@ -4,7 +4,7 @@
 // maintenance/feature flags). See admin.router.js for how every
 // admin/*.router.js sub-router is composed.
 
-import { verifyAdminCookie } from '../../auth/admin-auth.js';
+import { verifyAdminCookie, getAdminCsrfToken, verifyAdminCsrf } from '../../auth/admin-auth.js';
 import { renderAdminLogin } from '../../pages/admin.js';
 import { renderHomepageBuilderContent } from '../../pages/admin/homepage.js';
 import { renderCardStylesContent } from '../../pages/admin/card-styles.js';
@@ -12,7 +12,7 @@ import { renderSettingsContent } from '../../pages/admin/settings.js';
 import { adminShell } from '../../pages/admin/shell.js';
 import { setHomepageSectionEnabled, moveHomepageSection } from '../../lib/homepage-sections.js';
 import { updateCardStyle, resetCardStyle, CARD_STYLE_JOB_TYPES } from '../../lib/job-card-styles.js';
-import { setSettings, SETTINGS_KEYS, CHECKBOX_SETTINGS_KEYS } from '../../lib/settings.js';
+import { setSettings, SETTINGS_KEYS, CHECKBOX_SETTINGS_KEYS, THEME_DEFAULTS } from '../../lib/settings.js';
 import { logActivity } from '../../lib/activity-log.js';
 import { errorPage } from './error-page.js';
 
@@ -22,7 +22,7 @@ export async function handleAdminWebsiteRoute(url, request, env, base) {
       const ok = await verifyAdminCookie(env, request.headers.get('Cookie'));
       if (!ok) return new Response(renderAdminLogin(false), { headers: { "Content-Type": "text/html; charset=utf-8" } });
       const content = await renderHomepageBuilderContent(env);
-      return new Response(adminShell('homepage', content), { headers: { "Content-Type": "text/html; charset=utf-8" } });
+      return new Response(adminShell('homepage', content, await getAdminCsrfToken(env, request.headers.get('Cookie'))), { headers: { "Content-Type": "text/html; charset=utf-8" } });
     } catch (e) { return errorPage(e); }
   }
 
@@ -31,6 +31,7 @@ export async function handleAdminWebsiteRoute(url, request, env, base) {
       const ok = await verifyAdminCookie(env, request.headers.get('Cookie'));
       if (!ok) return new Response('Unauthorized', { status: 401 });
       const form = await request.formData();
+      if (!await verifyAdminCsrf(env, request.headers.get('Cookie'), (form.get('_admin_csrf') || '').toString())) return new Response('Invalid CSRF token', { status: 403 });
       const key = (form.get('key') || '').toString();
       const enabled = form.get('enabled') === '1';
       await setHomepageSectionEnabled(env, key, enabled);
@@ -44,6 +45,7 @@ export async function handleAdminWebsiteRoute(url, request, env, base) {
       const ok = await verifyAdminCookie(env, request.headers.get('Cookie'));
       if (!ok) return new Response('Unauthorized', { status: 401 });
       const form = await request.formData();
+      if (!await verifyAdminCsrf(env, request.headers.get('Cookie'), (form.get('_admin_csrf') || '').toString())) return new Response('Invalid CSRF token', { status: 403 });
       const key = (form.get('key') || '').toString();
       const direction = (form.get('direction') || '').toString();
       if (direction === 'up' || direction === 'down') {
@@ -60,7 +62,7 @@ export async function handleAdminWebsiteRoute(url, request, env, base) {
       const ok = await verifyAdminCookie(env, request.headers.get('Cookie'));
       if (!ok) return new Response(renderAdminLogin(false), { headers: { "Content-Type": "text/html; charset=utf-8" } });
       const content = await renderCardStylesContent(env);
-      return new Response(adminShell('card-styles', content), { headers: { "Content-Type": "text/html; charset=utf-8" } });
+      return new Response(adminShell('card-styles', content, await getAdminCsrfToken(env, request.headers.get('Cookie'))), { headers: { "Content-Type": "text/html; charset=utf-8" } });
     } catch (e) { return errorPage(e); }
   }
 
@@ -69,6 +71,7 @@ export async function handleAdminWebsiteRoute(url, request, env, base) {
       const ok = await verifyAdminCookie(env, request.headers.get('Cookie'));
       if (!ok) return new Response('Unauthorized', { status: 401 });
       const form = await request.formData();
+      if (!await verifyAdminCsrf(env, request.headers.get('Cookie'), (form.get('_admin_csrf') || '').toString())) return new Response('Invalid CSRF token', { status: 403 });
       const jobType = (form.get('job_type') || '').toString();
       if (!CARD_STYLE_JOB_TYPES.includes(jobType)) return new Response('Invalid job type', { status: 400 });
       await updateCardStyle(env, jobType, {
@@ -94,6 +97,7 @@ export async function handleAdminWebsiteRoute(url, request, env, base) {
       const ok = await verifyAdminCookie(env, request.headers.get('Cookie'));
       if (!ok) return new Response('Unauthorized', { status: 401 });
       const form = await request.formData();
+      if (!await verifyAdminCsrf(env, request.headers.get('Cookie'), (form.get('_admin_csrf') || '').toString())) return new Response('Invalid CSRF token', { status: 403 });
       const jobType = (form.get('job_type') || '').toString();
       if (!CARD_STYLE_JOB_TYPES.includes(jobType)) return new Response('Invalid job type', { status: 400 });
       await resetCardStyle(env, jobType);
@@ -107,7 +111,19 @@ export async function handleAdminWebsiteRoute(url, request, env, base) {
       const ok = await verifyAdminCookie(env, request.headers.get('Cookie'));
       if (!ok) return new Response(renderAdminLogin(false), { headers: { "Content-Type": "text/html; charset=utf-8" } });
       const content = await renderSettingsContent(env);
-      return new Response(adminShell('settings', content), { headers: { "Content-Type": "text/html; charset=utf-8" } });
+      return new Response(adminShell('settings', content, await getAdminCsrfToken(env, request.headers.get('Cookie'))), { headers: { "Content-Type": "text/html; charset=utf-8" } });
+    } catch (e) { return errorPage(e); }
+  }
+
+  if (url.pathname === '/admin/settings/reset-appearance' && request.method === 'POST') {
+    try {
+      const ok = await verifyAdminCookie(env, request.headers.get('Cookie'));
+      if (!ok) return new Response('Unauthorized', { status: 401 });
+      const form = await request.formData();
+      if (!await verifyAdminCsrf(env, request.headers.get('Cookie'), (form.get('_admin_csrf') || '').toString())) return new Response('Invalid CSRF token', { status: 403 });
+      await setSettings(env, THEME_DEFAULTS);
+      await logActivity(env, 'appearance_reset', 'Appearance defaults');
+      return new Response(null, { status: 302, headers: { 'Location': `/admin/settings?flash=${encodeURIComponent('Appearance reset to defaults')}` } });
     } catch (e) { return errorPage(e); }
   }
 
@@ -116,6 +132,7 @@ export async function handleAdminWebsiteRoute(url, request, env, base) {
       const ok = await verifyAdminCookie(env, request.headers.get('Cookie'));
       if (!ok) return new Response('Unauthorized', { status: 401 });
       const form = await request.formData();
+      if (!await verifyAdminCsrf(env, request.headers.get('Cookie'), (form.get('_admin_csrf') || '').toString())) return new Response('Invalid CSRF token', { status: 403 });
       // Explicit allow-list (SETTINGS_KEYS) rather than trusting arbitrary
       // posted field names — setSettings() also enforces this itself, but
       // filtering here too keeps the intent obvious at the call site.

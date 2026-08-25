@@ -39,6 +39,7 @@ import { handleAdminJobIntelligenceRoute } from './admin/job-intelligence.router
 import { handleAdminContentIntelligenceRoute } from './admin/content-intelligence.router.js';
 import { handleAdminAssistantRoute } from './admin/admin-assistant.router.js';
 import { handleAiControlCenterRoute } from './admin/ai-control-center.router.js';
+import { verifyAdminCookie, getAdminCsrfToken, verifyAdminCsrf } from '../auth/admin-auth.js';
 
 // Order matters only for cost/specificity, same rationale as index.js:
 // auth first (must work even before a session exists), the dashboard
@@ -67,9 +68,31 @@ const ADMIN_SUB_ROUTERS = [
 
 export async function handleAdminRoute(url, request, env, base) {
   if (!url.pathname.startsWith('/admin')) return null;
+  const cookie = request.headers.get('Cookie');
+  const isAuthenticated = await verifyAdminCookie(env, cookie);
+  // Login is intentionally exempt because no admin session exists yet.
+  // Every other authenticated admin mutation is checked here before any
+  // sub-router can perform a D1/R2 write. The request body is read from a
+  // clone so the owning sub-router still receives the original stream.
+  if (request.method === 'POST' && url.pathname !== '/admin/login' && isAuthenticated) {
+    let submitted = request.headers.get('X-Admin-CSRF') || '';
+    if (!submitted) {
+      try { submitted = String((await request.clone().formData()).get('_admin_csrf') || ''); } catch (e) {}
+    }
+    if (!await verifyAdminCsrf(env, cookie, submitted)) return new Response('Invalid CSRF token', { status: 403 });
+  }
   for (const subRouter of ADMIN_SUB_ROUTERS) {
     const response = await subRouter(url, request, env, base);
-    if (response) return response;
+    if (response) {
+      if (request.method === 'GET' && isAuthenticated) {
+        const headers = new Headers(response.headers);
+        const token = await getAdminCsrfToken(env, cookie);
+        const secure = url.protocol === 'https:' ? ' Secure;' : '';
+        headers.append('Set-Cookie', `jn_admin_csrf=${token}; Path=/admin; Max-Age=86400; SameSite=Strict;${secure}`);
+        return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+      }
+      return response;
+    }
   }
   return null;
 }

@@ -32,15 +32,31 @@ export async function makeAdminCookie(env) {
   const sig = await hmacHex(env.ADMIN_PASSWORD || '', `admin:${expiry}`);
   return `${expiry}.${sig}`;
 }
+function adminCookieValue(cookieHeader) {
+  const match = String(cookieHeader || '').split(';').map(s => s.trim()).find(s => s.startsWith('jn_admin='));
+  return match ? match.slice('jn_admin='.length) : '';
+}
+
 export async function verifyAdminCookie(env, cookieHeader) {
-  if (!cookieHeader) return false;
-  const match = cookieHeader.split(';').map(s => s.trim()).find(s => s.startsWith('jn_admin='));
-  if (!match) return false;
-  const val = match.slice('jn_admin='.length);
+  const val = adminCookieValue(cookieHeader);
+  if (!val) return false;
   const [expiryStr, sig] = val.split('.');
   const expiry = parseInt(expiryStr, 10);
   if (!expiry || expiry < Date.now()) return false;
   const expected = await hmacHex(env.ADMIN_PASSWORD || '', `admin:${expiry}`);
   return timingSafeEqualStr(expected, sig);
+}
+
+// Admin CSRF token: statelessly bound to the current signed admin cookie.
+// It is safe to place in a hidden form field because it does not grant admin
+// access by itself; the signed, expiring jn_admin cookie remains mandatory.
+export async function getAdminCsrfToken(env, cookieHeader) {
+  const cookie = adminCookieValue(cookieHeader);
+  return cookie ? hmacHex(env.ADMIN_PASSWORD || '', `admin-csrf:${cookie}`) : '';
+}
+
+export async function verifyAdminCsrf(env, cookieHeader, submittedToken) {
+  const expected = await getAdminCsrfToken(env, cookieHeader);
+  return Boolean(expected && submittedToken && timingSafeEqualStr(expected, submittedToken));
 }
 

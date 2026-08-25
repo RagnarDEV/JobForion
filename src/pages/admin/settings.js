@@ -7,7 +7,7 @@
 // cache TTL), with zero code edits and zero redeploy.
 
 import { escapeHtml } from '../../lib/entities.js';
-import { getSettings, SETTINGS_DEFAULTS, HERO_FONT_OPTIONS } from '../../lib/settings.js';
+import { getSettings, SETTINGS_DEFAULTS, THEME_DEFAULTS, HERO_FONT_OPTIONS } from '../../lib/settings.js';
 
 function field(label, name, value, opts = {}) {
   const { type = 'text', placeholder = '', hint = '', full = false } = opts;
@@ -107,6 +107,41 @@ export async function renderSettingsContent(env) {
             if (el) el.addEventListener('input', update);
           });
         })();
+        </script>
+      </div>
+
+      <div class="adm-card">
+        <div class="adm-card-title">🎨 Appearance Theme <span style="font-weight:400;color:var(--ink3);font-size:12px">— validated Design System tokens used across the public site</span></div>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:14px">
+          ${field('Primary color', 'appearance_primary_color', s.appearance_primary_color || THEME_DEFAULTS.appearance_primary_color, { type: 'color' })}
+          ${field('Secondary color', 'appearance_secondary_color', s.appearance_secondary_color || THEME_DEFAULTS.appearance_secondary_color, { type: 'color' })}
+          ${field('Accent color', 'appearance_accent_color', s.appearance_accent_color || THEME_DEFAULTS.appearance_accent_color, { type: 'color' })}
+          ${field('Page background', 'appearance_page_background', s.appearance_page_background || THEME_DEFAULTS.appearance_page_background, { type: 'color' })}
+          ${field('Surface', 'appearance_surface', s.appearance_surface || THEME_DEFAULTS.appearance_surface, { type: 'color' })}
+          ${field('Elevated surface', 'appearance_elevated_surface', s.appearance_elevated_surface || THEME_DEFAULTS.appearance_elevated_surface, { type: 'color' })}
+          ${field('Primary text', 'appearance_text_primary', s.appearance_text_primary || THEME_DEFAULTS.appearance_text_primary, { type: 'color' })}
+          ${field('Secondary text', 'appearance_text_secondary', s.appearance_text_secondary || THEME_DEFAULTS.appearance_text_secondary, { type: 'color' })}
+          ${field('Muted text', 'appearance_text_muted', s.appearance_text_muted || THEME_DEFAULTS.appearance_text_muted, { type: 'color' })}
+          ${field('Border color', 'appearance_border_color', s.appearance_border_color || THEME_DEFAULTS.appearance_border_color, { type: 'color' })}
+          ${field('Base radius (px)', 'appearance_radius', s.appearance_radius || THEME_DEFAULTS.appearance_radius, { type: 'number', hint: 'Safe range: 6–24px.' })}
+          ${field('Container width (px)', 'appearance_container_width', s.appearance_container_width || THEME_DEFAULTS.appearance_container_width, { type: 'number', hint: 'Safe range: 960–1440px.' })}
+          ${field('Section spacing (px)', 'appearance_section_spacing', s.appearance_section_spacing || THEME_DEFAULTS.appearance_section_spacing, { type: 'number', hint: 'Safe range: 20–96px.' })}
+          ${field('Card gap (px)', 'appearance_card_gap', s.appearance_card_gap || THEME_DEFAULTS.appearance_card_gap, { type: 'number', hint: 'Safe range: 6–32px.' })}
+          <label style="display:block"><span style="font-size:11px;font-weight:700;color:var(--ink3);text-transform:uppercase;letter-spacing:.4px;display:block;margin-bottom:6px">Density</span><select class="adm-input" style="width:100%" name="appearance_density"><option value="compact" ${s.appearance_density === 'compact' ? 'selected' : ''}>Compact</option><option value="comfortable" ${!s.appearance_density || s.appearance_density === 'comfortable' ? 'selected' : ''}>Comfortable</option><option value="spacious" ${s.appearance_density === 'spacious' ? 'selected' : ''}>Spacious</option></select></label>
+          <label style="display:block"><span style="font-size:11px;font-weight:700;color:var(--ink3);text-transform:uppercase;letter-spacing:.4px;display:block;margin-bottom:6px">Body font</span><select class="adm-input" style="width:100%" name="appearance_font_family">${['Manrope','Inter','Plus Jakarta Sans','Poppins'].map(font => `<option value="${font}" ${s.appearance_font_family === font ? 'selected' : ''}>${font}</option>`).join('')}</select></label>
+          <label style="display:block"><span style="font-size:11px;font-weight:700;color:var(--ink3);text-transform:uppercase;letter-spacing:.4px;display:block;margin-bottom:6px">Heading font</span><select class="adm-input" style="width:100%" name="appearance_heading_font">${['Space Grotesk','Plus Jakarta Sans','Poppins','Sora','Outfit'].map(font => `<option value="${font}" ${s.appearance_heading_font === font ? 'selected' : ''}>${font}</option>`).join('')}</select></label>
+        </div>
+        <div id="themePreview" style="border:1px solid var(--border2);border-radius:12px;padding:16px;background:${escapeHtml(s.appearance_page_background || THEME_DEFAULTS.appearance_page_background)};color:${escapeHtml(s.appearance_text_primary || THEME_DEFAULTS.appearance_text_primary)}">
+          <div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;opacity:.7;margin-bottom:6px">Live Design System preview</div>
+          <div id="themePreviewCard" style="border-radius:${escapeHtml(s.appearance_radius || THEME_DEFAULTS.appearance_radius)}px;padding:16px;background:${escapeHtml(s.appearance_surface || THEME_DEFAULTS.appearance_surface)};border:1px solid ${escapeHtml(s.appearance_border_color || THEME_DEFAULTS.appearance_border_color)};box-shadow:0 8px 24px rgba(37,24,92,.08)">
+            <strong id="themePreviewTitle" style="font-family:'${escapeHtml(s.appearance_heading_font || THEME_DEFAULTS.appearance_heading_font)}',sans-serif">JobForion Design System</strong>
+            <p id="themePreviewText" style="margin-top:6px;color:${escapeHtml(s.appearance_text_secondary || THEME_DEFAULTS.appearance_text_secondary)};font-size:12px">Preview uses the same validated tokens as the public renderer.</p>
+            <span id="themePreviewButton" style="display:inline-block;margin-top:10px;padding:8px 12px;border-radius:${escapeHtml(s.appearance_radius || THEME_DEFAULTS.appearance_radius)}px;background:${escapeHtml(s.appearance_primary_color || THEME_DEFAULTS.appearance_primary_color)};color:#fff;font-size:11px;font-weight:800">Primary action</span>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px"><button class="adm-btn" type="submit" name="settings_scope" value="appearance">Save with settings</button><button class="adm-btn" type="submit" formaction="/admin/settings/reset-appearance" formmethod="POST" onclick="return confirm('Reset only Appearance theme values to defaults?')">Reset Appearance Defaults</button></div>
+        <script>
+        (function(){var form=document.currentScript.closest('form');if(!form)return;function get(n){var e=form.querySelector('[name="'+n+'"]');return e?e.value:''}function draw(){var root=document.getElementById('themePreview'),card=document.getElementById('themePreviewCard'),title=document.getElementById('themePreviewTitle'),text=document.getElementById('themePreviewText'),button=document.getElementById('themePreviewButton');root.style.background=get('appearance_page_background');root.style.color=get('appearance_text_primary');card.style.background=get('appearance_surface');card.style.borderColor=get('appearance_border_color');card.style.borderRadius=get('appearance_radius')+'px';title.style.fontFamily="'"+get('appearance_heading_font')+"',sans-serif";text.style.color=get('appearance_text_secondary');button.style.background=get('appearance_primary_color');button.style.borderRadius=get('appearance_radius')+'px'}['appearance_primary_color','appearance_page_background','appearance_surface','appearance_border_color','appearance_radius','appearance_heading_font','appearance_text_primary','appearance_text_secondary'].forEach(function(n){var e=form.querySelector('[name="'+n+'"]');if(e)e.addEventListener('input',draw)});})();
         </script>
       </div>
 

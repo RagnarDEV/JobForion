@@ -67,7 +67,7 @@ export async function renderDashboardContent(env) {
   const hotPayEnabled = settings.hot_pay_enabled !== '0';
   const hotPayThreshold = hotPayThresholdUsd(settings);
 
-  const [{ results: totalJobsR }, { results: jobsTodayR }, { results: jobsWeekR }, { results: jobsMonthR }, { results: subsR }, { results: companiesR }, { results: hotR }, { results: usersR }, { results: articlesR }, { results: recentJobsR }, { results: recentUsersR }, { results: recentCompaniesR }] = await Promise.all([
+  const [{ results: totalJobsR }, { results: jobsTodayR }, { results: jobsWeekR }, { results: jobsMonthR }, { results: subsR }, { results: companiesR }, { results: hotR }, { results: usersR }, { results: articlesR }, { results: recentJobsR }, { results: recentUsersR }, { results: recentCompaniesR }, { results: aiActivityR }] = await Promise.all([
     q("SELECT COUNT(*) c FROM jobs"),
     q("SELECT COUNT(*) c FROM jobs WHERE created_at >= datetime('now','-1 day')"),
     q("SELECT COUNT(*) c FROM jobs WHERE created_at >= datetime('now','-7 day')"),
@@ -80,6 +80,7 @@ export async function renderDashboardContent(env) {
     q("SELECT id, title, company, location, created_at, status FROM jobs ORDER BY id DESC LIMIT 6"),
     q("SELECT id, email, status, email_verified, created_at FROM users ORDER BY id DESC LIMIT 6"),
     q("SELECT company, COUNT(*) c, MAX(created_at) created_at FROM jobs WHERE company IS NOT NULL AND company != '' GROUP BY LOWER(company), company ORDER BY created_at DESC LIMIT 6"),
+    q("SELECT action, metadata FROM admin_activity_log WHERE created_at >= datetime('now','-7 day') AND (action LIKE 'ai_%' OR action LIKE 'admin_%intelligence' OR action = 'admin_career_assistant' OR action = 'user_job_matching' OR action = 'user_career_assistant') ORDER BY id DESC LIMIT 1000"),
   ]);
 
   const [{ results: totalVisitsR }, { results: visitsTodayR }, { results: visits7dR }, { results: uniqCountriesR }] = await Promise.all([
@@ -89,6 +90,9 @@ export async function renderDashboardContent(env) {
     q("SELECT COUNT(DISTINCT country) c FROM visits WHERE created_at >= datetime('now','-7 day')"),
   ]);
 
+  const aiActivityCount = (aiActivityR || []).length;
+  const aiFailureCount = (aiActivityR || []).filter(row => /failed|error/i.test(String(row.metadata || ''))).length;
+  const aiFeatureCounts = Object.entries((aiActivityR || []).reduce((map, row) => { const key = String(row.action || 'AI').replace(/^admin_|^user_/, ''); map[key] = (map[key] || 0) + 1; return map; }, {})).map(([label, count]) => ({ label, count })).sort((a, b) => b.count - a.count).slice(0, 8);
   const { results: pendingR } = await q("SELECT COUNT(*) c FROM job_postings WHERE status='pending'");
   const skillsCount = await estimateDistinctSkills(env);
 
@@ -231,6 +235,7 @@ export async function renderDashboardContent(env) {
       ${kpi('Published Articles', (articlesR[0]?.c || 0).toLocaleString(), 'From Blog CMS', 'var(--pink)')}
       ${kpi('Users', (usersR[0]?.c || 0).toLocaleString(), 'Registered accounts', 'var(--cyan)')}
       ${kpi('Subscribers', (subsR[0]?.c || 0).toLocaleString(), 'Job alert emails', 'var(--pink)')}
+      ${kpi('AI Activity (7d)', aiActivityCount.toLocaleString(), `${aiFailureCount} failed or errored`, 'var(--brand)')}
       ${kpi('Total Visits', (totalVisitsR[0]?.c || 0).toLocaleString(), `${visitsTodayR[0]?.c || 0} today`, 'var(--cyan)')}
       ${kpi('Visits (7d)', (visits7dR[0]?.c || 0).toLocaleString(), `${uniqCountriesR[0]?.c || 0} countries reached`, 'var(--green)')}
     </div>
@@ -295,6 +300,10 @@ export async function renderDashboardContent(env) {
       <div class="adm-card">
         <div class="adm-card-title">Top Pages (7d)</div>
         ${(topPages || []).length ? (topPages.map(p => `<div class="adm-row"><span class="adm-row-label">${escapeHtml(p.path)}</span><span class="adm-row-val">${p.c}</span></div>`).join('')) : '<div class="adm-empty">No traffic yet</div>'}
+      </div>
+      <div class="adm-card">
+        <div class="adm-card-title">AI Activity by Feature (7d)</div>
+        ${aiFeatureCounts.length ? barChart(aiFeatureCounts) : '<div class="adm-empty">No AI activity recorded</div>'}
       </div>
       <div class="adm-card">
         <div class="adm-card-title">Top Countries (7d)</div>

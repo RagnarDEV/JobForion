@@ -13,7 +13,7 @@ import { ICON_HEAD } from '../assets/favicon.js';
 import { BASE_URL } from '../config/constants.js';
 import { escapeHtml } from '../lib/entities.js';
 import { GOOGLE_ANALYTICS_TAG, googleAnalyticsTag } from '../lib/analytics-tag.js';
-import { SETTINGS_DEFAULTS } from '../lib/settings.js';
+import { SETTINGS_DEFAULTS, themeCssVariables } from '../lib/settings.js';
 
 // SECURITY: title/description ultimately trace back to externally-sourced
 // content on many pages (job titles/companies scraped from LinkedIn,
@@ -45,6 +45,7 @@ export function baseLayout(title, description, canonical, ogImage, content, extr
   const siteName = escapeHtml(settings?.site_name || SETTINGS_DEFAULTS.site_name);
   const currentPath = (() => { try { return new URL(canonical || BASE_URL, BASE_URL).pathname || '/'; } catch (e) { return '/'; } })();
   const gaTag = settings ? googleAnalyticsTag(settings.ga_measurement_id) : GOOGLE_ANALYTICS_TAG;
+  const themeVariables = themeCssVariables(settings || {});
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -67,12 +68,13 @@ ${ICON_HEAD}
 <link rel="alternate" type="application/rss+xml" title="${siteName} Jobs Feed" href="${BASE_URL}/feed.rss">
 ${extraHead}
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Manrope:wght@400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@500;600;700;800&family=Poppins:wght@400;500;600;700;800&family=Sora:wght@500;600;700;800&family=Space+Grotesk:wght@500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
 <style>
 ${SHARED_CSS}
 ${JOB_CARD_CSS}
 ${ACCOUNTS_CSS}
-.page{max-width:860px;margin:0 auto;padding:36px 20px 72px}
+${themeVariables}
+.page{max-width:var(--container-width);margin:0 auto;padding:36px 20px 72px}
 .page-sm{max-width:680px;margin:0 auto;padding:36px 20px 72px}
 .breadcrumb{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--ink3);margin-bottom:28px;flex-wrap:wrap}
 .breadcrumb a{color:var(--brand)}.breadcrumb a:hover{color:var(--ink)}

@@ -46,7 +46,7 @@ const NAV_GROUPS = [
   { title: 'Website', items: [
     { id: 'homepage', label: 'Homepage', icon: iconHome, href: '/admin/homepage' },
     { id: 'card-styles', label: 'Card Styles', icon: iconPalette, href: '/admin/card-styles' },
-    { id: 'settings', label: 'Site & SEO', icon: iconSettingsGear, href: '/admin/settings' },
+    { id: 'settings', label: 'Site, SEO & Appearance', icon: iconSettingsGear, href: '/admin/settings' },
   ]},
   { title: 'Monetization', items: [
     { id: 'ads', label: 'Ads', icon: iconMegaphone, href: '/admin/ads' },
@@ -160,6 +160,8 @@ const SHELL_SCRIPT = `
     document.body.style.overflow = isOpen ? 'hidden' : '';
   };
   document.addEventListener('DOMContentLoaded', function(){
+    var csrfMatch = document.cookie.match(/(?:^|;\\s*)jn_admin_csrf=([^;]+)/);
+    if (csrfMatch) { document.querySelectorAll('form[method="POST" i]').forEach(function(form){ if (!form.querySelector('[name="_admin_csrf"]')) { var input=document.createElement('input'); input.type='hidden'; input.name='_admin_csrf'; input.value=decodeURIComponent(csrfMatch[1]); form.appendChild(input); } }); if (!window.__jnAdminCsrfFetch) { var nativeFetch=window.fetch.bind(window); window.fetch=function(input, init){ init=init||{}; var reqUrl=typeof input==='string'?input:(input&&input.url)||''; try { if (new URL(reqUrl, window.location.href).pathname.indexOf('/admin')===0) { var headers=new Headers(init.headers||((input&&input.headers)||{})); headers.set('X-Admin-CSRF', decodeURIComponent(csrfMatch[1])); init.headers=headers; } } catch(e) {} return nativeFetch(input, init); }; window.__jnAdminCsrfFetch=true; } }
     var params = new URLSearchParams(window.location.search);
     var flash = params.get('flash');
     if (flash) {
@@ -174,8 +176,12 @@ const SHELL_SCRIPT = `
 })();
 `;
 
-export function adminShell(activeId, content) {
+export function adminShell(activeId, content, csrfToken = '') {
   const activeItem = NAV_ITEMS.find(item => item.id === activeId) || NAV_ITEMS[0];
+  const safeCsrf = String(csrfToken || '').replace(/[^a-f0-9]/gi, '');
+  const securedContent = safeCsrf
+    ? String(content || '').replace(/<form\b([^>]*\bmethod=["']POST["'][^>]*)>/gi, `<form$1><input type="hidden" name="_admin_csrf" value="${safeCsrf}">`)
+    : content;
   const activeGroup = NAV_GROUPS.find(group => group.items.some(item => item.id === activeId));
   return `<!DOCTYPE html>
 <html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -252,7 +258,7 @@ export function adminShell(activeId, content) {
     </div>
     <div class="adm-mobile-backdrop" id="admMobileBackdrop" onclick="jnAdminMenu(false)"></div>
     <aside class="adm-mobile-drawer" id="admMobileDrawer" aria-label="Admin navigation"><div class="adm-logo"><img src="/favicon.svg" alt="JobForion">JobForion</div>${NAV_GROUPS.map(g => `<div class="adm-nav-group-title">${g.title}</div>${g.items.map(n => `<a href="${n.href}" class="adm-nav-link${n.id === activeId ? ' active' : ''}" onclick="jnAdminMenu(false)">${n.icon({ size: 15 })} ${n.label}</a>`).join('')}`).join('')}<div class="adm-sidebar-footer"><a href="/admin/logout" class="adm-nav-link">${iconLogOut({ size: 15 })} Logout</a></div></aside>
-    ${content}
+    ${securedContent}
   </main>
 </div>
 <script>${SHELL_SCRIPT}</script>
