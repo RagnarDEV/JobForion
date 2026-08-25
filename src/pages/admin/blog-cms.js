@@ -9,6 +9,7 @@
 import { escapeHtml } from '../../lib/entities.js';
 import { getPosts } from '../../lib/blog-cms.js';
 import { richEditorHtml } from '../../components/rich-editor.js';
+import { getContentAnalysis } from '../../lib/content-intelligence.js';
 
 const STATUS_BADGE = {
   published: '<span style="font-size:10px;font-weight:800;color:var(--green);background:rgba(15,174,121,.1);padding:2px 8px;border-radius:20px">● PUBLISHED</span>',
@@ -52,7 +53,15 @@ export async function renderBlogListContent(env) {
   </div>`;
 }
 
-function postForm(post, isNew) {
+function contentIntelligenceCard(post, analysis) {
+  if (!post?.id) return '';
+  const data = analysis?.data;
+  const issueRows = data?.issues?.length ? data.issues.map(issue => `<div style="padding:9px 0;border-bottom:1px solid var(--border)"><span style="font-size:10px;font-weight:800;text-transform:uppercase;color:${issue.severity === 'high' ? 'var(--coral)' : issue.severity === 'low' ? 'var(--green)' : 'var(--amber)'}">${escapeHtml(issue.severity)}</span><div style="font-size:12px;font-weight:700;color:var(--ink);margin-top:3px">${escapeHtml(issue.issue)}</div><div style="font-size:11px;color:var(--ink2);margin-top:2px">${escapeHtml(issue.suggestion)}</div></div>`).join('') : '<div style="font-size:12px;color:var(--green)">No major issues were identified.</div>';
+  const cardBody = data ? `<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px"><span style="font-size:24px;font-weight:900;color:var(--brand)">${data.quality_score}/100</span><span style="font-size:11px;color:var(--ink2)">${escapeHtml(data.summary || 'Editorial summary unavailable.')}</span></div><div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px"><div style="background:var(--surface2);border-radius:8px;padding:10px"><div style="font-size:10px;font-weight:800;color:var(--ink3);text-transform:uppercase">SEO title</div><div style="font-size:12px;color:var(--ink);margin-top:4px">${escapeHtml(data.seo_title || '—')}</div></div><div style="background:var(--surface2);border-radius:8px;padding:10px"><div style="font-size:10px;font-weight:800;color:var(--ink3);text-transform:uppercase">SEO description</div><div style="font-size:12px;color:var(--ink);margin-top:4px">${escapeHtml(data.seo_description || '—')}</div></div></div><div style="font-size:11px;font-weight:800;color:var(--ink3);text-transform:uppercase;margin-bottom:4px">Editorial issues</div>${issueRows}${data.suggested_excerpt ? `<div style="margin-top:12px;padding:10px;background:var(--brand-soft);border-radius:8px"><div style="font-size:10px;font-weight:800;color:var(--brand);text-transform:uppercase">Suggested excerpt</div><div style="font-size:12px;color:var(--ink);margin-top:4px">${escapeHtml(data.suggested_excerpt)}</div></div>` : ''}` : `<div style="font-size:12px;color:var(--ink2);line-height:1.7">Run a private editorial review for clarity, structure, SEO metadata, and unsupported claims. The result is advisory only and never publishes changes automatically.</div>`;
+  return `<div class="adm-card" style="margin-top:14px;border-color:rgba(99,57,230,.25)"><div class="adm-card-title">Content Intelligence <span style="font-weight:400;color:var(--ink3);font-size:11px">— advisory review only</span></div>${cardBody}<form method="POST" action="/admin/blog/content-intelligence" style="margin-top:12px"><input type="hidden" name="id" value="${post.id}"><input type="hidden" name="force" value="${data ? '1' : '0'}"><button class="adm-btn ${data ? '' : 'adm-btn-primary'}" type="submit">${data ? 'Regenerate review' : 'Analyze content'} →</button></form>${analysis?.updated_at ? `<div style="font-size:10px;color:var(--ink3);margin-top:8px">Last reviewed ${escapeHtml(String(analysis.updated_at))}</div>` : ''}</div>`;
+}
+
+function postForm(post, isNew, analysis = null) {
   const p = post || { id: '', title: '', excerpt: '', body: '', category: 'Career Advice', tags: [], cover_image_url: '', status: 'published', scheduled_at: '', read_time: '5 min read' };
   const action = isNew ? '/admin/blog/create' : '/admin/blog/update';
   return `
@@ -112,11 +121,13 @@ function postForm(post, isNew) {
         ${isNew ? '' : `<a href="/blog/${escapeHtml(p.slug || p.id)}" target="_blank" class="adm-btn">Preview Live</a>`}
       </div>
     </form>
+    ${contentIntelligenceCard(p, analysis)}
   </div>`;
 }
 
-export function renderBlogEditContent(post) {
-  return postForm(post, false);
+export async function renderBlogEditContent(env, post) {
+  const analysis = post?.id ? await getContentAnalysis(env, 'blog_post', post.id, post) : null;
+  return postForm(post, false, analysis);
 }
 
 export function renderBlogNewContent() {

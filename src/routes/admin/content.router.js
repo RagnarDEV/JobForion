@@ -169,7 +169,7 @@ export async function handleAdminContentRoute(url, request, env, base) {
       const id = parseInt(url.searchParams.get('id') || '0', 10);
       const post = await getPostById(env, id, { includeUnpublished: true });
       if (!post) return new Response(adminShell('blog', `<div class="adm-wrap"><div class="adm-card">Article not found. <a href="/admin/blog">← Back</a></div></div>`), { headers: { "Content-Type": "text/html; charset=utf-8" } });
-      return new Response(adminShell('blog', renderBlogEditContent(post)), { headers: { "Content-Type": "text/html; charset=utf-8" } });
+      return new Response(adminShell('blog', await renderBlogEditContent(env, post)), { headers: { "Content-Type": "text/html; charset=utf-8" } });
     } catch (e) { return errorPage(e); }
   }
 
