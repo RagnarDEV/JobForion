@@ -16,8 +16,9 @@ import { generateToken, sha256Hex } from '../lib/accounts/tokens.js';
 import { sendEmail, verificationEmailContent } from '../lib/accounts/email.js';
 import { createJobAlert, updateJobAlert, deleteJobAlert } from '../lib/job-alerts.js';
 import { getUserMatches, generateUserMatches } from '../lib/matching.js';
+import { getCareerAssistant, sendCareerMessage, CAREER_ASSISTANT_LIMITS } from '../lib/career-assistant.js';
 import {
-  renderUserOverview, renderUserProfile, renderUserMatches, renderSavedJobs, renderApplications, renderJobAlerts, renderUserSettings,
+  renderUserOverview, renderUserProfile, renderUserMatches, renderCareerAssistant, renderSavedJobs, renderApplications, renderJobAlerts, renderUserSettings,
 } from '../pages/user-dashboard.js';
 
 const HTML = { "Content-Type": "text/html; charset=utf-8" };
@@ -97,6 +98,23 @@ export async function handleUserRoute(url, request, env, base) {
     if (result.success) return new Response(null, { status: 302, headers: { Location: '/user/matches?ok=1' } });
     const error = result.error?.code === 'matching_profile_incomplete' ? 'profile' : result.error?.code === 'matching_no_jobs' ? 'jobs' : 'unavailable';
     return new Response(null, { status: 302, headers: { Location: `/user/matches?error=${error}` } });
+  }
+
+  // ── Career Assistant ──
+  if (url.pathname === '/user/career-assistant' && request.method === 'GET') {
+    return new Response(await renderCareerAssistant(env, user, pageCtx, { csrfToken, error: url.searchParams.get('error') ? 'Career Assistant could not complete that request. Please try again.' : undefined }), { headers: HTML });
+  }
+  if (url.pathname === '/user/career-assistant' && request.method === 'POST') {
+    const { form, ok } = await requireCsrf(request);
+    if (!ok) return new Response(await renderCareerAssistant(env, user, pageCtx, { csrfToken, error: 'Your session expired — please try again.' }), { status: 400, headers: HTML });
+    const rl = await checkRateLimit(env, `career_assistant:${user.id}`, { maxRequests: CAREER_ASSISTANT_LIMITS.maxRequests, windowMinutes: CAREER_ASSISTANT_LIMITS.windowMinutes });
+    if (!rl.allowed) return new Response(await renderCareerAssistant(env, user, pageCtx, { csrfToken, error: 'You have reached the assistant request limit. Please try again later.' }), { status: 429, headers: HTML });
+    const profile = await getUserProfile(env, user.id);
+    const result = await sendCareerMessage(env, user.id, profile, form.get('message'), pageCtx.settings);
+    await logActivity(env, 'user_career_assistant', user.email, { status: result.success ? 'success' : 'failed', error_code: result.error?.code || null });
+    if (result.success) return new Response(null, { status: 302, headers: { Location: '/user/career-assistant' } });
+    const errorKey = result.error?.code === 'assistant_invalid_message' || result.error?.code === 'assistant_message_too_long' ? 'input' : 'unavailable';
+    return new Response(null, { status: 302, headers: { Location: `/user/career-assistant?error=${errorKey}` } });
   }
 
   // ── Saved Jobs ──

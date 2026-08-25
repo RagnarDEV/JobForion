@@ -22,6 +22,7 @@ import { hydrateHotPay } from '../lib/hot-pay.js';
 import { getSettings } from '../lib/settings.js';
 import { getVerifiedCompanyNameSet } from '../lib/companies.js';
 import { getUserMatches } from '../lib/matching.js';
+import { getCareerAssistant } from '../lib/career-assistant.js';
 import {
   iconLayoutDashboard, iconUser, iconBookmark, iconBriefcase, iconBell, iconSettingsGear, iconSparkle,
 } from '../assets/icons.js';
@@ -30,6 +31,7 @@ const NAV = [
   { id: 'overview', label: 'Overview', icon: iconLayoutDashboard, href: '/user/dashboard' },
   { id: 'profile', label: 'My Profile', icon: iconUser, href: '/user/profile' },
   { id: 'matches', label: 'Job Matches', icon: iconSparkle, href: '/user/matches' },
+  { id: 'assistant', label: 'Career Assistant', icon: iconSparkle, href: '/user/career-assistant' },
   { id: 'saved', label: 'Saved Jobs', icon: iconBookmark, href: '/user/saved-jobs' },
   { id: 'applications', label: 'Applications', icon: iconBriefcase, href: '/user/applications' },
   { id: 'alerts', label: 'Job Alerts', icon: iconBell, href: '/user/job-alerts' },
@@ -150,6 +152,18 @@ export async function renderUserMatches(env, user, ctx, { csrfToken, ok, error }
   }).join('') : '';
   const content = `${notice}<section class="account-page-intro"><div><span class="dash-kicker">PERSONALIZED JOB SEARCH</span><h2>Job matches</h2><p>Review active roles that align with the professional information you chose to share.</p></div><form id="matching-request" method="POST" action="/user/matches/generate">${csrfField(csrfToken)}<button class="dash-btn dash-btn-primary" type="submit" ${profileReady ? '' : 'disabled'}>${matches.fresh ? 'Refresh matches' : 'Find my matches'} →</button></form></section>${!profileReady ? `<div class="dash-card" style="border-color:rgba(245,166,35,.35)"><div class="dash-card-title">Complete your profile first</div><p style="font-size:12.5px;color:var(--ink2);line-height:1.7">Add a professional title, short bio, skills, or experience so matching has useful evidence. Sensitive personal attributes are not used for matching.</p><a class="dash-btn" href="/user/profile">Update my profile →</a></div>` : rows ? `<div style="display:grid;gap:14px">${rows}</div>` : `<div class="dash-card"><div class="dash-card-title">No matches generated yet</div><p style="font-size:12.5px;color:var(--ink2);line-height:1.7">Matching uses your saved profile and the currently active JobForion roles. It runs only when you request it and stores results separately from your profile.</p><a href="#matching-request" class="dash-btn dash-btn-primary">Find matches above</a></div>`}${matches.stored?.updated_at ? `<p style="font-size:11px;color:var(--ink3);margin-top:12px">Last matching run: ${escapeHtml(formatAccountDate(matches.stored.updated_at))}</p>` : ''}`;
   return wrap('matches', 'Job Matches', 'Private, on-demand recommendations based on your profile.', content, switchPill, user, ctx);
+}
+
+// ── Career Assistant ─────────────────────────────────────────────
+function assistantMessageHtml(message) {
+  return escapeHtml(message).replace(/\r?\n/g, '<br>');
+}
+
+export async function renderCareerAssistant(env, user, ctx, { csrfToken, error } = {}) {
+  const [assistant, { switchPill }] = await Promise.all([getCareerAssistant(env, user.id), shellCtx(env, user, 'assistant')]);
+  const bubbles = assistant.messages.length ? assistant.messages.map(item => `<div class="assistant-message ${item.role === 'user' ? 'assistant-message-user' : 'assistant-message-ai'}" style="max-width:88%;margin:${item.role === 'user' ? '0 0 12px auto' : '0 auto 12px 0'};padding:12px 14px;border-radius:14px;background:${item.role === 'user' ? 'var(--ink)' : 'var(--paper2)'};color:${item.role === 'user' ? '#fff' : 'var(--ink)'};border:1px solid ${item.role === 'user' ? 'var(--ink)' : 'var(--line)'}"><div class="assistant-message-label" style="font-size:10px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;opacity:.68;margin-bottom:6px">${item.role === 'user' ? 'You' : 'Career Assistant'}</div><div class="assistant-message-body" style="font-size:13px;line-height:1.7;overflow-wrap:anywhere">${assistantMessageHtml(item.content)}</div></div>`).join('') : `<div class="dash-empty">Ask for help with your profile, interview preparation, career planning, or your next job-search step.</div>`;
+  const content = `${error ? `<div class="auth-err" role="alert">${escapeHtml(error)}</div>` : ''}<section class="account-page-intro"><div><span class="dash-kicker">PRIVATE CAREER GUIDANCE</span><h2>Career Assistant</h2><p>Get practical guidance based on the professional information you chose to share with JobForion.</p></div></section><section class="dash-card career-assistant-card"><div class="career-assistant-disclaimer" style="padding:12px 14px;border-radius:10px;background:var(--paper2);color:var(--ink2);font-size:11.5px;line-height:1.65;margin-bottom:16px">The assistant can help with career planning, profile improvement, interview preparation, and job-search strategy. It does not make hiring decisions and cannot provide legal, medical, tax, or personalized financial advice.</div><div class="career-assistant-history" aria-live="polite" style="min-height:120px;margin-bottom:18px">${bubbles}</div><form method="POST" action="/user/career-assistant" class="career-assistant-form">${csrfField(csrfToken)}<label class="pj-label" for="career-assistant-message">What would you like help with?</label><textarea id="career-assistant-message" class="pj-textarea" name="message" maxlength="2000" rows="5" required placeholder="For example: How can I strengthen my profile for backend roles?"></textarea><div style="display:flex;justify-content:flex-end;margin-top:12px"><button class="dash-btn dash-btn-primary" type="submit">Ask Career Assistant →</button></div></form></section>`;
+  return wrap('assistant', 'Career Assistant', 'Private, practical guidance for your next career move.', content, switchPill, user, ctx);
 }
 
 // ── Saved Jobs ──────────────────────────────────────────────────
