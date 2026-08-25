@@ -55,6 +55,11 @@ export const SETTINGS_DEFAULTS = {
   hot_pay_enabled: '1',
   hot_pay_threshold_usd: '150000',
 
+  // ── AI Foundation (Phase 12.1) ───────────────────────────────────
+  // The binding/model remain code/config controlled; this switch provides
+  // the minimum safe runtime kill-switch without exposing AI to the browser.
+  ai_enabled: '1',
+
   // ── Hero section customization (homepage) ─────────────────────────
   // Every field here is rendered by pages/home.js's hero block. Colors
   // are plain hex strings so they can feed straight into <input
@@ -167,6 +172,7 @@ export const CHECKBOX_SETTINGS_KEYS = [
   'feature_skill_pages',
   'feature_featured_jobs',
   'hot_pay_enabled',
+  'ai_enabled',
   'blog_auto_enabled',
   'blog_auto_publish',
   'blog_auto_delete',

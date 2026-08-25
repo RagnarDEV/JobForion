@@ -34,6 +34,7 @@ import { handleAdminMonetizationRoute } from './admin/monetization.router.js';
 import { handleAdminSystemRoute } from './admin/system.router.js';
 import { handleAdminSecurityRoute } from './admin/security.router.js';
 import { handleAdminDashboardRoute } from './admin/dashboard.router.js';
+import { handleAdminAiRoute } from './admin/ai.router.js';
 
 // Order matters only for cost/specificity, same rationale as index.js:
 // auth first (must work even before a session exists), the dashboard
@@ -52,6 +53,7 @@ const ADMIN_SUB_ROUTERS = [
   handleAdminMonetizationRoute,
   handleAdminSystemRoute,
   handleAdminSecurityRoute,
+  handleAdminAiRoute,
   handleAdminDashboardRoute,
 ];
 

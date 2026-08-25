@@ -27,6 +27,12 @@ database_id = "58e366ac-f5d4-4da5-b23f-0aa2e4208866"
  binding = "COMPANY_ASSETS"
  bucket_name = "jobforion-company-assets"
 
+# ── Workers AI (Phase 12.1) ──
+# Server-side binding only; application code accesses it as env.AI.
+[ai]
+binding = "AI"
+remote = true
+
 # ── Secrets (set these via `wrangler secret put <name>`, do NOT put them here) ──
 # ADMIN_PASSWORD      -> password to access /admin dashboard
 # CSRF_SECRET         -> pepper for the account/company forms' CSRF tokens

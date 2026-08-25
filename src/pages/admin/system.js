@@ -7,6 +7,8 @@
 
 import { ensureTable } from '../../db/schema.js';
 import { JOB_STATUS_ORDER, JOB_STATUS_META } from '../../config/constants.js';
+import { getSettings } from '../../lib/settings.js';
+import { isAiConfigured } from '../../lib/ai-service.js';
 
 // Tables considered safe/useful to show a row count for. Deliberately an
 // explicit allow-list (not "every table in sqlite_master") so a future
@@ -48,6 +50,9 @@ export async function renderSystemContent(env) {
   const salaryRemaining = salaryRemainingRows?.[0]?.c || 0;
   const emailConfigured = Boolean(env.BREVO_API_KEY && env.EMAIL_FROM_ADDRESS);
   const storageConfigured = Boolean(env.COMPANY_ASSETS);
+  const settings = await getSettings(env);
+  const aiEnabled = settings.ai_enabled !== '0';
+  const aiConfigured = isAiConfigured(env);
 
   // ── Data Integrity report (plan §29) — read-only diagnostics only.
   // Nothing here is auto-fixed or deleted; an admin decides what (if
@@ -88,6 +93,7 @@ export async function renderSystemContent(env) {
           <form method="POST" action="/api/sync" onsubmit="return confirm('Run job sync now?')"><button class="adm-btn adm-btn-primary" type="submit">↻ Sync Now</button></form>
           <form method="POST" action="/admin/cleanup" onsubmit="return confirm('Run cleanup now? This permanently deletes expired/stale jobs.')"><button class="adm-btn" type="submit" style="color:var(--coral);border-color:var(--coral)">🧹 Cleanup Now</button></form>
           <form method="POST" action="/admin/system/run-job-alerts" onsubmit="return confirm('Send job alert digests now to every due alert?')"><button class="adm-btn" type="submit">📧 Send Job Alerts Now</button></form>
+          <form method="POST" action="/admin/system/ai-smoke-test" onsubmit="return confirm('Run the protected AI foundation smoke test?')"><button class="adm-btn" type="submit" ${!aiEnabled ? 'disabled' : ''}>AI Smoke Test</button></form>
         </div>
       </div>
       <div class="adm-card">
@@ -102,6 +108,7 @@ export async function renderSystemContent(env) {
         <div class="adm-card-title">Service Status</div>
         <div class="health-row"><span class="adm-row-label"><span class="health-dot ${emailConfigured ? 'health-ok' : 'health-warn'}"></span>Transactional email</span><span class="adm-row-val">${emailConfigured ? 'Brevo ready' : 'Not configured'}</span></div>
         <div class="health-row"><span class="adm-row-label"><span class="health-dot ${storageConfigured ? 'health-ok' : 'health-warn'}"></span>Company asset storage</span><span class="adm-row-val">${storageConfigured ? 'R2 connected' : 'URL fallback'}</span></div>
+        <div class="health-row"><span class="adm-row-label"><span class="health-dot ${aiEnabled && aiConfigured ? 'health-ok' : 'health-warn'}"></span>AI foundation</span><span class="adm-row-val">${!aiEnabled ? 'Disabled' : aiConfigured ? 'Binding ready' : 'Not configured'}</span></div>
         <div style="font-size:10.5px;color:var(--ink3);margin-top:8px">Credentials and provider keys are intentionally never displayed here.</div>
       </div>
       <div class="adm-card" style="grid-column:span 2">
