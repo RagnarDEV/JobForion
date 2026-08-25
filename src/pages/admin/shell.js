@@ -53,6 +53,7 @@ const NAV_GROUPS = [
   ]},
   { title: 'System & Security', items: [
     { id: 'system', label: 'System & Maintenance', icon: iconServer, href: '/admin/system' },
+    { id: 'ai-control-center', label: 'AI Control Center', icon: iconSparkle, href: '/admin/ai-control-center' },
     { id: 'assistant', label: 'Admin Assistant', icon: iconSparkle, href: '/admin/assistant' },
     { id: 'security', label: 'Security', icon: iconShieldCheck, href: '/admin/security' },
   ]},
