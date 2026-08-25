@@ -37,6 +37,7 @@ import { getSettings } from '../lib/settings.js';
 import { getCategories } from '../lib/categories.js';
 import { getCardStyles } from '../lib/job-card-styles.js';
 import { getLogoOverrides, attachCompanyLogos } from '../lib/company-logos.js';
+import { hydrateHotPay } from '../lib/hot-pay.js';
 import { getFooterPages, getMenuPages } from '../lib/pages-cms.js';
 import { getNavButtons } from '../lib/nav-buttons.js';
 import {
@@ -79,7 +80,8 @@ async function jobsListHtml(env, jobs, categoryMap, categoryOrder, cardStyles, e
     getVerifiedCompanyNameSet(env), // same 60s-cache pattern, see lib/companies.js
   ]);
   const featuredEnabled = settings.feature_featured_jobs !== '0';
-  return `<div class="jobs-list">${hydratedJobs.map((j, i) => jobCardSSR(j, i, categoryMap, categoryOrder, cardStyles, logoOverrides, featuredEnabled, verifiedCompanySet)).join('')}</div>`;
+  const classifiedJobs = await hydrateHotPay(env, hydratedJobs, settings);
+  return `<div class="jobs-list">${classifiedJobs.map((j, i) => jobCardSSR(j, i, categoryMap, categoryOrder, cardStyles, logoOverrides, featuredEnabled, verifiedCompanySet, settings)).join('')}</div>`;
 }
 
 // ── /jobs — complete jobs directory ─────────────────────────────

@@ -18,6 +18,8 @@ import { listSessions } from '../lib/accounts/session.js';
 import { BASE_URL } from '../config/constants.js';
 import { getCardStyles } from '../lib/job-card-styles.js';
 import { getLogoOverrides, attachCompanyLogos } from '../lib/company-logos.js';
+import { hydrateHotPay } from '../lib/hot-pay.js';
+import { getSettings } from '../lib/settings.js';
 import { getVerifiedCompanyNameSet } from '../lib/companies.js';
 import {
   iconLayoutDashboard, iconUser, iconBookmark, iconBriefcase, iconBell, iconSettingsGear,
@@ -65,11 +67,12 @@ function profileUrl(value) {
 
 async function savedJobCards(env, jobs, ctx) {
   const companies = jobs.map(job => job.company).filter(Boolean);
-  const [hydratedJobs, cardStyles, logoOverrides, verifiedCompanySet] = await Promise.all([
+  const [hydratedJobs, cardStyles, logoOverrides, verifiedCompanySet, settings] = await Promise.all([
     attachCompanyLogos(env, jobs),
-    getCardStyles(env), getLogoOverrides(env, companies), getVerifiedCompanyNameSet(env),
+    getCardStyles(env), getLogoOverrides(env, companies), getVerifiedCompanyNameSet(env), getSettings(env),
   ]);
-  return hydratedJobs.map((job, index) => jobCardSSR(job, index, ctx.categories?.map, ctx.categories?.order, cardStyles, logoOverrides, true, verifiedCompanySet)).join('');
+  const classifiedJobs = await hydrateHotPay(env, hydratedJobs, settings);
+  return classifiedJobs.map((job, index) => jobCardSSR(job, index, ctx.categories?.map, ctx.categories?.order, cardStyles, logoOverrides, true, verifiedCompanySet, settings)).join('');
 }
 
 function formatAccountDate(value) {

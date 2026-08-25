@@ -8,6 +8,7 @@ import { slugify, escapeHtml } from '../lib/entities.js';
 import { iconSparkle, iconFlame, iconPin, iconMapPin, iconBadgeCheck, iconClock, iconGlobe, iconBuilding, iconArrowRight, iconBookmark } from '../assets/icons.js';
 import { DEFAULT_CARD_STYLES, buildCardStyleAttr, buildBadgeStyleAttr } from '../lib/job-card-styles.js';
 import { logoProxyPath } from '../lib/logo-proxy.js';
+import { isHotPayJob, HOT_PAY_LABEL } from '../lib/hot-pay.js';
 
 // Shared empty-Set default for jobCardSSR's optional verifiedCompanySet
 // param — a single frozen instance instead of allocating `new Set()` on
@@ -166,7 +167,7 @@ export function jobTypeCardClass(jobType) {
   return type === 'Free' ? '' : ` jt-card-${type.toLowerCase()}`;
 }
 
-export function pastelForJob(job, featuredEnabled = true) {
+export function pastelForJob(job, featuredEnabled = true, hotPaySettings = {}) {
   // Background tint is now meaningful, not decorative: only pinned and
   // high-salary jobs get a tint. "New" already has its own badge, so it
   // doesn't need to also recolor the whole card — that was just visual
@@ -177,23 +178,16 @@ export function pastelForJob(job, featuredEnabled = true) {
   // status is ever surfaced visually, so it falls through to the
   // hot/salary check below exactly as if `featured` were never set.
   if (featuredEnabled && job.featured) return 'var(--pastel-blue)';
-  if (isHotJob(job)) return 'var(--pastel-yellow)';
+  if (isHotJob(job, hotPaySettings)) return 'var(--pastel-yellow)';
   return 'var(--surface)';
 }
 
-// DATA QUALITY: single source of truth for the "$150k+" hot-job threshold,
-// reading the salary_min_usd/salary_max_usd columns computed once at sync
-// time (see lib/salary.js + db/sync.js) instead of re-parsing the raw
-// salary string with a fragile regex on every render. Falls back to the
-// old regex ONLY for rows synced before this column existed and not yet
-// backfilled (see the "Backfill Salary Data" tool on /admin/jobs) —
-// salary_max_usd === -1 is the backfill's sentinel for "checked, but
-// unparseable", which correctly counts as not-hot rather than retrying
-// the same fragile regex forever.
-export function isHotJob(job) {
-  if (typeof job.salary_max_usd === 'number' && job.salary_max_usd >= 0) return job.salary_max_usd >= 150000;
-  if (!job.salary) return false;
-  return parseInt(job.salary.replace(/\D/g, '').slice(0, 3)) >= 150;
+// Compatibility wrapper for the single HOT PAY rule in lib/hot-pay.js.
+// That rule reads normalized annual USD columns first and only parses the
+// existing raw salary/description data for legacy rows; -1 remains the
+// backfill sentinel for "checked, but unparseable" and is never HOT.
+export function isHotJob(job, hotPaySettings = {}) {
+  return isHotPayJob(job, hotPaySettings);
 }
 export function timeAgoServer(dateStr) {
   if (!dateStr) return '';
@@ -233,11 +227,11 @@ const FALLBACK_CATEGORY_META = { label: 'General', emoji: '🏷️', color: '#25
 // unchanged if it isn't updated to pass one — the badge just stays
 // hidden rather than the page breaking (plan §8: verified badge in job
 // listings/search results).
-export function jobCardSSR(job, idx, categoryMap = CATEGORY_META, categoryOrder = CATEGORY_ORDER, cardStyles = DEFAULT_CARD_STYLES, logoOverrides = {}, featuredEnabled = true, verifiedCompanySet = EMPTY_SET) {
+export function jobCardSSR(job, idx, categoryMap = CATEGORY_META, categoryOrder = CATEGORY_ORDER, cardStyles = DEFAULT_CARD_STYLES, logoOverrides = {}, featuredEnabled = true, verifiedCompanySet = EMPTY_SET, hotPaySettings = {}) {
   const catKey = catForTitleServer(job.title, categoryOrder);
   const meta = categoryMap[catKey] || FALLBACK_CATEGORY_META;
   const isNew = job.created_at && Date.now() - new Date(job.created_at).getTime() < 86400000;
-  const isHot = isHotJob(job);
+  const isHot = job.isHotPay === true || (job.isHotPay !== false && isHotJob(job, hotPaySettings));
   const logoOverride = job.company_logo_url || logoOverrides[(job.company || '').toLowerCase()] || null;
   const timeAgo = timeAgoServer(job.created_at);
   const jobType = normalizeJobType(job.job_type);
@@ -248,7 +242,7 @@ export function jobCardSSR(job, idx, categoryMap = CATEGORY_META, categoryOrder 
   // free tier specifically. Appending `;background:${bg}` after
   // buildCardStyleAttr()'s own background declaration lets the later
   // one win within the same inline style attribute.
-  const freeTint = jobType === 'Free' ? pastelForJob(job, featuredEnabled) : null;
+  const freeTint = jobType === 'Free' ? pastelForJob(job, featuredEnabled, hotPaySettings) : null;
   const cardStyleAttr = buildCardStyleAttr(jtStyle) + (freeTint ? `;background:${freeTint}` : '');
 
   // job.skills comes straight off a raw D1 row (SELECT * FROM jobs) in
@@ -269,7 +263,7 @@ export function jobCardSSR(job, idx, categoryMap = CATEGORY_META, categoryOrder 
             <span class="cat-dot"><span class="dot"></span>${meta.label}</span>
             ${featuredEnabled && job.featured ? `<span class="tag-pinned">${iconPin({ size: 11 })} Pinned</span>` : ''}
             ${isNew ? `<span class="tag-new">${iconSparkle({ size: 11 })} NEW</span>` : ''}
-            ${isHot ? `<span class="tag-hot">${iconFlame({ size: 11 })} HOT</span>` : ''}
+            ${isHot ? `<span class="tag-hot">${iconFlame({ size: 11 })} ${HOT_PAY_LABEL}</span>` : ''}
           </div>
           <div class="job-title-card">${escapeHtml(job.title)}</div>
           <div class="job-co-card">${escapeHtml(job.company)} ${verifiedCompanySet.has((job.company || '').toLowerCase()) ? `<span class="verified-ico" title="Verified Company">${iconBadgeCheck({ size: 12 })}</span>` : ''}</div>

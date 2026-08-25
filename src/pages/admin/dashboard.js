@@ -9,6 +9,8 @@ import { escapeHtml } from '../../lib/entities.js';
 import { PROVIDERS } from '../../providers/index.js';
 import { JOB_STATUS_META, JOB_STATUS_ORDER, REJECTION_REASONS } from '../../config/constants.js';
 import { getRecentActivity, ACTION_LABELS } from '../../lib/activity-log.js';
+import { getSettings } from '../../lib/settings.js';
+import { hotPayThresholdUsd } from '../../lib/hot-pay.js';
 
 function barChart(rows) {
   const max = Math.max(1, ...rows.map(r => r.count));
@@ -61,6 +63,9 @@ async function estimateDistinctSkills(env) {
 export async function renderDashboardContent(env) {
   await ensureTable(env);
   const q = (sql, ...params) => env.DB.prepare(sql).bind(...params).all();
+  const settings = await getSettings(env);
+  const hotPayEnabled = settings.hot_pay_enabled !== '0';
+  const hotPayThreshold = hotPayThresholdUsd(settings);
 
   const [{ results: totalJobsR }, { results: jobsTodayR }, { results: jobsWeekR }, { results: jobsMonthR }, { results: subsR }, { results: companiesR }, { results: hotR }, { results: usersR }, { results: articlesR }, { results: recentJobsR }, { results: recentUsersR }, { results: recentCompaniesR }] = await Promise.all([
     q("SELECT COUNT(*) c FROM jobs"),
@@ -69,7 +74,7 @@ export async function renderDashboardContent(env) {
     q("SELECT COUNT(*) c FROM jobs WHERE created_at >= datetime('now','-30 day')"),
     q("SELECT COUNT(*) c FROM subscribers"),
     q("SELECT COUNT(DISTINCT LOWER(company)) c FROM jobs WHERE company IS NOT NULL AND company != ''"),
-    q("SELECT COUNT(*) c FROM jobs WHERE salary_max_usd >= 150000"),
+    hotPayEnabled ? q("SELECT COUNT(*) c FROM jobs WHERE salary_max_usd >= ?", hotPayThreshold) : q("SELECT 0 c"),
     q("SELECT COUNT(*) c FROM users"),
     q("SELECT COUNT(*) c FROM blog_posts WHERE status = 'published'"),
     q("SELECT id, title, company, location, created_at, status FROM jobs ORDER BY id DESC LIMIT 6"),

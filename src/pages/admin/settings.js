@@ -134,6 +134,15 @@ export async function renderSettingsContent(env) {
         </div>
       </div>
 
+      <div class="adm-card">
+        <div class="adm-card-title">🔥 HOT PAY <span style="font-weight:400;color:var(--ink3);font-size:12px">— high-salary job indicator</span></div>
+        <div style="font-size:12px;color:var(--ink2);line-height:1.7;margin-bottom:14px">Jobs are classified from normalized annual USD salary data. Ranges qualify when the maximum annual USD value reaches the threshold; missing or unparseable salaries are never marked HOT PAY.</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:start">
+          ${featureFlag('hot_pay_enabled', 'Enable HOT PAY badges', s.hot_pay_enabled, 'Shows the shared HOT PAY indicator on qualifying jobs.')}
+          ${field('Annual threshold (USD)', 'hot_pay_threshold_usd', s.hot_pay_threshold_usd, { type: 'number', placeholder: SETTINGS_DEFAULTS.hot_pay_threshold_usd, hint: 'Compared against normalized annual maximum salary.' })}
+        </div>
+      </div>
+
       <div class="adm-card" style="border-color:${s.maintenance_mode === '1' ? 'rgba(255,92,122,.4)' : 'var(--border)'}">
         <div class="adm-card-title">Maintenance Mode</div>
         <label style="display:flex;align-items:center;gap:10px;margin-bottom:14px;cursor:pointer">

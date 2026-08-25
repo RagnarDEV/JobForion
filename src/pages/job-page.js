@@ -1,6 +1,6 @@
 // src/pages/job-page.js
 
-import { logoImgHtml, jobLocationHtml, remoteTagHtml, catForTitleServer, jobTypeBadgeHtml, jobTypeCardClass, normalizeJobType, isHotJob, jobCardSSR } from '../components/job-card.js';
+import { logoImgHtml, jobLocationHtml, remoteTagHtml, catForTitleServer, jobTypeBadgeHtml, jobTypeCardClass, normalizeJobType, jobCardSSR } from '../components/job-card.js';
 import { baseLayout } from '../layout/base-layout.js';
 import { slugify, escapeHtml, cleanDescription, parseSalaryRange, categorySalaryStats, companySnapshot } from '../lib/entities.js';
 import { adSlot } from '../components/ad-slot.js';
@@ -13,6 +13,7 @@ import { getAdSlotsConfig } from '../lib/ad-slots.js';
 import { getFooterPages, getMenuPages } from '../lib/pages-cms.js';
 import { getNavButtons } from '../lib/nav-buttons.js';
 import { getLogoOverrides, attachCompanyLogos } from '../lib/company-logos.js';
+import { hydrateHotPay, HOT_PAY_LABEL } from '../lib/hot-pay.js';
 import { getVerifiedCompanyNameSet, getPublicCompanyBySlug } from '../lib/companies.js';
 
 // SECURITY: JSON.stringify() does NOT escape "<", so a malicious job title
@@ -112,11 +113,13 @@ export async function renderJobPage(job, related, base, env, user = null) {
   let skills = [];
   try { skills = JSON.parse(job.skills || '[]'); } catch (e) {}
   const isNew = job.created_at && Date.now() - new Date(job.created_at).getTime() < 86400000;
-  const isHot = isHotJob(job);
   const canonical = `${base}/job/${job.id}`;
   const cleanDesc = cleanDescription(job.description);
 
   const [categories, settings, cardStyles, verifiedCompanySet] = await Promise.all([getCategories(env), getSettings(env), getCardStyles(env), getVerifiedCompanyNameSet(env)]);
+  const hotJobs = await hydrateHotPay(env, [job, ...(related || [])], settings);
+  job = hotJobs[0] || job;
+  related = hotJobs.slice(1);
   const adConfig = await getAdSlotsConfig(env);
   const footerPages = await getFooterPages(env);
   const menuPages = await getMenuPages(env);
@@ -200,7 +203,7 @@ export async function renderJobPage(job, related, base, env, user = null) {
         ${job.employment_type ? `<span class="tag tag-type">${escapeHtml(job.employment_type.replace(/_/g, ' '))}</span>` : ''}
         ${job.seniority ? `<span class="tag tag-type">${escapeHtml(job.seniority)}</span>` : ''}
         ${isNew ? `<span class="tag tag-new">${iconSparkle({ size: 11 })} NEW</span>` : ''}
-        ${isHot ? `<span class="tag tag-hot">${iconFlame({ size: 11 })} HOT</span>` : ''}
+        ${job.isHotPay ? `<span class="tag tag-hot">${iconFlame({ size: 11 })} ${HOT_PAY_LABEL}</span>` : ''}
       </div>
       ${job.salary ? `<div class="job-salary-lg">${iconDollarSign({ size: 20 })} ${escapeHtml(job.salary)}</div>` : ''}
       <div class="job-primary-actions"><button class="job-save-outline" onclick="toggleJobSave(${job.id});return false">${iconBookmark({ size: 16 })} Save</button></div>
@@ -221,7 +224,7 @@ export async function renderJobPage(job, related, base, env, user = null) {
   ${related.length ? `
     <div class="related-title" style="margin-top:24px">Similar Jobs</div>
     <div class="jobs-list">
-      ${related.map((r, i) => jobCardSSR(r, i, categoryMap, categoryOrder, cardStyles, logoOverrides, settings.feature_featured_jobs !== '0', verifiedCompanySet)).join('')}
+      ${related.map((r, i) => jobCardSSR(r, i, categoryMap, categoryOrder, cardStyles, logoOverrides, settings.feature_featured_jobs !== '0', verifiedCompanySet, settings)).join('')}
     </div>` : ''}
   ${adSlot('job-detail-footer', 'margin-top:24px', adConfig, adsEnabled)}
 </div>

@@ -23,6 +23,7 @@ import { getEnabledHomepageSections } from '../lib/homepage-sections.js';
 import { categoryIconSvg } from '../lib/category-icons.js';
 import { getVerifiedCompanyNameSet, listPublicCompanies } from '../lib/companies.js';
 import { getLogoOverrides, attachCompanyLogos } from '../lib/company-logos.js';
+import { hydrateHotPay, HOT_PAY_LABEL } from '../lib/hot-pay.js';
 import { getPosts } from '../lib/blog-cms.js';
 import { iconSparkle, iconFlame, iconPin, iconMapPin, iconBookmark, iconLink, iconArrowRight, iconBadgeCheck, iconClock, iconGlobe, iconBuilding, iconSearch, iconCheck, iconInfo, iconAlertTriangle, iconFilter, iconChevronDown, iconSliders, iconLayoutGrid, iconX, iconBell, iconFileText, iconPlus, iconBriefcase } from '../assets/icons.js';
 
@@ -90,7 +91,7 @@ export async function renderMainHTML(env, base, user = null) {
   let initialJobs = [], initialTotal = 0, totalJobsCount = 0, companiesCount = 0;
   try {
     const { results } = await env.DB.prepare(`SELECT ${JOB_LISTING_COLUMNS} FROM jobs WHERE ${PUBLIC_JOB_STATUS_SQL} ORDER BY ${JOB_TYPE_SORT_SQL} ASC, featured DESC, id DESC LIMIT 20`).all();
-    initialJobs = await attachCompanyLogos(env, results || []);
+    initialJobs = await hydrateHotPay(env, await attachCompanyLogos(env, results || []), settings);
     const { results: cr } = await env.DB.prepare(`SELECT COUNT(*) as total FROM jobs WHERE ${PUBLIC_JOB_STATUS_SQL}`).all();
     initialTotal = cr[0]?.total || 0;
     totalJobsCount = initialTotal;
@@ -146,7 +147,7 @@ export async function renderMainHTML(env, base, user = null) {
   const initialLogoOverrides = await getLogoOverrides(env, initialJobs.map(j => j.company));
   const jobLogoOverrides = { ...companyLogoMap, ...initialLogoOverrides };
   const ssrJobsHtml = initialJobs.length
-    ? initialJobs.map((j, i) => jobCardSSR(j, i, categoryMap, categoryOrder, cardStyles, jobLogoOverrides, featuredEnabled, verifiedCompanySet)).join('')
+    ? initialJobs.map((j, i) => jobCardSSR(j, i, categoryMap, categoryOrder, cardStyles, jobLogoOverrides, featuredEnabled, verifiedCompanySet, settings)).join('')
     : `<div class="loader-wrap"><div class="loader"></div></div>`;
 
   const siteName = escapeHtml(settings.site_name);
@@ -401,7 +402,7 @@ ${postJobModalHtml(categoryOrder, categoryMap)}
   <div class="toast-bar" id="toastBar"></div>
 </div>
 
-<script>window.__CATEGORY_META__=${JSON.stringify(categoryMap)};window.__CATEGORY_ORDER__=${JSON.stringify(categoryOrder)};window.__ICONS__=${JSON.stringify(CLIENT_ICONS)};window.__JOB_TYPE_META__=${JSON.stringify(JOB_TYPE_META)};window.__JOB_CARD_STYLES__=${JSON.stringify(cardStyles)};window.__FEATURES__=${JSON.stringify({ featuredJobs: featuredEnabled })};</script>
+<script>window.__CATEGORY_META__=${JSON.stringify(categoryMap)};window.__CATEGORY_ORDER__=${JSON.stringify(categoryOrder)};window.__ICONS__=${JSON.stringify(CLIENT_ICONS)};window.__JOB_TYPE_META__=${JSON.stringify(JOB_TYPE_META)};window.__JOB_CARD_STYLES__=${JSON.stringify(cardStyles)};window.__FEATURES__=${JSON.stringify({ featuredJobs: featuredEnabled })};window.__HOT_PAY_LABEL__=${JSON.stringify(HOT_PAY_LABEL)};</script>
 <script>
 const CAT_META=window.__CATEGORY_META__;
 const CAT_ORDER=window.__CATEGORY_ORDER__;
@@ -410,6 +411,7 @@ const COMPANY_LOGOS=${JSON.stringify(companyLogoMap).replace(/</g,'\\u003c')};
 const JOB_TYPE_META=window.__JOB_TYPE_META__;
 const JOB_CARD_STYLES=window.__JOB_CARD_STYLES__;
 const FEATURES=window.__FEATURES__;
+ const HOT_PAY_LABEL=window.__HOT_PAY_LABEL__||'HOT PAY';
 function normalizeJobType(t){return(t&&JOB_TYPE_META[t])?t:'Free';}
 // Mirrors lib/job-card-styles.js's buildCardStyleAttr/buildBadgeStyleAttr
 // exactly (same shadow presets, same gradient/solid logic) so cards
@@ -477,11 +479,10 @@ function catForTitle(title){
 }
 function pastelFor(j){
   if(FEATURES.featuredJobs && j.featured)return'var(--pastel-blue)';
-  if(isHot(j.salary))return'var(--pastel-yellow)';
+  if(j.isHotPay)return'var(--pastel-yellow)';
   return'var(--surface)';
 }
 function isNew(ts){if(!ts)return false;return Date.now()-new Date(ts).getTime()<86400000;}
-function isHot(sal){if(!sal)return false;return parseInt(sal.replace(/\\D/g,'').slice(0,3))>=150;}
 function getTimeAgo(date){
   const diff=Date.now()-date.getTime();
   const h=Math.floor(diff/3600000);
@@ -539,7 +540,7 @@ function esc(s){
 function renderJobsList(){
   document.getElementById('jobsList').innerHTML=jobs.map((j,idx)=>{
     const nw=isNew(j.created_at);
-    const hot=isHot(j.salary);
+    const hot=j.isHotPay===true;
     const timeAgo=j.created_at?getTimeAgo(new Date(j.created_at)):'';
     const k=catForTitle(j.title);
     const meta=CAT_META[k];
@@ -555,7 +556,7 @@ function renderJobsList(){
               <span class="cat-dot"><span class="dot"></span>\${esc(meta.label)}</span>
               \${FEATURES.featuredJobs && j.featured?'<span class="tag-pinned">'+ICONS.pin+' Pinned</span>':''}
               \${nw?'<span class="tag-new">'+ICONS.sparkle+' NEW</span>':''}
-              \${hot?'<span class="tag-hot">'+ICONS.flame+' HOT</span>':''}
+              \${hot?'<span class="tag-hot">'+ICONS.flame+' '+HOT_PAY_LABEL+'</span>':''}
             </div>
             <div class="job-title-card">\${esc(j.title)}</div>
             <div class="job-co-card">\${esc(j.company)} \${j.is_verified?'<span class="verified-ico" title="Verified Company">'+ICONS.badgeCheck+'</span>':''}</div>

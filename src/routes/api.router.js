@@ -15,6 +15,7 @@ import { saveJob, unsaveJob, listSavedJobIds } from '../lib/saved-jobs.js';
 import { recordApplication } from '../lib/applications.js';
 import { getVerifiedCompanyNameSet } from '../lib/companies.js';
 import { attachCompanyLogos } from '../lib/company-logos.js';
+import { hydrateHotPay } from '../lib/hot-pay.js';
 
 export async function handleApiRoute(url, request, env) {
   // ── Account-aware saved-jobs toggle ─────────────────────────────
@@ -264,13 +265,15 @@ export async function handleApiRoute(url, request, env) {
       orderParams.push(`%${s}%`, `%${s}%`, `%${s}%`);
     }
 
-    const [{ results }, { results: cr }, verifiedCompanySet] = await Promise.all([
+    const [{ results }, { results: cr }, verifiedCompanySet, settings] = await Promise.all([
       env.DB.prepare(`SELECT ${JOB_LISTING_COLUMNS} FROM jobs${where} ORDER BY ${orderBySql} LIMIT ${limit} OFFSET ${offset}`).bind(...params, ...orderParams).all(),
       env.DB.prepare(`SELECT COUNT(*) as total FROM jobs${where}`).bind(...params).all(),
       getVerifiedCompanyNameSet(env), // 60s-cached, see lib/companies.js — drives the "✓ Verified" badge client-side (plan §8)
+      getSettings(env),
     ]);
     const hydratedJobs = await attachCompanyLogos(env, results || []);
-    const jobsWithVerified = hydratedJobs.map(j => ({ ...j, is_verified: verifiedCompanySet.has((j.company || '').toLowerCase()) }));
+    const hotJobs = await hydrateHotPay(env, hydratedJobs, settings);
+    const jobsWithVerified = hotJobs.map(j => ({ ...j, is_verified: verifiedCompanySet.has((j.company || '').toLowerCase()) }));
     const totalCount = cr[0]?.total || 0;
     // Additive response fields (plan §25) — `jobs`/`total`/`page`/`sort`
     // are unchanged from before Stage 9, so any existing caller of this

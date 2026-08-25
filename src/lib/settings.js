@@ -49,6 +49,12 @@ export const SETTINGS_DEFAULTS = {
   sync_warmup_cap_per_provider: '15',
   sync_hard_cap_per_provider: '100',
 
+  // ── HOT PAY — high-salary job indicator ─────────────────────────────
+  // The threshold is stored as annual USD after the shared salary parser
+  // normalizes salary_min_usd/salary_max_usd at sync/backfill time.
+  hot_pay_enabled: '1',
+  hot_pay_threshold_usd: '150000',
+
   // ── Hero section customization (homepage) ─────────────────────────
   // Every field here is rendered by pages/home.js's hero block. Colors
   // are plain hex strings so they can feed straight into <input
@@ -160,6 +166,7 @@ export const CHECKBOX_SETTINGS_KEYS = [
   'feature_country_pages',
   'feature_skill_pages',
   'feature_featured_jobs',
+  'hot_pay_enabled',
   'blog_auto_enabled',
   'blog_auto_publish',
   'blog_auto_delete',
