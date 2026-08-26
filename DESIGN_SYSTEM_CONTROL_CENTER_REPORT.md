@@ -165,6 +165,12 @@
 
 النتيجة الدقيقة: **التغييرات آمنة وقابلة للدمج بعد gate النهائي، لكنها ليست إثباتًا بأن الإنتاج يحملها أو أن كل بنود الوثيقة أصبحت READY**. بعد نجاح commit/push والنشر المصرح، يجب تنفيذ smoke غير مدمر لـhomepage وjobs وadmin settings وAI Control Center وR2 asset وrobots/meta، ثم تحديث الحالة إلى READY فقط إذا نجحت تلك الخطوات.
 
+## 16. Post-audit D1 incident fix
+
+بعد تشغيل النسخة المنشورة ظهر خطأ يمنع تحميل لوحة التحكم: `D1_ERROR: no such column: metadata at offset 15`. فحص schema أثبت أن الجدول `admin_activity_log` يعرف العمود `meta`، وهو الاسم الذي تستخدمه `logActivity()` و`CREATE TABLE`، بينما كان Dashboard يطلب `metadata` مباشرة في استعلام AI activity. لم تُمسح أي بيانات ولم يتغير schema الإنتاجي؛ صُحح الاستعلام إلى `SELECT action, meta AS metadata ...` حتى يبقى منطق العرض كما هو مع استخدام العمود الفعلي في D1.
+
+أُعيد اختبار renderer عبر mock D1، وأثبت الاختبار `DASHBOARD_METADATA_UNIT=PASS` أن الاستعلام الجديد يستخدم `meta AS metadata` ولا يرسل الصيغة القديمة. كما شُغّل Worker محلي جديد، وأنشأ schema من المصدر، وأثبت PRAGMA أن الأعمدة الفعلية هي `id`, `action`, `target`, `meta`, و`created_at`، مع استجابة homepage `200`. لم يُنفذ أي أمر على قاعدة الإنتاج خلال التشخيص.
+
 ## References
 
 [1]: ./src/lib/settings.js "Central settings, defaults, validation, and Theme Resolver"

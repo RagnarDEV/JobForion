@@ -86,7 +86,7 @@ export async function renderDashboardContent(env) {
     q("SELECT id, title, company, location, created_at, status FROM jobs ORDER BY id DESC LIMIT 6"),
     q("SELECT id, email, status, email_verified, created_at FROM users ORDER BY id DESC LIMIT 6"),
     q("SELECT company, COUNT(*) c, MAX(created_at) created_at FROM jobs WHERE company IS NOT NULL AND company != '' GROUP BY LOWER(company), company ORDER BY created_at DESC LIMIT 6"),
-    q("SELECT action, metadata FROM admin_activity_log WHERE created_at >= datetime('now','-7 day') AND (action LIKE 'ai_%' OR action LIKE 'admin_%intelligence' OR action = 'admin_career_assistant' OR action = 'user_job_matching' OR action = 'user_career_assistant') ORDER BY id DESC LIMIT 1000"),
+    q("SELECT action, meta AS metadata FROM admin_activity_log WHERE created_at >= datetime('now','-7 day') AND (action LIKE 'ai_%' OR action LIKE 'admin_%intelligence' OR action = 'admin_career_assistant' OR action = 'user_job_matching' OR action = 'user_career_assistant') ORDER BY id DESC LIMIT 1000"),
   ]);
 
   const [{ results: totalVisitsR }, { results: visitsTodayR }, { results: visits7dR }, { results: uniqCountriesR }] = await Promise.all([
