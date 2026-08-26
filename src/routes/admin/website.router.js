@@ -6,11 +6,12 @@
 
 import { verifyAdminCookie, getAdminCsrfToken, verifyAdminCsrf } from '../../auth/admin-auth.js';
 import { renderAdminLogin } from '../../pages/admin.js';
-import { renderHomepageBuilderContent } from '../../pages/admin/homepage.js';
+import { renderHomepageBuilderContent, renderHomepageCustomSectionNewContent, renderHomepageCustomSectionEditContent } from '../../pages/admin/homepage.js';
 import { renderCardStylesContent } from '../../pages/admin/card-styles.js';
 import { renderSettingsContent } from '../../pages/admin/settings.js';
 import { adminShell } from '../../pages/admin/shell.js';
 import { setHomepageSectionEnabled, moveHomepageSection } from '../../lib/homepage-sections.js';
+import { getHomepageCustomSectionById, createHomepageCustomSection, updateHomepageCustomSection, setHomepageCustomSectionEnabled, moveHomepageCustomSection, deleteHomepageCustomSection } from '../../lib/homepage-custom-sections.js';
 import { updateCardStyle, resetCardStyle, CARD_STYLE_JOB_TYPES } from '../../lib/job-card-styles.js';
 import { setSettings, SETTINGS_KEYS, CHECKBOX_SETTINGS_KEYS, APPEARANCE_DEFAULTS, COMPONENT_DEFAULTS, HOMEPAGE_COPY_DEFAULTS } from '../../lib/settings.js';
 import { logActivity } from '../../lib/activity-log.js';
@@ -23,6 +24,91 @@ export async function handleAdminWebsiteRoute(url, request, env, base) {
       if (!ok) return new Response(renderAdminLogin(false), { headers: { "Content-Type": "text/html; charset=utf-8" } });
       const content = await renderHomepageBuilderContent(env);
       return new Response(adminShell('homepage', content, await getAdminCsrfToken(env, request.headers.get('Cookie'))), { headers: { "Content-Type": "text/html; charset=utf-8" } });
+    } catch (e) { return errorPage(e); }
+  }
+
+  if (url.pathname === '/admin/homepage/new' && request.method === 'GET') {
+    try {
+      const ok = await verifyAdminCookie(env, request.headers.get('Cookie'));
+      if (!ok) return new Response(renderAdminLogin(false), { headers: { "Content-Type": "text/html; charset=utf-8" } });
+      const content = renderHomepageCustomSectionNewContent();
+      return new Response(adminShell('homepage', content, await getAdminCsrfToken(env, request.headers.get('Cookie'))), { headers: { "Content-Type": "text/html; charset=utf-8" } });
+    } catch (e) { return errorPage(e); }
+  }
+
+  if (url.pathname === '/admin/homepage/edit' && request.method === 'GET') {
+    try {
+      const ok = await verifyAdminCookie(env, request.headers.get('Cookie'));
+      if (!ok) return new Response(renderAdminLogin(false), { headers: { "Content-Type": "text/html; charset=utf-8" } });
+      const section = await getHomepageCustomSectionById(env, url.searchParams.get('id') || '');
+      if (!section) return new Response(adminShell('homepage', `<div class="adm-wrap"><div class="adm-card">Homepage section not found. <a href="/admin/homepage">← Back</a></div></div>`, await getAdminCsrfToken(env, request.headers.get('Cookie'))), { headers: { "Content-Type": "text/html; charset=utf-8" } });
+      const content = renderHomepageCustomSectionEditContent(section);
+      return new Response(adminShell('homepage', content, await getAdminCsrfToken(env, request.headers.get('Cookie'))), { headers: { "Content-Type": "text/html; charset=utf-8" } });
+    } catch (e) { return errorPage(e); }
+  }
+
+  if (url.pathname === '/admin/homepage/custom/create' && request.method === 'POST') {
+    try {
+      const ok = await verifyAdminCookie(env, request.headers.get('Cookie'));
+      if (!ok) return new Response('Unauthorized', { status: 401 });
+      const form = await request.formData();
+      if (!await verifyAdminCsrf(env, request.headers.get('Cookie'), (form.get('_admin_csrf') || '').toString())) return new Response('Invalid CSRF token', { status: 403 });
+      await createHomepageCustomSection(env, { title: form.get('title'), description: form.get('description'), custom_html: form.get('custom_html'), custom_css: form.get('custom_css'), custom_js: form.get('custom_js'), enabled: form.get('enabled') === '1' });
+      await logActivity(env, 'homepage_custom_section_created', (form.get('title') || '').toString());
+      return new Response(null, { status: 302, headers: { 'Location': `/admin/homepage?flash=${encodeURIComponent('Homepage section created')}` } });
+    } catch (e) { return errorPage(e); }
+  }
+
+  if (url.pathname === '/admin/homepage/custom/update' && request.method === 'POST') {
+    try {
+      const ok = await verifyAdminCookie(env, request.headers.get('Cookie'));
+      if (!ok) return new Response('Unauthorized', { status: 401 });
+      const form = await request.formData();
+      if (!await verifyAdminCsrf(env, request.headers.get('Cookie'), (form.get('_admin_csrf') || '').toString())) return new Response('Invalid CSRF token', { status: 403 });
+      const id = (form.get('id') || '').toString();
+      await updateHomepageCustomSection(env, id, { title: form.get('title'), description: form.get('description'), custom_html: form.get('custom_html'), custom_css: form.get('custom_css'), custom_js: form.get('custom_js'), enabled: form.get('enabled') === '1' });
+      await logActivity(env, 'homepage_custom_section_updated', id);
+      return new Response(null, { status: 302, headers: { 'Location': `/admin/homepage/edit?id=${encodeURIComponent(id)}&flash=${encodeURIComponent('Homepage section saved')}` } });
+    } catch (e) { return errorPage(e); }
+  }
+
+  if (url.pathname === '/admin/homepage/custom/toggle' && request.method === 'POST') {
+    try {
+      const ok = await verifyAdminCookie(env, request.headers.get('Cookie'));
+      if (!ok) return new Response('Unauthorized', { status: 401 });
+      const form = await request.formData();
+      if (!await verifyAdminCsrf(env, request.headers.get('Cookie'), (form.get('_admin_csrf') || '').toString())) return new Response('Invalid CSRF token', { status: 403 });
+      const id = (form.get('id') || '').toString();
+      await setHomepageCustomSectionEnabled(env, id, form.get('enabled') === '1');
+      await logActivity(env, 'homepage_custom_section_toggled', id);
+      return new Response(null, { status: 302, headers: { 'Location': '/admin/homepage' } });
+    } catch (e) { return errorPage(e); }
+  }
+
+  if (url.pathname === '/admin/homepage/custom/move' && request.method === 'POST') {
+    try {
+      const ok = await verifyAdminCookie(env, request.headers.get('Cookie'));
+      if (!ok) return new Response('Unauthorized', { status: 401 });
+      const form = await request.formData();
+      if (!await verifyAdminCsrf(env, request.headers.get('Cookie'), (form.get('_admin_csrf') || '').toString())) return new Response('Invalid CSRF token', { status: 403 });
+      const id = (form.get('id') || '').toString();
+      const direction = (form.get('direction') || '').toString();
+      await moveHomepageCustomSection(env, id, direction);
+      await logActivity(env, 'homepage_custom_section_moved', `${id} → ${direction}`);
+      return new Response(null, { status: 302, headers: { 'Location': '/admin/homepage' } });
+    } catch (e) { return errorPage(e); }
+  }
+
+  if (url.pathname === '/admin/homepage/custom/delete' && request.method === 'POST') {
+    try {
+      const ok = await verifyAdminCookie(env, request.headers.get('Cookie'));
+      if (!ok) return new Response('Unauthorized', { status: 401 });
+      const form = await request.formData();
+      if (!await verifyAdminCsrf(env, request.headers.get('Cookie'), (form.get('_admin_csrf') || '').toString())) return new Response('Invalid CSRF token', { status: 403 });
+      const id = (form.get('id') || '').toString();
+      await deleteHomepageCustomSection(env, id);
+      await logActivity(env, 'homepage_custom_section_deleted', id);
+      return new Response(null, { status: 302, headers: { 'Location': `/admin/homepage?flash=${encodeURIComponent('Homepage section deleted')}` } });
     } catch (e) { return errorPage(e); }
   }
 

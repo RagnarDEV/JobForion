@@ -243,18 +243,35 @@ export async function ensureTable(env) {
   `).run();
 
   // ── Homepage Sections Builder (Admin Dashboard V2, Phase 4) ────────
-  // Mirrors ad_slots: a FIXED set of section keys defined in code (see
-  // lib/homepage-sections.js) — an admin can enable/disable and reorder
-  // existing sections, but never create a new key here (a code-less
-  // section id would be inert since no template renders it). Missing
-  // rows simply mean "use the default" (enabled, code-defined order),
-  // so an empty table renders the homepage identically to before this
-  // feature existed.
+  // The original table mirrors ad_slots: a FIXED set of section keys defined
+  // in code (see lib/homepage-sections.js), with admin-controlled visibility
+  // and order. Missing rows mean "use the default" so a fresh install keeps
+  // the original homepage. Admin-created code sections live in the separate
+  // homepage_custom_sections table below and never alter these built-ins.
   await env.DB.prepare(`
     CREATE TABLE IF NOT EXISTS homepage_sections (
       section_key TEXT PRIMARY KEY,
       enabled INTEGER DEFAULT 1,
       sort_order INTEGER DEFAULT 0
+    )
+  `).run();
+
+  // Custom Homepage Sections — admin-created blocks live in their own
+  // additive table so the original fixed homepage_sections primary key and
+  // ordering behavior remain backwards compatible. Custom code is rendered
+  // in the same opaque-origin sandboxed iframe used by the Pages CMS.
+  await env.DB.prepare(`
+    CREATE TABLE IF NOT EXISTS homepage_custom_sections (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      title TEXT NOT NULL,
+      description TEXT DEFAULT '',
+      custom_html TEXT DEFAULT '',
+      custom_css TEXT DEFAULT '',
+      custom_js TEXT DEFAULT '',
+      enabled INTEGER DEFAULT 1,
+      sort_order INTEGER DEFAULT 100,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )
   `).run();
 

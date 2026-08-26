@@ -50,6 +50,11 @@ export const ACTION_LABELS = {
   salary_backfill_run: 'Salary data backfill run',
   homepage_section_toggled: 'Homepage section enabled/disabled',
   homepage_section_moved: 'Homepage section reordered',
+  homepage_custom_section_created: 'Custom homepage section created',
+  homepage_custom_section_updated: 'Custom homepage section updated',
+  homepage_custom_section_toggled: 'Custom homepage section enabled/disabled',
+  homepage_custom_section_moved: 'Custom homepage section reordered',
+  homepage_custom_section_deleted: 'Custom homepage section deleted',
 
   // ── Accounts & Companies (Identity system) ─────────────────────
   user_registered: 'User registered',

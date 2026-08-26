@@ -20,6 +20,8 @@ import { getAdSlotsConfig } from '../lib/ad-slots.js';
 import { getFooterPages, getMenuPages } from '../lib/pages-cms.js';
 import { getNavButtons } from '../lib/nav-buttons.js';
 import { getEnabledHomepageSections } from '../lib/homepage-sections.js';
+import { getEnabledHomepageCustomSections } from '../lib/homepage-custom-sections.js';
+import { pageCodeFrameHtml } from '../components/page-code-editor.js';
 import { categoryIconSvg } from '../lib/category-icons.js';
 import { getVerifiedCompanyNameSet, listPublicCompanies } from '../lib/companies.js';
 import { getLogoOverrides, attachCompanyLogos } from '../lib/company-logos.js';
@@ -72,6 +74,7 @@ export async function renderMainHTML(env, base, user = null) {
   // fresh install or a transient D1 hiccup renders the homepage exactly
   // as it always has — never a blank or broken page.
   const enabledSections = await getEnabledHomepageSections(env);
+  const enabledCustomSections = await getEnabledHomepageCustomSections(env);
   // Hero customization (see /admin/settings → "Hero & Branding") — falls
   // back to HERO_FONT_OPTIONS[0] (Plus Jakarta Sans, the brand's display
   // font) for any unrecognized/stale value, so a bad save can never
@@ -235,7 +238,13 @@ export async function renderMainHTML(env, base, user = null) {
     cta_banner: `
     ${blogPosts.length ? `<section class="insights-strip"><div class="content-wrap"><div class="section-heading compact-heading"><div><p class="eyebrow">CAREER GUIDANCE</p><h2>${escapeHtml(homepageCopy.blogTitle)}</h2></div><a class="text-button" href="/blog">${escapeHtml(homepageCopy.blogCta)} ${iconArrowRight({ size: 14 })}</a></div><div class="insights-grid">${blogPosts.map((post, i) => `<a class="insight-tile" href="/blog/${escapeHtml(post.slug)}"><div class="insight-cover" style="${post.cover_image_url ? `background-image:url('${escapeHtml(post.cover_image_url)}')` : `background:linear-gradient(135deg,${['#6a53d8','#ed9d83','#54a9b5','#d47898'][i % 4]},#29244e)`}"><span>${escapeHtml(post.category || 'Career advice')}</span></div><strong>${escapeHtml(post.title)}</strong><small>${escapeHtml(post.excerpt || 'Practical guidance for your next remote opportunity.')}</small></a>`).join('')}</div></div></section>` : ''}<section class="trust-strip"><div class="content-wrap trust-grid"><div><span class="trust-icon">⌁</span><p><strong>100% Remote Jobs</strong><small>Work from anywhere in the world</small></p></div><div><span class="trust-icon">✓</span><p><strong>Verified companies</strong><small>Teams you can trust</small></p></div><div><span class="trust-icon">✦</span><p><strong>Daily updates</strong><small>Fresh roles added every day</small></p></div><div><span class="trust-icon">◌</span><p><strong>Free for job seekers</strong><small>Search and apply for free</small></p></div></div></section><div class="content-wrap"><div class="cta-banner"><div><div class="cta-title">Hiring remotely?</div><div class="cta-sub">Reach qualified candidates and post your job in minutes.</div></div><button class="cta-btn" onclick="openPostJobModal()">${iconPlus({ size: 13 })} Post a job</button></div></div>`,
   };
-  const homepageSectionsHtml = enabledSections.map(s => sectionHtml[s.key] || '').join('');
+  const homepageSectionsHtml = enabledSections.map(s => sectionHtml[s.key] || '').join('') + enabledCustomSections.map(s => `
+    <section class="homepage-custom-section" data-homepage-custom-section="${s.id}">
+      <div class="content-wrap homepage-custom-inner">
+        <div class="section-heading compact-heading"><div><p class="eyebrow">CUSTOM SECTION</p><h2>${escapeHtml(s.title)}</h2>${s.description ? `<p class="homepage-custom-description">${escapeHtml(s.description)}</p>` : ''}</div></div>
+        <div class="homepage-custom-code">${pageCodeFrameHtml({ html: s.custom_html || '', css: s.custom_css || '', js: s.custom_js || '', id: `homepage_custom_${s.id}`, title: s.title })}</div>
+      </div>
+    </section>`).join('');
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -276,7 +285,7 @@ ${themeCssVariables(settings)}
 .fc-strip{border-bottom:1px solid var(--border);padding:31px 24px 28px;background:var(--surface)}.fc-inner{max-width:1150px;margin:0 auto}.compact-heading{margin-bottom:15px}.section-heading{display:flex;justify-content:space-between;gap:18px;align-items:end}.eyebrow{color:var(--brand);margin:0 0 6px;font-size:9px;letter-spacing:1px;font-weight:800}.section-heading h2{font-family:'Space Grotesk',sans-serif;color:var(--ink);letter-spacing:-.8px;font-size:19px;margin:0}.text-button{display:inline-flex;align-items:center;gap:6px;color:var(--brand);font-size:10px;font-weight:800;white-space:nowrap}.text-button:hover{color:var(--brand2)}.fc-logos{display:grid;grid-template-columns:repeat(8,1fr);border:1px solid #efedf4;border-radius:10px;overflow:hidden}.company-tile{min-height:112px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;background:#fff;border-right:1px solid #efedf4;transition:all .18s}.company-tile:last-child{border-right:0}.company-tile:hover{background:#faf8ff;transform:translateY(-3px)}.company-tile strong{font-size:9px;color:#2d2944}.company-tile small{font-size:8px;color:#9692a3}.company-mark{width:31px;height:31px;display:grid;place-items:center;font-family:'Space Grotesk',sans-serif;font-size:19px;font-weight:800;color:var(--brand);border-radius:9px;background:var(--brand-soft)}.company-logo{width:38px;height:38px;border-radius:10px;background:var(--brand-soft);border:1px solid #ece8f7;display:flex;align-items:center;justify-content:center;overflow:hidden;flex-shrink:0}.company-logo img{width:100%;height:100%;object-fit:contain;padding:6px}.company-logo span{width:100%;height:100%;align-items:center;justify-content:center}
 
 /* ── CONTENT ── */
-.content-wrap{max-width:1180px;margin:0 auto;padding:24px}
+  .content-wrap{max-width:1180px;margin:0 auto;padding:24px}.homepage-custom-section{border-top:1px solid var(--border);background:var(--surface)}.homepage-custom-inner{padding-top:34px;padding-bottom:34px}.homepage-custom-description{margin:7px 0 0;color:var(--ink3);font-size:11px;line-height:1.6}.homepage-custom-code{width:100%;overflow:visible}.homepage-custom-code .page-code-frame{display:block;width:100%;max-width:none;border:0;border-radius:0;background:transparent}
 
 /* ── Categories Grid (Homepage Sections Builder, Phase 4) ── */
 .cg-title{font-family:'Plus Jakarta Sans',sans-serif;font-size:15px;font-weight:800;color:var(--ink);margin-bottom:12px}
