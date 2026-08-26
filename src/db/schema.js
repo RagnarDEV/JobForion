@@ -369,6 +369,11 @@ export async function ensureTable(env) {
   // existing pages don't suddenly appear in the menu unannounced; an
   // admin opts each one in explicitly from /admin/pages.
   await ensureColumn(env, 'pages', 'show_in_menu', 'INTEGER DEFAULT 0');
+  // Optional isolated code blocks for CMS pages. Existing body content remains
+  // unchanged; these additive columns let New Page store HTML/CSS/JS separately.
+  await ensureColumn(env, 'pages', 'custom_html', 'TEXT');
+  await ensureColumn(env, 'pages', 'custom_css', 'TEXT');
+  await ensureColumn(env, 'pages', 'custom_js', 'TEXT');
 
   // ── Custom menu buttons (see lib/nav-buttons.js) ──────────────────
   // Arbitrary extra links/buttons for the site's mobile menu (and desktop

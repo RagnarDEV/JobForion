@@ -7,6 +7,7 @@ import { escapeHtml } from '../../lib/entities.js';
 import { getPages } from '../../lib/pages-cms.js';
 import { getAllNavButtons } from '../../lib/nav-buttons.js';
 import { richEditorHtml } from '../../components/rich-editor.js';
+import { pageCodeEditorHtml } from '../../components/page-code-editor.js';
 
 const STATUS_BADGE = {
   published: '<span style="font-size:10px;font-weight:800;color:var(--green);background:rgba(15,174,121,.1);padding:2px 8px;border-radius:20px">● PUBLISHED</span>',
@@ -86,7 +87,7 @@ export async function renderPagesListContent(env) {
 }
 
 function pageForm(page, isNew) {
-  const p = page || { slug: '', title: '', meta_description: '', body: '', status: 'published', scheduled_at: '', show_in_footer: 1, show_in_menu: 0 };
+  const p = page || { slug: '', title: '', meta_description: '', body: '', custom_html: '', custom_css: '', custom_js: '', status: 'published', scheduled_at: '', show_in_footer: 1, show_in_menu: 0 };
   const action = isNew ? '/admin/pages/create' : '/admin/pages/update';
   return `
   <div class="adm-wrap" style="max-width:820px">
@@ -112,6 +113,8 @@ function pageForm(page, isNew) {
       <label style="display:block"><span style="font-size:11px;font-weight:700;color:var(--ink3);text-transform:uppercase;display:block;margin-bottom:6px">Content</span>
         ${richEditorHtml('body', p.body || '')}
       </label>
+
+      ${pageCodeEditorHtml({ html: p.custom_html || '', css: p.custom_css || '', js: p.custom_js || '' })}
 
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:14px;align-items:end">
         <label style="display:block"><span style="font-size:11px;font-weight:700;color:var(--ink3);text-transform:uppercase;display:block;margin-bottom:6px">Status</span>

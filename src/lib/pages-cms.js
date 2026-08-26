@@ -41,6 +41,8 @@ function validateSlug(slug) {
 }
 
 const EFFECTIVE_STATUS_SQL = `(status = 'published' OR (status = 'scheduled' AND scheduled_at IS NOT NULL AND scheduled_at <= datetime('now')))`;
+const PAGE_CODE_LIMITS = Object.freeze({ html: 120000, css: 60000, js: 60000 });
+const cleanCode = (value, limit) => typeof value === 'string' ? value.slice(0, limit) : '';
 
 // Public-facing: only effectively-published pages, footer-eligible ones
 // first in sort_order. `includeUnpublished` is for the admin list view.
@@ -75,7 +77,7 @@ export async function getPageBySlug(env, slug, { includeUnpublished = false } = 
   return results?.[0] || null;
 }
 
-export async function createPage(env, { slug, title, meta_description, body, status, scheduled_at, show_in_footer, show_in_menu }) {
+export async function createPage(env, { slug, title, meta_description, body, custom_html, custom_css, custom_js, status, scheduled_at, show_in_footer, show_in_menu }) {
   const cleanSlug = String(slug || '').trim().toLowerCase();
   validateSlug(cleanSlug);
   const cleanTitle = String(title || '').trim().slice(0, 150);
@@ -85,23 +87,25 @@ export async function createPage(env, { slug, title, meta_description, body, sta
   const { results } = await env.DB.prepare('SELECT COALESCE(MAX(sort_order), -1) AS m FROM pages').all();
   const nextOrder = (results?.[0]?.m ?? -1) + 1;
   await env.DB.prepare(
-    `INSERT INTO pages (slug, title, meta_description, body, status, scheduled_at, show_in_footer, show_in_menu, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO pages (slug, title, meta_description, body, custom_html, custom_css, custom_js, status, scheduled_at, show_in_footer, show_in_menu, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).bind(
     cleanSlug, cleanTitle, String(meta_description || '').slice(0, 300), String(body || ''),
+    cleanCode(custom_html, PAGE_CODE_LIMITS.html), cleanCode(custom_css, PAGE_CODE_LIMITS.css), cleanCode(custom_js, PAGE_CODE_LIMITS.js),
     ['published', 'draft', 'scheduled'].includes(status) ? status : 'draft',
     status === 'scheduled' ? (scheduled_at || null) : null,
     show_in_footer ? 1 : 0, show_in_menu ? 1 : 0, nextOrder
   ).run();
 }
 
-export async function updatePage(env, slug, { title, meta_description, body, status, scheduled_at, show_in_footer, show_in_menu }) {
+export async function updatePage(env, slug, { title, meta_description, body, custom_html, custom_css, custom_js, status, scheduled_at, show_in_footer, show_in_menu }) {
   validateSlug(slug);
   const cleanTitle = String(title || '').trim().slice(0, 150);
   if (!cleanTitle) throw new Error('Title is required.');
   await env.DB.prepare(
-    `UPDATE pages SET title = ?, meta_description = ?, body = ?, status = ?, scheduled_at = ?, show_in_footer = ?, show_in_menu = ?, updated_at = CURRENT_TIMESTAMP WHERE slug = ?`
+    `UPDATE pages SET title = ?, meta_description = ?, body = ?, custom_html = ?, custom_css = ?, custom_js = ?, status = ?, scheduled_at = ?, show_in_footer = ?, show_in_menu = ?, updated_at = CURRENT_TIMESTAMP WHERE slug = ?`
   ).bind(
     cleanTitle, String(meta_description || '').slice(0, 300), String(body || ''),
+    cleanCode(custom_html, PAGE_CODE_LIMITS.html), cleanCode(custom_css, PAGE_CODE_LIMITS.css), cleanCode(custom_js, PAGE_CODE_LIMITS.js),
     ['published', 'draft', 'scheduled'].includes(status) ? status : 'draft',
     status === 'scheduled' ? (scheduled_at || null) : null,
     show_in_footer ? 1 : 0, show_in_menu ? 1 : 0, slug

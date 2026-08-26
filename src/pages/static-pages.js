@@ -13,6 +13,7 @@ import { buildBreadcrumb } from '../lib/breadcrumbs.js';
 import { escapeHtml } from '../lib/entities.js';
 import { getSettings } from '../lib/settings.js';
 import { getCategories } from '../lib/categories.js';
+import { pageCodeFrameHtml } from '../components/page-code-editor.js';
 
 export async function renderStaticPage(slug, base, env, user = null) {
   const page = await getPageBySlug(env, slug);
@@ -24,7 +25,10 @@ export async function renderStaticPage(slug, base, env, user = null) {
   const { html: bc, jsonLd: bcSchema } = buildBreadcrumb(base, [{ name: page.title, path: `/${slug}` }]);
   const updated = page.updated_at || page.created_at;
   const dateText = updated ? new Date(updated).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : '';
-  const content = `<div class="page public-page legal-page">${PUBLIC_PAGE_CSS}${publicPageHeader({ breadcrumb: bc, eyebrow: 'LEGAL & TRUST', title: page.title, description: page.meta_description || '' })}${dateText ? `<div class="legal-updated">Last updated ${escapeHtml(dateText)}</div>` : ''}<article class="public-prose static-body" aria-label="${escapeHtml(page.title)}">${page.body}</article><div class="public-callout"><div><h2>Keep exploring JobForion</h2><p>Return to the live job directory or learn more about the platform.</p></div><a class="public-primary-link" href="/jobs">Browse jobs →</a></div></div>`;
+  const customCode = page.custom_html || page.custom_css || page.custom_js
+    ? `<section class="public-page-code" aria-label="Custom page content">${pageCodeFrameHtml({ html: page.custom_html, css: page.custom_css, js: page.custom_js, id: `page_code_${slug}`, title: page.title })}</section>`
+    : '';
+  const content = `<div class="page public-page legal-page">${PUBLIC_PAGE_CSS}${publicPageHeader({ breadcrumb: bc, eyebrow: 'LEGAL & TRUST', title: page.title, description: page.meta_description || '' })}${dateText ? `<div class="legal-updated">Last updated ${escapeHtml(dateText)}</div>` : ''}<article class="public-prose static-body" aria-label="${escapeHtml(page.title)}">${page.body}</article>${customCode}<div class="public-callout"><div><h2>Keep exploring JobForion</h2><p>Return to the live job directory or learn more about the platform.</p></div><a class="public-primary-link" href="/jobs">Browse jobs →</a></div></div>`;
   return baseLayout(`${page.title} — ${settings.site_name}`, page.meta_description || page.title, `${base}/${slug}`, '', content, bcSchema, 'index, follow', settings, categories, footerPages, menuPages, navButtons, user);
 }
 
