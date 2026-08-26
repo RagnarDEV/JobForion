@@ -20,14 +20,14 @@
 // ════════════════════════════════════════════════════════════════
 
 export const HOMEPAGE_SECTION_DEFS = [
-  { key: 'hero', label: 'Hero + Search', description: 'Headline, subtitle, and the main search box. Carries the site\u2019s primary search entry point.', required: true },
-  { key: 'featured_companies', label: 'Featured Companies Strip', description: 'Logos of the companies with the most active listings right now.', required: false },
-  { key: 'categories_grid', label: 'Browse by Category', description: 'Quick-link grid to the top job categories.', required: false },
-  { key: 'job_listing', label: 'Job Listing', description: 'The core paginated, filterable job list — the product itself.', required: true },
-  { key: 'job_alerts', label: 'Job Alerts Card', description: 'Sidebar card inviting visitors to create a personalized job alert.', required: false },
-  { key: 'career_boost', label: 'Boost Your Career Card', description: 'Sidebar card inviting job seekers to complete their profile.', required: false },
-  { key: 'career_resources', label: 'Career Resources Card', description: 'Sidebar links to advice, interview tips, skills, and countries.', required: false },
-  { key: 'career_insights', label: 'Career Insights', description: 'Blog and career guidance cards shown below the job listing.', required: false },
+  { key: 'hero', label: 'Hero + Search', description: 'Headline, subtitle, and the main search box. Carries the site\u2019s primary search entry point.', required: true, editHref: '/admin/settings#settings-hero' },
+  { key: 'featured_companies', label: 'Featured Companies Strip', description: 'Logos of the companies with the most active listings right now.', required: false, editHref: '/admin/companies' },
+  { key: 'categories_grid', label: 'Browse by Category', description: 'Quick-link grid to the top job categories.', required: false, editHref: '/admin/categories' },
+  { key: 'job_listing', label: 'Job Listing', description: 'The core paginated, filterable job list — the product itself.', required: true, editHref: '/admin/settings#settings-homepage-copy' },
+  { key: 'job_alerts', label: 'Job Alerts Card', description: 'Sidebar card inviting visitors to create a personalized job alert.', required: false, editHref: '/admin/settings#settings-homepage-copy' },
+  { key: 'career_boost', label: 'Boost Your Career Card', description: 'Sidebar card inviting job seekers to complete their profile.', required: false, editHref: '/admin/settings#settings-homepage-copy' },
+  { key: 'career_resources', label: 'Career Resources Card', description: 'Sidebar links to advice, interview tips, skills, and countries.', required: false, editHref: '/admin/settings#settings-homepage-copy' },
+  { key: 'career_insights', label: 'Career Insights', description: 'Blog and career guidance cards shown below the job listing.', required: false, editHref: '/admin/blog' },
   { key: 'trust_strip', label: 'Trust Strip', description: 'Remote jobs, verified companies, daily updates, and free-for-job-seekers claims.', required: false },
   { key: 'employer_cta', label: 'Employer CTA Banner', description: 'Hiring banner with the Post a Job action.', required: false },
 ];

@@ -58,7 +58,7 @@ export async function renderSettingsContent(env) {
         </div>
       </div>
 
-      <div class="adm-card">
+      <div class="adm-card" id="settings-hero">
         <div class="adm-card-title">🎨 Hero &amp; Branding <span style="font-weight:400;color:var(--ink3);font-size:12px">— the homepage banner (title, gradient, search bar, font)</span></div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px">
           ${field('Title — line 1', 'hero_title_line1', s.hero_title_line1, { placeholder: SETTINGS_DEFAULTS.hero_title_line1 })}
@@ -173,7 +173,7 @@ export async function renderSettingsContent(env) {
         ${featureFlag('nav_cta_enabled', 'Show navigation CTA', s.nav_cta_enabled, 'Controls the Post a job CTA in desktop and mobile navigation.')}
       </div>
 
-      <div class="adm-card">
+      <div class="adm-card" id="settings-homepage-copy">
         <div class="adm-card-title">Homepage Copy <span style="font-weight:400;color:var(--ink3);font-size:12px">— structured text only; section order and visibility remain in Homepage Builder</span></div>
         <div class="adm-form-grid">
           ${field('Featured companies title', 'homepage_featured_title', s.homepage_featured_title || HOMEPAGE_COPY_DEFAULTS.homepage_featured_title, { placeholder: HOMEPAGE_COPY_DEFAULTS.homepage_featured_title })}

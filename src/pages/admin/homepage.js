@@ -37,6 +37,7 @@ export async function renderHomepageBuilderContent(env) {
         <div class="hp-row-desc">${escapeHtml(s.description || '')}</div>
       </div>
       <div class="hp-row-toggle">
+        ${s.editHref ? `<a class="adm-btn-sm hp-edit-link" href="${s.editHref}" title="Edit section content">Edit</a>` : ''}
         ${s.required
           ? `<span class="hp-status-on">● Always On</span>`
           : `<form method="POST" action="/admin/homepage/toggle" style="display:inline">
@@ -111,7 +112,7 @@ export async function renderHomepageBuilderContent(env) {
     .hp-row-title{font-size:13px;font-weight:700;color:var(--ink);display:flex;align-items:center;gap:8px;flex-wrap:wrap}
     .hp-row-desc{font-size:11.5px;color:var(--ink3);margin-top:3px;line-height:1.5}
     .hp-required-badge{font-size:9.5px;font-weight:800;color:var(--brand);background:var(--brand-soft);padding:2px 8px;border-radius:20px;letter-spacing:.3px}
-    .hp-row-toggle{display:flex;flex-direction:column;align-items:flex-end;gap:5px;flex-shrink:0}
+    .hp-row-toggle{display:flex;flex-direction:column;align-items:flex-end;gap:5px;flex-shrink:0}.hp-edit-link{color:var(--brand)!important;text-decoration:none}
     .hp-status-on{font-size:10px;font-weight:700;color:var(--green)}
     .hp-status-off{font-size:10px;font-weight:700;color:var(--ink3)}.hp-custom-badge{font-size:9.5px;font-weight:800;color:#a85e20;background:rgba(245,166,35,.14);padding:2px 8px;border-radius:20px;letter-spacing:.3px}.hp-row-actions{display:flex;align-items:center;gap:7px;flex-shrink:0}.hp-custom-row{background:linear-gradient(90deg,rgba(99,57,230,.025),transparent)}
     @media(max-width:680px){.hp-row{flex-wrap:wrap}.hp-row-toggle,.hp-row-actions{flex-direction:row;align-items:center;margin-left:40px}.hp-card-heading{padding-left:12px}}
