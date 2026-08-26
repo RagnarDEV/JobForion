@@ -6,11 +6,11 @@
 
 import { verifyAdminCookie, getAdminCsrfToken, verifyAdminCsrf } from '../../auth/admin-auth.js';
 import { renderAdminLogin } from '../../pages/admin.js';
-import { renderHomepageBuilderContent, renderHomepageCustomSectionNewContent, renderHomepageCustomSectionEditContent } from '../../pages/admin/homepage.js';
+import { renderHomepageBuilderContent, renderHomepageCustomSectionNewContent, renderHomepageCustomSectionEditContent, renderHomepageSectionCodeEditContent } from '../../pages/admin/homepage.js';
 import { renderCardStylesContent } from '../../pages/admin/card-styles.js';
 import { renderSettingsContent } from '../../pages/admin/settings.js';
 import { adminShell } from '../../pages/admin/shell.js';
-import { setHomepageSectionEnabled, moveHomepageSection } from '../../lib/homepage-sections.js';
+import { setHomepageSectionEnabled, moveHomepageSection, getHomepageSectionByKey, updateHomepageSectionCode, clearHomepageSectionCode } from '../../lib/homepage-sections.js';
 import { getHomepageCustomSectionById, createHomepageCustomSection, updateHomepageCustomSection, setHomepageCustomSectionEnabled, moveHomepageCustomSection, deleteHomepageCustomSection } from '../../lib/homepage-custom-sections.js';
 import { updateCardStyle, resetCardStyle, CARD_STYLE_JOB_TYPES } from '../../lib/job-card-styles.js';
 import { setSettings, SETTINGS_KEYS, CHECKBOX_SETTINGS_KEYS, APPEARANCE_DEFAULTS, COMPONENT_DEFAULTS, HOMEPAGE_COPY_DEFAULTS } from '../../lib/settings.js';
@@ -40,10 +40,35 @@ export async function handleAdminWebsiteRoute(url, request, env, base) {
     try {
       const ok = await verifyAdminCookie(env, request.headers.get('Cookie'));
       if (!ok) return new Response(renderAdminLogin(false), { headers: { "Content-Type": "text/html; charset=utf-8" } });
+      const key = url.searchParams.get('key') || '';
+      if (key) {
+        const section = await getHomepageSectionByKey(env, key);
+        if (!section) return new Response(adminShell('homepage', `<div class="adm-wrap"><div class="adm-card">Homepage section not found. <a href="/admin/homepage">← Back</a></div></div>`, await getAdminCsrfToken(env, request.headers.get('Cookie'))), { headers: { "Content-Type": "text/html; charset=utf-8" } });
+        const content = renderHomepageSectionCodeEditContent(section);
+        return new Response(adminShell('homepage', content, await getAdminCsrfToken(env, request.headers.get('Cookie'))), { headers: { "Content-Type": "text/html; charset=utf-8" } });
+      }
       const section = await getHomepageCustomSectionById(env, url.searchParams.get('id') || '');
       if (!section) return new Response(adminShell('homepage', `<div class="adm-wrap"><div class="adm-card">Homepage section not found. <a href="/admin/homepage">← Back</a></div></div>`, await getAdminCsrfToken(env, request.headers.get('Cookie'))), { headers: { "Content-Type": "text/html; charset=utf-8" } });
       const content = renderHomepageCustomSectionEditContent(section);
       return new Response(adminShell('homepage', content, await getAdminCsrfToken(env, request.headers.get('Cookie'))), { headers: { "Content-Type": "text/html; charset=utf-8" } });
+    } catch (e) { return errorPage(e); }
+  }
+
+  if ((url.pathname === '/admin/homepage/update-code' || url.pathname === '/admin/homepage/clear-code') && request.method === 'POST') {
+    try {
+      const ok = await verifyAdminCookie(env, request.headers.get('Cookie'));
+      if (!ok) return new Response('Unauthorized', { status: 401 });
+      const form = await request.formData();
+      if (!await verifyAdminCsrf(env, request.headers.get('Cookie'), (form.get('_admin_csrf') || '').toString())) return new Response('Invalid CSRF token', { status: 403 });
+      const key = (form.get('key') || '').toString();
+      if (url.pathname === '/admin/homepage/clear-code') {
+        await clearHomepageSectionCode(env, key);
+        await logActivity(env, 'homepage_section_code_cleared', key);
+      } else {
+        await updateHomepageSectionCode(env, key, { custom_html: form.get('custom_html'), custom_css: form.get('custom_css'), custom_js: form.get('custom_js') });
+        await logActivity(env, 'homepage_section_code_updated', key);
+      }
+      return new Response(null, { status: 302, headers: { 'Location': `/admin/homepage/edit?key=${encodeURIComponent(key)}&flash=${encodeURIComponent('Section code saved')}` } });
     } catch (e) { return errorPage(e); }
   }
 

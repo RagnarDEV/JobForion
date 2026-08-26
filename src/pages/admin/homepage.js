@@ -37,7 +37,7 @@ export async function renderHomepageBuilderContent(env) {
         <div class="hp-row-desc">${escapeHtml(s.description || '')}</div>
       </div>
       <div class="hp-row-toggle">
-        ${s.editHref ? `<a class="adm-btn-sm hp-edit-link" href="${s.editHref}" title="Edit section content">Edit</a>` : ''}
+        <a class="adm-btn-sm hp-edit-link" href="/admin/homepage/edit?key=${encodeURIComponent(s.key)}" title="Edit section HTML, CSS, and JavaScript">Edit Code</a>
         ${s.required
           ? `<span class="hp-status-on">● Always On</span>`
           : `<form method="POST" action="/admin/homepage/toggle" style="display:inline">
@@ -142,4 +142,23 @@ export function renderHomepageCustomSectionNewContent() {
 
 export function renderHomepageCustomSectionEditContent(section) {
   return customSectionForm(section, false);
+}
+
+
+function homepageSectionCodeForm(section) {
+  const key = String(section?.key || '');
+  return `
+  <div class="adm-wrap" style="max-width:980px">
+    <div class="adm-hdr"><div><div class="adm-title">✏️ Edit Code — ${escapeHtml(section?.label || key)}</div><div class="adm-sub">Edit this existing Homepage section directly. Empty code fields keep the original JobForion renderer for this section.</div></div><a href="/admin/homepage" class="adm-btn">← Back</a></div>
+    <form method="POST" action="/admin/homepage/update-code" class="adm-card" style="display:flex;flex-direction:column;gap:14px">
+      <input type="hidden" name="key" value="${escapeHtml(key)}">
+      ${pageCodeEditorHtml({ html: section?.custom_html || '', css: section?.custom_css || '', js: section?.custom_js || '' })}
+      <div class="hp-code-warning">When any code field is filled, it replaces the selected built-in section on the public homepage. JavaScript remains isolated inside the sandboxed frame and cannot access the parent page or JobForion session.</div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap"><button class="adm-btn adm-btn-primary" type="submit">Save Section Code</button><button class="adm-btn" type="submit" formaction="/admin/homepage/clear-code" formmethod="POST" onclick="return confirm('Clear custom code and restore the original section?')">Restore Original Section</button><a href="/admin/homepage" class="adm-btn">Cancel</a></div>
+    </form>
+  </div><style>.hp-code-warning{padding:11px 13px;border:1px solid rgba(245,166,35,.35);border-radius:9px;background:rgba(245,166,35,.08);color:var(--ink2);font-size:11px;line-height:1.6}</style>`;
+}
+
+export function renderHomepageSectionCodeEditContent(section) {
+  return homepageSectionCodeForm(section);
 }

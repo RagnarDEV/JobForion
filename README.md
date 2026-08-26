@@ -143,7 +143,7 @@ git diff --check
 
 ## صفحات CMS وCode Blocks المعزولة
 
-تدعم صفحة **New Page** (`/admin/pages/new`) الآن ثلاثة حقول اختيارية منفصلة: `custom_html` و`custom_css` و`custom_js`. تُحفظ هذه الحقول في أعمدة additive داخل جدول `pages`، لذلك تبقى الصفحات القديمة وعمود `body` متوافقين دون migration تدميرية. كما يدعم **Homepage Sections** (`/admin/homepage`) التحكم في جميع كتل Homepage الحالية، مثل Hero وFeatured Companies وCategories وJob Listing وبطاقات Job Alerts وBoost Your Career وCareer Resources وCareer Insights وTrust Strip وEmployer CTA، إضافة إلى إنشاء أقسام مخصصة جديدة وتعديلها وتعطيلها وترتيبها وحذفها، مع عنوان ووصف وحقول الكود نفسها.
+تدعم صفحة **New Page** (`/admin/pages/new`) الآن ثلاثة حقول اختيارية منفصلة: `custom_html` و`custom_css` و`custom_js`. تُحفظ هذه الحقول في أعمدة additive داخل جدول `pages`، لذلك تبقى الصفحات القديمة وعمود `body` متوافقين دون migration تدميرية. كما يدعم **Homepage Sections** (`/admin/homepage`) التحكم في جميع كتل Homepage الحالية، مثل Hero وFeatured Companies وCategories وJob Listing وبطاقات Job Alerts وBoost Your Career وCareer Resources وCareer Insights وTrust Strip وEmployer CTA. يفتح زر **Edit Code** لكل قسم محرر HTML/CSS/JavaScript مباشرًا داخل Homepage Sections، ويمكن حفظ التعديل أو استخدام **Restore Original Section** للعودة إلى renderer الأصلي. كما يمكن إنشاء أقسام مخصصة جديدة وتعديلها وتعطيلها وترتيبها وحذفها، مع عنوان ووصف وحقول الكود نفسها.
 
 يُعرض الكود المخصص في معاينة الإدارة وفي الصفحة العامة داخل `iframe` يحمل `sandbox="allow-scripts allow-forms"` ومن دون `allow-same-origin`. يمكن لـJavaScript العمل داخل مستند الصفحة المخصص، لكنه لا يستطيع الوصول إلى cookies أو DOM الصفحة الرئيسية أو لوحة الإدارة. لا تُوضع الأسرار أو رموز الجلسات داخل هذا المحتوى العام، ويظل تحريره محصورًا بالمشرف المصادق عليه.
 

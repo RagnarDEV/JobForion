@@ -179,10 +179,19 @@ export async function renderMainHTML(env, base, user = null) {
   // `hero` and `job_listing` are `required: true` in
   // lib/homepage-sections.js and therefore always present — everything
   // else only renders if an admin has switched it on.
+  const homepageSectionCodeMap = Object.fromEntries(enabledSections.map(section => [section.key, section]));
+  function homepageCodeOverride(key, fallback, context = 'section') {
+    const section = homepageSectionCodeMap[key];
+    if (!section || !(section.custom_html || section.custom_css || section.custom_js)) return fallback;
+    const frame = pageCodeFrameHtml({ html: section.custom_html, css: section.custom_css, js: section.custom_js, id: `homepage_builtin_${key}`, title: section.label });
+    if (context === 'sidebar') return `<div class="homepage-code-sidebar-override side-card">${frame}</div>`;
+    return `<section class="homepage-code-override homepage-code-override-${key}"><div class="content-wrap homepage-code-override-inner">${frame}</div></section>`;
+  }
+
   const sidebarSectionHtml = {
-    job_alerts: `<div class="side-card alert-card"><div class="side-card-icon">${iconBell({ size: 18 })}</div><h3>${escapeHtml(homepageCopy.alertsTitle)}</h3><p>${escapeHtml(homepageCopy.alertsText)}</p><a class="side-button" href="${user ? '/user/job-alerts' : '/register'}">${escapeHtml(homepageCopy.alertsCta)} ${iconArrowRight({ size: 13 })}</a></div>`,
-    career_boost: `<div class="side-card resume-card"><div><p class="eyebrow">STAND OUT</p><h3>${escapeHtml(homepageCopy.careerTitle)}</h3><p>${escapeHtml(homepageCopy.careerText)}</p><a class="side-button light" href="${user ? '/user/profile' : '/register'}">${escapeHtml(homepageCopy.careerCta)} ${iconArrowRight({ size: 13 })}</a></div><div class="resume-orbit"><span></span><span></span><span></span></div></div>`,
-    career_resources: `<div class="side-card resources-card"><h3>${escapeHtml(homepageCopy.resourcesTitle)}</h3><a href="/blog">${iconFileText({ size: 14 })}<span>Career advice</span>${iconArrowRight({ size: 13 })}</a><a href="/blog">${iconFileText({ size: 14 })}<span>Interview tips</span>${iconArrowRight({ size: 13 })}</a><a href="/skills">${iconFileText({ size: 14 })}<span>Browse by skill</span>${iconArrowRight({ size: 13 })}</a><a href="/countries">${iconFileText({ size: 14 })}<span>Remote by country</span>${iconArrowRight({ size: 13 })}</a></div>`,
+    job_alerts: homepageCodeOverride('job_alerts', `<div class="side-card alert-card"><div class="side-card-icon">${iconBell({ size: 18 })}</div><h3>${escapeHtml(homepageCopy.alertsTitle)}</h3><p>${escapeHtml(homepageCopy.alertsText)}</p><a class="side-button" href="${user ? '/user/job-alerts' : '/register'}">${escapeHtml(homepageCopy.alertsCta)} ${iconArrowRight({ size: 13 })}</a></div>`, 'sidebar'),
+    career_boost: homepageCodeOverride('career_boost', `<div class="side-card resume-card"><div><p class="eyebrow">STAND OUT</p><h3>${escapeHtml(homepageCopy.careerTitle)}</h3><p>${escapeHtml(homepageCopy.careerText)}</p><a class="side-button light" href="${user ? '/user/profile' : '/register'}">${escapeHtml(homepageCopy.careerCta)} ${iconArrowRight({ size: 13 })}</a></div><div class="resume-orbit"><span></span><span></span><span></span></div></div>`, 'sidebar'),
+    career_resources: homepageCodeOverride('career_resources', `<div class="side-card resources-card"><h3>${escapeHtml(homepageCopy.resourcesTitle)}</h3><a href="/blog">${iconFileText({ size: 14 })}<span>Career advice</span>${iconArrowRight({ size: 13 })}</a><a href="/blog">${iconFileText({ size: 14 })}<span>Interview tips</span>${iconArrowRight({ size: 13 })}</a><a href="/skills">${iconFileText({ size: 14 })}<span>Browse by skill</span>${iconArrowRight({ size: 13 })}</a><a href="/countries">${iconFileText({ size: 14 })}<span>Remote by country</span>${iconArrowRight({ size: 13 })}</a></div>`, 'sidebar'),
   };
   const sidebarSectionsHtml = enabledSections.filter(s => sidebarSectionHtml[s.key]).map(s => sidebarSectionHtml[s.key]).join('');
 
@@ -244,7 +253,9 @@ export async function renderMainHTML(env, base, user = null) {
 
     employer_cta: `<div class="content-wrap"><div class="cta-banner"><div><div class="cta-title">Hiring remotely?</div><div class="cta-sub">Reach qualified candidates and post your job in minutes.</div></div><button class="cta-btn" onclick="openPostJobModal()">${iconPlus({ size: 13 })} Post a job</button></div></div>`,
   };
-  const homepageSectionsHtml = enabledSections.map(s => sectionHtml[s.key] || '').join('') + enabledCustomSections.map(s => `
+  const renderedSectionHtml = { ...sectionHtml };
+  for (const key of ['hero', 'featured_companies', 'categories_grid', 'job_listing', 'career_insights', 'trust_strip', 'employer_cta']) renderedSectionHtml[key] = homepageCodeOverride(key, sectionHtml[key] || '');
+  const homepageSectionsHtml = enabledSections.map(s => renderedSectionHtml[s.key] || '').join('') + enabledCustomSections.map(s => `
     <section class="homepage-custom-section" data-homepage-custom-section="${s.id}">
       <div class="content-wrap homepage-custom-inner">
         <div class="section-heading compact-heading"><div><p class="eyebrow">CUSTOM SECTION</p><h2>${escapeHtml(s.title)}</h2>${s.description ? `<p class="homepage-custom-description">${escapeHtml(s.description)}</p>` : ''}</div></div>

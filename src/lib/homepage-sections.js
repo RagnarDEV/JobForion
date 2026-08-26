@@ -20,14 +20,14 @@
 // ════════════════════════════════════════════════════════════════
 
 export const HOMEPAGE_SECTION_DEFS = [
-  { key: 'hero', label: 'Hero + Search', description: 'Headline, subtitle, and the main search box. Carries the site\u2019s primary search entry point.', required: true, editHref: '/admin/settings#settings-hero' },
-  { key: 'featured_companies', label: 'Featured Companies Strip', description: 'Logos of the companies with the most active listings right now.', required: false, editHref: '/admin/companies' },
-  { key: 'categories_grid', label: 'Browse by Category', description: 'Quick-link grid to the top job categories.', required: false, editHref: '/admin/categories' },
-  { key: 'job_listing', label: 'Job Listing', description: 'The core paginated, filterable job list — the product itself.', required: true, editHref: '/admin/settings#settings-homepage-copy' },
-  { key: 'job_alerts', label: 'Job Alerts Card', description: 'Sidebar card inviting visitors to create a personalized job alert.', required: false, editHref: '/admin/settings#settings-homepage-copy' },
-  { key: 'career_boost', label: 'Boost Your Career Card', description: 'Sidebar card inviting job seekers to complete their profile.', required: false, editHref: '/admin/settings#settings-homepage-copy' },
-  { key: 'career_resources', label: 'Career Resources Card', description: 'Sidebar links to advice, interview tips, skills, and countries.', required: false, editHref: '/admin/settings#settings-homepage-copy' },
-  { key: 'career_insights', label: 'Career Insights', description: 'Blog and career guidance cards shown below the job listing.', required: false, editHref: '/admin/blog' },
+  { key: 'hero', label: 'Hero + Search', description: 'Headline, subtitle, and the main search box. Carries the site\u2019s primary search entry point.', required: true },
+  { key: 'featured_companies', label: 'Featured Companies Strip', description: 'Logos of the companies with the most active listings right now.', required: false },
+  { key: 'categories_grid', label: 'Browse by Category', description: 'Quick-link grid to the top job categories.', required: false },
+  { key: 'job_listing', label: 'Job Listing', description: 'The core paginated, filterable job list — the product itself.', required: true },
+  { key: 'job_alerts', label: 'Job Alerts Card', description: 'Sidebar card inviting visitors to create a personalized job alert.', required: false },
+  { key: 'career_boost', label: 'Boost Your Career Card', description: 'Sidebar card inviting job seekers to complete their profile.', required: false },
+  { key: 'career_resources', label: 'Career Resources Card', description: 'Sidebar links to advice, interview tips, skills, and countries.', required: false },
+  { key: 'career_insights', label: 'Career Insights', description: 'Blog and career guidance cards shown below the job listing.', required: false },
   { key: 'trust_strip', label: 'Trust Strip', description: 'Remote jobs, verified companies, daily updates, and free-for-job-seekers claims.', required: false },
   { key: 'employer_cta', label: 'Employer CTA Banner', description: 'Hiring banner with the Post a Job action.', required: false },
 ];
@@ -37,13 +37,16 @@ const LEGACY_SECTION_ALIASES = Object.freeze({
   cta_banner: ['career_insights', 'trust_strip', 'employer_cta'],
 });
 
+export const HOMEPAGE_SECTION_CODE_LIMITS = Object.freeze({ html: 120000, css: 60000, js: 60000 });
+const cleanCode = (value, limit) => typeof value === 'string' ? value.slice(0, limit) : '';
+
 const TTL_MS = 60000; // same 60s per-isolate cache convention as lib/ad-slots.js and lib/settings.js
 let cache = null; // { sections, loadedAt }
 
 async function loadFromDb(env) {
   const map = {};
   for (const def of HOMEPAGE_SECTION_DEFS) {
-    map[def.key] = { ...def, enabled: true, sort_order: DEFAULT_ORDER[def.key] };
+    map[def.key] = { ...def, enabled: true, sort_order: DEFAULT_ORDER[def.key], custom_html: '', custom_css: '', custom_js: '' };
   }
   try {
     const { results } = await env.DB.prepare('SELECT * FROM homepage_sections').all();
@@ -52,7 +55,12 @@ async function loadFromDb(env) {
       for (const key of keys) {
         if (!map[key]) continue; // stale row for a removed section — ignore, never crash
         map[key].enabled = !!row.enabled;
-        if (key === row.section_key) map[key].sort_order = row.sort_order;
+        if (key === row.section_key) {
+          map[key].sort_order = row.sort_order;
+          map[key].custom_html = cleanCode(row.custom_html, HOMEPAGE_SECTION_CODE_LIMITS.html);
+          map[key].custom_css = cleanCode(row.custom_css, HOMEPAGE_SECTION_CODE_LIMITS.css);
+          map[key].custom_js = cleanCode(row.custom_js, HOMEPAGE_SECTION_CODE_LIMITS.js);
+        }
       }
     }
   } catch (e) {
@@ -75,6 +83,34 @@ export async function getAllHomepageSections(env) {
 // decide what to render and in what order.
 export async function getEnabledHomepageSections(env) {
   return (await getAllHomepageSections(env)).filter(s => s.enabled);
+}
+
+export async function getHomepageSectionByKey(env, key) {
+  return (await getAllHomepageSections(env)).find(section => section.key === key) || null;
+}
+
+export async function updateHomepageSectionCode(env, key, { custom_html, custom_css, custom_js }) {
+  const def = HOMEPAGE_SECTION_DEFS.find(section => section.key === key);
+  if (!def) throw new Error(`Unknown homepage section: ${key}`);
+  const current = await getAllHomepageSections(env);
+  const existing = current.find(section => section.key === key);
+  await env.DB.prepare(
+    `INSERT INTO homepage_sections (section_key, enabled, sort_order, custom_html, custom_css, custom_js)
+     VALUES (?, ?, ?, ?, ?, ?)
+     ON CONFLICT(section_key) DO UPDATE SET custom_html = excluded.custom_html, custom_css = excluded.custom_css, custom_js = excluded.custom_js`
+  ).bind(
+    key,
+    existing?.enabled ? 1 : 0,
+    existing?.sort_order ?? DEFAULT_ORDER[key],
+    cleanCode(custom_html, HOMEPAGE_SECTION_CODE_LIMITS.html),
+    cleanCode(custom_css, HOMEPAGE_SECTION_CODE_LIMITS.css),
+    cleanCode(custom_js, HOMEPAGE_SECTION_CODE_LIMITS.js),
+  ).run();
+  cache = null;
+}
+
+export async function clearHomepageSectionCode(env, key) {
+  return updateHomepageSectionCode(env, key, { custom_html: '', custom_css: '', custom_js: '' });
 }
 
 export async function setHomepageSectionEnabled(env, key, enabled) {

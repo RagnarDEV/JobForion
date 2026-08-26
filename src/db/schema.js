@@ -255,6 +255,9 @@ export async function ensureTable(env) {
       sort_order INTEGER DEFAULT 0
     )
   `).run();
+  await ensureColumn(env, 'homepage_sections', 'custom_html', 'TEXT');
+  await ensureColumn(env, 'homepage_sections', 'custom_css', 'TEXT');
+  await ensureColumn(env, 'homepage_sections', 'custom_js', 'TEXT');
 
   // Custom Homepage Sections — admin-created blocks live in their own
   // additive table so the original fixed homepage_sections primary key and
