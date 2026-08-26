@@ -10,7 +10,7 @@ import { getSessionUser, destroyAllSessions, destroySessionById, destroySession 
 import { getCsrfToken, verifyCsrf } from '../lib/accounts/csrf.js';
 import { checkRateLimit } from '../lib/rate-limit.js';
 import { logActivity } from '../lib/activity-log.js';
-import { verifyCredentials, updateUserPassword, softDeleteUser, updateUserProfile, updateUserEmail, setEmailNotificationsEnabled, findUserByEmail } from '../lib/users.js';
+import { verifyCredentials, updateUserPassword, softDeleteUser, updateUserProfile, updateUserEmail, setEmailNotificationsEnabled, findUserByEmail, getUserProfile } from '../lib/users.js';
 import { isPasswordStrongEnough } from '../lib/accounts/password.js';
 import { generateToken, sha256Hex } from '../lib/accounts/tokens.js';
 import { sendEmail, verificationEmailContent } from '../lib/accounts/email.js';
