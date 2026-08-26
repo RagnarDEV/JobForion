@@ -1,10 +1,9 @@
 // src/pages/admin/homepage.js
-// Homepage Sections Builder — the admin-facing half of
-// lib/homepage-sections.js. Deliberately simple: a sorted list of cards,
-// each with an Enable/Disable button and Up/Down reorder buttons. No
-// drag-and-drop (unreliable on mobile — see the project's "Mobile First"
-// rule) and no free-form section creation (see lib/homepage-sections.js
-// header for why that would be a parallel, unsupported system).
+// Homepage Sections Builder — the admin-facing half of the built-in
+// section controls plus the custom-section editor. Deliberately simple: a
+// sorted list of cards, enable/disable and Up/Down controls, and a dedicated
+// New/Edit form for isolated HTML/CSS/JavaScript blocks. No drag-and-drop
+// (unreliable on mobile — see the project's "Mobile First" rule).
 
 import { escapeHtml } from '../../lib/entities.js';
 import { getAllHomepageSections } from '../../lib/homepage-sections.js';
@@ -82,7 +81,7 @@ export async function renderHomepageBuilderContent(env) {
         <div class="adm-title">🏠 Homepage Sections</div>
         <div class="adm-sub">Enable, disable, reorder, create, and edit the blocks that make up the homepage — changes are live immediately</div>
       </div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap"><a href="/admin/homepage/new" class="adm-btn adm-btn-primary">+ New Section</a><a href="/admin/pages" class="adm-btn">Manage Pages</a><a href="/" target="_blank" class="adm-btn">View Live Homepage →</a></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap"><a href="/admin/homepage/new" class="adm-btn adm-btn-primary">+ New Section</a><a href="/" target="_blank" class="adm-btn">View Live Homepage →</a></div>
     </div>
 
     <div class="adm-card" style="margin-bottom:14px">

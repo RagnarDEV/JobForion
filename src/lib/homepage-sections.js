@@ -8,30 +8,34 @@
 // للتفعيل/التعطيل وإعادة الترتيب."
 //
 // Mirrors the exact same fixed-set + D1-override + in-memory-cache
-// pattern as lib/ad-slots.js: SECTION KEYS are fixed in code (a new key
-// here does nothing unless src/pages/home.js is also taught to render
-// it), but each existing section's enabled state and position are
-// fully admin-controlled and persisted in the `homepage_sections` table.
+// pattern as lib/ad-slots.js: SECTION KEYS are fixed in code and each
+// rendered Homepage block has an explicit definition here. Visibility and
+// order are admin-controlled and persisted in `homepage_sections`; custom
+// code blocks are managed separately in homepage-custom-sections.js.
 //
-// AUDIT NOTE (honesty over completeness): the homepage in this codebase
-// is a single cohesive SPA render, not a set of independently-designed
-// widgets. Rather than inventing sections that don't really exist
-// ("Countries", generic "Latest Jobs" separate from the main listing,
-// etc.), this models the site's ACTUAL blocks plus two small, genuinely
-// new, low-risk additions (Categories grid, Post-a-Job CTA banner) that
-// make the builder meaningfully useful. See home.js for how each
-// section's HTML is produced.
+// AUDIT NOTE: the homepage is a cohesive SSR/SPA render, so definitions
+// below map to actual visible blocks in home.js rather than invented routes.
+// The job listing owns the search/filter interaction, while the sidebar cards
+// are split into independently controllable blocks at render time.
 // ════════════════════════════════════════════════════════════════
 
 export const HOMEPAGE_SECTION_DEFS = [
   { key: 'hero', label: 'Hero + Search', description: 'Headline, subtitle, and the main search box. Carries the site\u2019s primary search entry point.', required: true },
   { key: 'featured_companies', label: 'Featured Companies Strip', description: 'Logos of the companies with the most active listings right now.', required: false },
   { key: 'categories_grid', label: 'Browse by Category', description: 'Quick-link grid to the top job categories.', required: false },
-  { key: 'job_listing', label: 'Job Listing', description: 'The core paginated, filterable job list \u2014 the product itself.', required: true },
-  { key: 'cta_banner', label: 'Post a Job CTA', description: 'Banner prompting employers to post a job.', required: false },
+  { key: 'job_listing', label: 'Job Listing', description: 'The core paginated, filterable job list — the product itself.', required: true },
+  { key: 'job_alerts', label: 'Job Alerts Card', description: 'Sidebar card inviting visitors to create a personalized job alert.', required: false },
+  { key: 'career_boost', label: 'Boost Your Career Card', description: 'Sidebar card inviting job seekers to complete their profile.', required: false },
+  { key: 'career_resources', label: 'Career Resources Card', description: 'Sidebar links to advice, interview tips, skills, and countries.', required: false },
+  { key: 'career_insights', label: 'Career Insights', description: 'Blog and career guidance cards shown below the job listing.', required: false },
+  { key: 'trust_strip', label: 'Trust Strip', description: 'Remote jobs, verified companies, daily updates, and free-for-job-seekers claims.', required: false },
+  { key: 'employer_cta', label: 'Employer CTA Banner', description: 'Hiring banner with the Post a Job action.', required: false },
 ];
 
 const DEFAULT_ORDER = Object.fromEntries(HOMEPAGE_SECTION_DEFS.map((s, i) => [s.key, i]));
+const LEGACY_SECTION_ALIASES = Object.freeze({
+  cta_banner: ['career_insights', 'trust_strip', 'employer_cta'],
+});
 
 const TTL_MS = 60000; // same 60s per-isolate cache convention as lib/ad-slots.js and lib/settings.js
 let cache = null; // { sections, loadedAt }
@@ -44,9 +48,12 @@ async function loadFromDb(env) {
   try {
     const { results } = await env.DB.prepare('SELECT * FROM homepage_sections').all();
     for (const row of results || []) {
-      if (!map[row.section_key]) continue; // stale row for a section removed from code — ignore, never crash
-      map[row.section_key].enabled = !!row.enabled;
-      map[row.section_key].sort_order = row.sort_order;
+      const keys = map[row.section_key] ? [row.section_key] : (LEGACY_SECTION_ALIASES[row.section_key] || []);
+      for (const key of keys) {
+        if (!map[key]) continue; // stale row for a removed section — ignore, never crash
+        map[key].enabled = !!row.enabled;
+        if (key === row.section_key) map[key].sort_order = row.sort_order;
+      }
     }
   } catch (e) {
     // table not created yet on a very first cold request — defaults

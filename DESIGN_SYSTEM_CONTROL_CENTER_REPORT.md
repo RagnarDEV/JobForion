@@ -16,7 +16,7 @@
 
 أصبحت `site_settings` مصدرًا موحدًا للقيم الإضافية من دون إنشاء جدول إعدادات موازٍ. يمر كل إعداد جديد عبر `SETTINGS_KEYS` وvalidation المركزي، وتعود القيم الفاسدة أو الغائبة إلى defaults آمنة. ينتج `resolveTheme()` كائنًا موحدًا، بينما يحول `themeCssVariables()` القيم إلى CSS variables مقيدة تُحقن في `base-layout.js` وفي homepage renderer المستقل.
 
-يستمر `homepage_sections` في التحكم بالتفعيل والترتيب ضمن مجموعة ثابتة من الأقسام، ويستمر `job_card_styles` في التحكم التفصيلي المنظم ببطاقات الوظائف. أضيف التحكم النصي المحدود للصفحة الرئيسية داخل `site_settings`، مع منع HTML/CSS/JavaScript الخام أو إنشاء page builder حر.
+يستمر `homepage_sections` في التحكم بالتفعيل والترتيب ضمن جميع كتل Homepage الحالية، بينما تحفظ `homepage_custom_sections` الأقسام التي ينشئها المشرف. ويستمر `job_card_styles` في التحكم التفصيلي المنظم ببطاقات الوظائف. أما HTML/CSS/JavaScript الخام فيبقى محصورًا في محرر Code Blocks المعزول، ولا يتحول النظام إلى page builder حر داخل Theme controls.
 
 ## 3. CSS وتنظيم Design System
 
@@ -68,7 +68,7 @@
 | Feature Flags | blog، job alerts، company/country/skill pages، featured jobs |
 | Analytics/Social/General | الإعدادات العامة الموجودة سابقًا |
 
-لا تسمح الصفحة بإنشاء sections جديدة أو إدخال markup، وتبقى visibility/order للـhomepage داخل Homepage Builder الآمن. لكل مجموعة جديدة reset مستقل: `reset-appearance` و`reset-components` و`reset-homepage-copy`.
+تتحكم الصفحة الآن في جميع كتل Homepage الحالية عبر Homepage Builder الآمن، بما في ذلك Hero وFeatured Companies وCategories وJob Listing وبطاقات Job Alerts وBoost Your Career وCareer Resources وCareer Insights وTrust Strip وEmployer CTA. كما تسمح بإنشاء أقسام Homepage مخصصة محدودة الحقول مع HTML/CSS/JavaScript معزول داخل iframe sandbox. تبقى Theme controls نفسها دون raw code، وتوجد لكل مجموعة إعدادات reset مستقلة مثل `reset-appearance` و`reset-components` و`reset-homepage-copy`.
 
 ## 7. Backend Control
 

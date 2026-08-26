@@ -66,7 +66,7 @@ jobforion/
 
 يستخدم القالب العام `src/layout/base-layout.js` وhomepage renderer Theme Resolver مركزيًا من `src/lib/settings.js`. مفاتيح `appearance_*` وCompany Card وNavigation محفوظة في `site_settings` وتخضع لـallow-list وvalidation قبل الكتابة: ألوان hex، خطوط من قائمة curated، كثافة layout، radius، عرض container، مسافات البطاقات، حجم الشعار، ارتفاع header، CTA label، الظل، وسلوك hover. عند غياب الإعداد أو فساده يعود الموقع تلقائيًا إلى defaults الآمنة، وتُحقن القيم كـCSS variables داخل نفس renderers؛ وتظل Theme/Appearance controls نفسها مقيدة ولا تستقبل arbitrary CSS أو HTML أو JavaScript.
 
-صفحة `/admin/settings` تتضمن Appearance Theme وCompany Card وNavigation وHomepage Copy وSEO & Indexing sections. توجد live previews لواجهة theme وCompany Card، مع أزرار reset مستقلة لـappearance وcomponent controls وhomepage copy. كما أن `job-card-css.js` و`shared-css.js` و`company-card.js` تستخدم tokens المركزية في السطوح والـradius والمسافات، بينما بقي `job-card-styles.js` مصدر التحكم التفصيلي المنظم حسب tier. ويظل `homepage_sections` مسؤولًا عن التفعيل والترتيب دون page builder حر. أما raw HTML/CSS/JavaScript فهو متاح فقط في محرر Code Blocks الخاص بـNew Page، ويُعرض داخل iframe sandbox معزول موضح أدناه.
+صفحة `/admin/settings` تتضمن Appearance Theme وCompany Card وNavigation وHomepage Copy وSEO & Indexing sections. توجد live previews لواجهة theme وCompany Card، مع أزرار reset مستقلة لـappearance وcomponent controls وhomepage copy. كما أن `job-card-css.js` و`shared-css.js` و`company-card.js` تستخدم tokens المركزية في السطوح والـradius والمسافات، بينما بقي `job-card-styles.js` مصدر التحكم التفصيلي المنظم حسب tier. ويظل `homepage_sections` مسؤولًا عن التفعيل والترتيب للأقسام built-in الحالية، بينما تتيح `homepage_custom_sections` إنشاء أقسام Homepage مخصصة وتعديلها وترتيبها وتعطيلها وحذفها. لا يتحول ذلك إلى page builder حر داخل الموقع؛ فالكود الخام متاح فقط داخل محرر القسم أو الصفحة ويُعرض داخل iframe sandbox معزول موضح أدناه.
 
 ## الأمان
 
@@ -143,7 +143,7 @@ git diff --check
 
 ## صفحات CMS وCode Blocks المعزولة
 
-تدعم صفحة **New Page** (`/admin/pages/new`) الآن ثلاثة حقول اختيارية منفصلة: `custom_html` و`custom_css` و`custom_js`. تُحفظ هذه الحقول في أعمدة additive داخل جدول `pages`، لذلك تبقى الصفحات القديمة وعمود `body` متوافقين دون migration تدميرية. كما يدعم **Homepage Sections** (`/admin/homepage`) إنشاء أقسام مخصصة جديدة وتعديلها وتعطيلها وترتيبها وحذفها، مع عنوان ووصف وحقول الكود نفسها.
+تدعم صفحة **New Page** (`/admin/pages/new`) الآن ثلاثة حقول اختيارية منفصلة: `custom_html` و`custom_css` و`custom_js`. تُحفظ هذه الحقول في أعمدة additive داخل جدول `pages`، لذلك تبقى الصفحات القديمة وعمود `body` متوافقين دون migration تدميرية. كما يدعم **Homepage Sections** (`/admin/homepage`) التحكم في جميع كتل Homepage الحالية، مثل Hero وFeatured Companies وCategories وJob Listing وبطاقات Job Alerts وBoost Your Career وCareer Resources وCareer Insights وTrust Strip وEmployer CTA، إضافة إلى إنشاء أقسام مخصصة جديدة وتعديلها وتعطيلها وترتيبها وحذفها، مع عنوان ووصف وحقول الكود نفسها.
 
 يُعرض الكود المخصص في معاينة الإدارة وفي الصفحة العامة داخل `iframe` يحمل `sandbox="allow-scripts allow-forms"` ومن دون `allow-same-origin`. يمكن لـJavaScript العمل داخل مستند الصفحة المخصص، لكنه لا يستطيع الوصول إلى cookies أو DOM الصفحة الرئيسية أو لوحة الإدارة. لا تُوضع الأسرار أو رموز الجلسات داخل هذا المحتوى العام، ويظل تحريره محصورًا بالمشرف المصادق عليه.
 
