@@ -45,6 +45,7 @@ export function baseLayout(title, description, canonical, ogImage, content, extr
   const siteName = escapeHtml(settings?.site_name || SETTINGS_DEFAULTS.site_name);
   const currentPath = (() => { try { return new URL(canonical || BASE_URL, BASE_URL).pathname || '/'; } catch (e) { return '/'; } })();
   const gaTag = settings ? googleAnalyticsTag(settings.ga_measurement_id) : GOOGLE_ANALYTICS_TAG;
+  const resolvedRobots = settings?.seo_indexing_enabled === '0' && /^index\b/i.test(String(robots || '')) ? 'noindex, nofollow' : robots;
   const themeVariables = themeCssVariables(settings || {});
   return `<!DOCTYPE html>
 <html lang="en">
@@ -55,7 +56,7 @@ ${gaTag}
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>${safeTitle}</title>
 <meta name="description" content="${safeDescription}">
-<meta name="robots" content="${robots}">
+<meta name="robots" content="${escapeHtml(resolvedRobots)}">
 ${ICON_HEAD}
 <meta property="og:title" content="${safeTitle}">
 <meta property="og:description" content="${safeDescription}">

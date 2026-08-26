@@ -1,155 +1,179 @@
-# تقرير تنفيذ Design System وAdmin Control Center
+# JobForion — تقرير استكمال وثيقة Design System وAdmin Control Center
 
-**المشروع:** JobForion — Cloudflare Workers ES Modules + D1 + R2 + Workers AI
-**النطاق:** تنفيذ الجزء الآمن والقابل للإثبات من الوثيقة المرفقة على النسخة الحالية، دون إعادة بناء أو تبديل المعمارية أو التراجع عن الواجهة الجديدة.
-**الحالة:** **NOT READY لإعلان اكتمال الوثيقة كاملة**، مع نجاح البنية الأساسية الجديدة والاختبارات المحلية. سبب عدم إعلان الاكتمال أن الوثيقة أوسع من التغييرات الحالية، وما زالت بعض أسطح التحكم التفصيلية والتنظيف الكامل للـCSS بحاجة إلى مراحل مستقلة.
+**المشروع:** JobForion — Cloudflare Workers ES Modules + D1 + R2 + Workers AI.
 
-## 1. المعمارية قبل التنفيذ
+**النطاق:** استكمال المتطلبات القابلة للتنفيذ بأمان فوق النسخة الحالية، من دون إعادة بناء أو تغيير المعمارية أو استبدال الواجهة المطورة أو تغيير binding/model الخاص بـWorkers AI.
 
-كان الموقع يعتمد SSR داخل Cloudflare Worker مع `src/index.js` كنقطة دخول، وطبقات منفصلة للصفحات والمكونات والـroutes والـD1 وR2 وAI. كانت القيم البصرية العامة موجودة في `src/styles/shared-css.js`، بينما كانت إعدادات الموقع العامة محفوظة في `site_settings` عبر `src/lib/settings.js`. وكان هناك نظامان آمنان جزئيًا للتخصيص: `homepage_sections` لأقسام الصفحة الرئيسية و`job_card_styles` للتحكم في بطاقات الوظائف حسب tier.
+**الحالة الحالية:** **NOT READY لإعلان تحقق الإنتاج الكامل** إلى أن تُنشر هذه الجولة ويُجرى قبول مصادق عليه على بيئة الإنتاج. أما التغييرات البرمجية نفسها فقد اجتازت الفحوص المحلية الموضحة أدناه.
 
-لوحة الإدارة كانت تملك shell مشتركًا وsidebar مجمعًا وmobile drawer وdark mode، وتضم صفحات jobs وcompanies وsources وaccounts وcontent وhomepage وcard styles وsettings وAI وsystem. لكنها لم تكن تملك Theme Resolver عامًا أو metadata موحدة لمفاتيح appearance، وكانت بعض قيم CSS المشتقة لا تزال literal داخل ملفات التنسيق، كما لم يكن هناك حارس CSRF مركزي سابقًا لكل admin POST.
+## 1. المعمارية قبل الاستكمال
 
-## 2. المعمارية بعد التنفيذ
+كان الموقع يستخدم Worker واحدًا بنمط ES Modules في `src/index.js`، مع SSR HTML للصفحات العامة والإدارة والحسابات، وطبقات منفصلة للـroutes والـpages والـcomponents والـlib وD1 وR2 وproviders. كانت `site_settings` مصدرًا للإعدادات العامة، وكان `homepage_sections` يتحكم في تفعيل وترتيب مجموعات الصفحة الرئيسية، بينما كان `job_card_styles` يتحكم في شكل بطاقات الوظائف حسب النوع.
 
-أصبحت طبقة `site_settings` تحمل مفاتيح `appearance_*` مع defaults ثابتة وآمنة. يمرّ كل طلب public page اختياريًا عبر `themeCssVariables()` في `base-layout.js`، فتُحوّل الإعدادات إلى CSS variables داخل نفس القالب العام. عند غياب D1 أو فساد قيمة، يعود resolver إلى defaults؛ لذلك لا يصبح الموقع بلا تنسيق إذا فشل تحميل الإعدادات.
+كانت Theme Engine السابقة تغطي appearance الأساسية، لكن Company Card وNavigation ونسخًا من homepage كانت تعتمد جزئيًا على literals داخل renderer. كما كانت بعض مفاتيح AI وSEO غير قابلة للإيقاف التفصيلي من لوحة الإدارة، وكان Hot KPI الإداري يعتمد على `salary_max_usd` فقط، فلا يطابق سياسة HOT PAY التي تستخدم midpoint للنطاق.
 
-يبقى `job_card_styles.js` مسؤولًا عن التحكم التفصيلي المنظم في tiers، بينما أصبحت `shared-css.js` و`job-card-css.js` تستهلكان tokens عامة مثل brand وsurface وborder وradius وdensity. بقيت homepage sections ثابتة وآمنة؛ لم يُنشأ arbitrary page builder، ولم تُقبل raw HTML أو raw CSS أو raw JavaScript أو arbitrary SQL.
+## 2. المعمارية بعد الاستكمال
 
-## 3. Design System وTheme Engine
+أصبحت `site_settings` مصدرًا موحدًا للقيم الإضافية من دون إنشاء جدول إعدادات موازٍ. يمر كل إعداد جديد عبر `SETTINGS_KEYS` وvalidation المركزي، وتعود القيم الفاسدة أو الغائبة إلى defaults آمنة. ينتج `resolveTheme()` كائنًا موحدًا، بينما يحول `themeCssVariables()` القيم إلى CSS variables مقيدة تُحقن في `base-layout.js` وفي homepage renderer المستقل.
 
-أضيفت مجموعة tokens مركزية تشمل الألوان الأساسية والثانوية والـaccent والخلفية والسطوح والنصوص والحدود، إضافة إلى radius وcontainer width وsection spacing وcard gap وdensity. كما أضيفت tokens مشتقة للـspacing scale وradius variants والـtransitions وheader height وخط body وخط headings.
+يستمر `homepage_sections` في التحكم بالتفعيل والترتيب ضمن مجموعة ثابتة من الأقسام، ويستمر `job_card_styles` في التحكم التفصيلي المنظم ببطاقات الوظائف. أضيف التحكم النصي المحدود للصفحة الرئيسية داخل `site_settings`، مع منع HTML/CSS/JavaScript الخام أو إنشاء page builder حر.
 
-| مجموعة | ما أصبح مركزيًا | مصدر التنفيذ |
+## 3. CSS وتنظيم Design System
+
+تم توصيل Company Card وNavigation وhomepage بالـtokens المركزية بدل إدخال stylesheet override أو طبقة patch جديدة. تتضمن tokens الجديدة مقاييس Company Card، وحجم الشعار، وpadding، وgrid gap، وshadow، وسلوك hover، إضافة إلى حجم شعار Navigation وارتفاع header وgap وCTA state. تستخدم البطاقة المتغيرات مع fallback داخلي، وتحتفظ بتخفيضات mobile الآمنة للحفاظ على قابلية القراءة في الشاشات الصغيرة.
+
+| المجموعة | ما أصبح مركزيًا | المصدر |
 |---|---|---|
-| الألوان | primary، secondary، accent، page background، surface، elevated surface، text، border، brand-soft | `THEME_DEFAULTS` و`themeCssVariables()` |
-| typography | body font وheading font من قوائم curated | `THEME_SETTING_METADATA` و`resolveTheme()` |
-| layout | radius، container width، section spacing، card gap، density | `resolveTheme()` |
-| spacing | xs إلى 2xl كـCSS variables | `themeCssVariables()` |
-| motion | transition-fast وtransition-normal | `themeCssVariables()` و`shared-css.js` |
-| components | Job Card والسطوح والهيدر والفوتر تستخدم tokens الأساسية | `job-card-css.js` و`shared-css.js` |
+| Appearance | الألوان، السطوح، النصوص، الحدود، radius، العرض، المسافات، density، الخطوط | `src/lib/settings.js` |
+| Company Card | radius، padding، logo size، grid gap، shadow، hover | `themeCssVariables()` و`company-card.js` |
+| Navigation | logo size، header height، gap، CTA label، إظهار CTA | `themeCssVariables()` و`nav.js` و`shared-css.js` |
+| Homepage Copy | عناوين الأقسام، الأوصاف، أزرار CTA | `HOMEPAGE_COPY_DEFAULTS` و`home.js` |
+| Motion/spacing | transition وspacing scale وradius variants | `themeCssVariables()` و`shared-css.js` |
 
-لم تُحذف `shared-css.js` أو تُقسّم إلى ملفات patch إضافية، لأن البحث الحالي أثبت أنها المصدر المشترك الفعلي لعدد كبير من الصفحات. قرار المرحلة الحالية هو **MIGRATE تدريجيًا** لا حذف غير مثبت.
+لم تُحذف كل القيم literal من المصدر؛ جرى نقل القيم الواضحة والمؤثرة فقط. أما CSS المضمن داخل SSR والصفحات التي لا توجد لها contract موحدة فما زال مصنفًا **MIGRATE/KEEP** وليس DELETE، لأن حذفًا واسعًا بلا تحقق بصري قد يعيد التصميم القديم أو يكسر mobile layout.
 
-## 4. التحكم الإداري بالواجهة
+## 4. تنظيف الكود المكرر وDead Code
 
-تم توسيع `/admin/settings` بقسم **Appearance Theme** منظم. يستطيع المدير تغيير الألوان، الخطوط المسموحة، radius، container width، section spacing، card gap، وdensity. القيم تمر عبر allow-list وvalidation؛ الألوان لا تقبل إلا hex، والقيم الرقمية bounded، والخطوط والكثافة لا تقبل إلا القيم curated.
+أُجري repository-wide scan للـimports والـexports ومراجع routes وHTML strings وdynamic SSR usage وcron usage وadmin navigation. لم يُحذف أي ملف أو component أو API أو function، لأن العناصر المرشحة لم يثبت أنها غير مستخدمة بعد احتساب string-based references وroute composition وSSR.
 
-توجد معاينة حية داخل الصفحة تستخدم نفس القيم التي يستعملها resolver العام، وليس renderer منفصلًا. كما يوجد `Reset Appearance Defaults` يعيد مفاتيح appearance فقط من خلال `THEME_DEFAULTS`، ولا يحذف أو يعدّل jobs أو companies أو users أو applications أو AI data أو blog data. بقي التحكم في sections وترتيبها داخل `homepage_sections`، وبقي التحكم التفصيلي في Job Cards داخل `job_card_styles`.
+| نوع الحذف | النتيجة | سبب القرار |
+|---|---|---|
+| ملفات | لا يوجد | لا توجد ملفات غير مستخدمة مثبتة بأمان |
+| components | لا يوجد | Job Card وCompany Card وNavigation لها implementations authoritative واضحة |
+| APIs/routes | لا يوجد | قد تكون routes مستعملة من forms أو cron أو redirects |
+| CSS selectors | نقل محدود إلى tokens فقط | الحذف الشامل يحتاج mapping بصري لكل صفحة |
+| imports/functions | لا يوجد حذف | لم يثبت عدم الاستخدام في runtime الديناميكي |
 
-| سطح تحكم | الحالة |
+## 5. Design System وTheme Engine
+
+تضم `APPEARANCE_DEFAULTS` appearance الأساسية، وتضم `COMPONENT_DEFAULTS` إعدادات Company Card وNavigation، وتضم `HOMEPAGE_COPY_DEFAULTS` النصوص المدعومة للواجهة الرئيسية. تحفظ هذه القيم additive في `site_settings` وتستفيد من cache الحالي ذي TTL قدره 60 ثانية، مع إسقاط cache فور `setSettings()`.
+
+التحقق يفرض hex colors، وأرقامًا bounded، وenums محددة للخطوط والكثافة والظلال وسلوك hover، ونصوصًا مقصوصة إلى حد أقصى. لا تصل القيم إلى CSS إلا بعد sanitation، ولا توجد مدخلات raw CSS أو raw HTML أو raw JavaScript في لوحة الإدارة.
+
+## 6. Admin Control Center
+
+تحتوي `/admin/settings` الآن على أسطح التحكم التالية ضمن form مركزي واحد محمي:
+
+| السطح | التحكم المتاح |
 |---|---|
-| الألوان والخطوط والكثافة والـlayout | نُفذ |
-| preview الحي | نُفذ داخل Settings |
-| reset appearance فقط | نُفذ |
-| homepage visibility/order | كان موجودًا، مع الحفاظ على required sections |
-| Job Card tier styles | كان موجودًا، مع ربط CSS العام بالtokens |
-| Company Card settings التفصيلية | لم تُنشأ بعد |
-| Navigation settings التفصيلية | لم تُنشأ بعد |
-| arbitrary page builder | مرفوض عمدًا لأسباب أمنية ومعمارية |
+| Appearance Theme | colors، typography، density، radius، container width، section spacing، card gap |
+| Company Card | radius، padding، logo size، grid gap، shadow، hover، preview حي |
+| Navigation | logo size، header height، gap، CTA label، إظهار/إخفاء CTA |
+| Homepage Copy | عناوين وأوصاف وCTA للأقسام المدعومة فقط |
+| SEO & Indexing | `seo_indexing_enabled` لإصدار `noindex, nofollow` للصفحات العامة عند التعطيل |
+| Job Sync | warm-up threshold وper-provider caps |
+| HOT PAY | enable switch وannual threshold |
+| AI | kill switch عام ومفاتيح مستقلة لكل feature |
+| Maintenance | تشغيل الصيانة ورسالة الزوار |
+| Feature Flags | blog، job alerts، company/country/skill pages، featured jobs |
+| Analytics/Social/General | الإعدادات العامة الموجودة سابقًا |
 
-## 5. Admin Control Center والـanalytics
+لا تسمح الصفحة بإنشاء sections جديدة أو إدخال markup، وتبقى visibility/order للـhomepage داخل Homepage Builder الآمن. لكل مجموعة جديدة reset مستقل: `reset-appearance` و`reset-components` و`reset-homepage-copy`.
 
-لم تُعد كتابة لوحة الإدارة من الصفر؛ تم الحفاظ على shell الحالي لأنه يملك بالفعل grouped navigation وmobile drawer وresponsive tables. عُدلت تسمية Website إلى `Site, SEO & Appearance` لتوضيح أن Settings أصبحت مركز التخصيص العام.
+## 7. Backend Control
 
-أضيف إلى dashboard KPI حقيقي باسم **AI Activity (7d)**، ويُحسب من `admin_activity_log` الموجود فعليًا. كما أضيف chart حسب feature من السجل نفسه، ولا يظهر usage مصطنع عند عدم وجود سجلات. بقيت KPIs الوظائف والشركات والمستخدمين والزيارات والمزودين ودورة lifecycle قائمة على استعلامات D1 حقيقية، وبقيت health rows الخاصة بـWorker وD1 والمزودين وsync وcleanup.
+أضيفت مفاتيح AI التالية مع enforcement داخل `runAiRequest()` قبل استدعاء binding: `ai_foundation_smoke_enabled` و`ai_job_intelligence_enabled` و`ai_matching_enabled` و`ai_career_assistant_enabled` و`ai_content_intelligence_enabled` و`ai_admin_assistant_enabled`. يبقى `ai_enabled` kill switch عامًا.
 
-لم تُضف charts لبيانات غير موجودة. لم يُنشأ AI usage table جديد فقط لأجل الرسم، ولم تُنسب أرقام إلى Workers AI المحلي الذي لا يدعم inference فعليًا.
+أضيف `seo_indexing_enabled` إلى allow-list الخاصة بالإعدادات، وتستخدمه homepage و`baseLayout` لتغيير meta robots فقط عندما يكون الإعداد عامًا ومفتوحًا. لا يغير هذا المفتاح routes أو يحذف sitemap، ويظل sitemap متاحًا للفحص التشغيلي. كما صُحح Dashboard Hot KPI ليستخدم min-only وmax-only وmidpoint للنطاقات وفق `src/lib/hot-pay.js`.
 
-## 6. Database وperformance
+## 8. Analytics وDashboard
 
-لم تُضف migration destructive أو جدولًا موازيًا للإعدادات. استخدمت Appearance مفاتيح additive في `site_settings` الموجودة أصلًا، مع cache per-isolate نفسه ذي TTL 60 ثانية. `setSettings()` يكتب batch واحدًا ويُسقط cache بعد التحديث، كما أن fallback defaults يعمل عند فشل D1.
+يستخدم Dashboard بيانات D1 الحقيقية فقط. يعرض KPIs للوظائف الكلية والنشطة والمتوقفة والمغلقة والمنتهية والمؤرشفة، provider/employer jobs، expiring jobs، cleanup deletions، companies، users، subscribers، articles، visits، pending postings، skills sampled، وAI Activity.
 
-يُحمّل theme مرة واحدة عبر settings cache لكل isolate، ولا توجد query لكل Job Card أو Company Card. تستخدم الصفحات العامة settings الموجودة لديها أصلًا؛ لم يُضف request منفصل لكل component. كما أن dry-run الخاص بـWrangler أظهر bindings الحالية: `env.DB` و`env.COMPANY_ASSETS` و`env.AI`.
+توجد charts/برمجيات عرض للزيارات خلال 14 يومًا، الوظائف حسب category، الوظائف حسب source، AI Activity حسب feature، top pages، top countries، مع حالات empty state عند غياب البيانات. تبقى System Health ظاهرة لـWorker وD1 والمزودين وآخر sync وآخر cleanup. لا يُعرض أي billing-grade inference usage مصطنع؛ AI Activity يعتمد على `admin_activity_log` وstructured operational events.
 
-## 7. Security
+## 9. قاعدة البيانات والتخزين
 
-أضيف `getAdminCsrfToken()` و`verifyAdminCsrf()` إلى `admin-auth.js`. يرتبط token بالـadmin cookie الموقعة عبر HMAC stateless، ولا يمنح صلاحية بمفرده. ويطبّق `admin.router.js` gate مركزيًا على كل admin POST قبل sub-routers، مع دعم `X-Admin-CSRF` للـfetch و`_admin_csrf` للنماذج. يصدر shell cookie قصيرة العمر للـCSRF ويضيف token إلى forms وadmin fetch requests. أبقيت website-router checks كدفاع إضافي لمسارات homepage وcard-styles وsettings.
+لم تُضف migration destructive. استخدمت الجولة الحالية مفاتيحًا additive داخل `site_settings` الموجودة أصلًا. لا تحتاج Company Card أو Navigation أو Homepage Copy أو AI feature flags إلى جدول جديد. يبقى schema bootstrap المركزي في `src/db/schema.js` هو المصدر لجداول التطبيق وAI.
 
-لا تُقبل raw CSS أو raw HTML أو raw JavaScript أو arbitrary SQL من Appearance settings. لم تتغير CSP إلى `img-src *`، ولم تُكشف secrets أو Workers AI binding للمتصفح. يبقى `unsafe-inline` trade-off قائمًا لأن SSR architecture الحالية تعتمد inline scripts/styles، ويحتاج إزالته refactor منفصلًا.
+يستمر R2 في استخدام `COMPANY_ASSETS` مع مفاتيح company asset المقيدة، ويرفض المسارات المتلاعبة. لا تغيّر هذه الجولة naming convention أو public asset policy.
 
-## 8. dead code وCSS cleanup
+## 10. الأمان
 
-لم يُحذف أي ملف أو route أو component في هذه المرحلة؛ لم توجد حالة حذف يمكن إثباتها بأمان من خلال repository-wide references وdynamic references وruntime usage. التصنيف الصحيح للملفات المرشحة الحالية هو **KEEP أو MIGRATE**، وليس DELETE.
+يستمر admin cookie وcentral CSRF gate في `src/routes/admin.router.js`، مع token في forms و`X-Admin-CSRF` لطلبات الإدارة ذات JSON. routes reset الجديدة تتحقق من admin authentication وCSRF قبل الكتابة وتستخدم allow-listed defaults فقط.
 
-تمت إزالة بعض التكرار البصري القابل للإثبات فقط عبر استبدال قيم واضحة في `job-card-css.js` و`shared-css.js` بمتغيرات tokens. لم تُحذف كل literals من المشروع، لأن ذلك يتطلب audit منفصلًا لكل SSR string وinline style وadmin page، ولأن حذفها بلا تحقق قد يكسر contract الواجهة الجديدة.
+تُهارب نصوص Homepage Copy قبل SSR، وتُقيد القيم الرقمية والـenums، ولا توجد صلاحية raw code execution. لا تصل `env.AI` أو secrets إلى المتصفح. تبقى CSP دون `img-src *`، وتبقى روابط الصور الخارجية محكومة بمسار logo proxy أو R2 الموثق. لا تتأثر auth أو rate limits أو ownership checks.
 
-## 9. الاختبارات المنفذة
+## 11. الأداء والتوافق
+
+تستخدم الإعدادات cache الحالي، ولا توجد query منفصلة لكل بطاقة أو لكل عنصر في الصفحة. لا يستدعي Company Card أو Navigation D1 بنفسه؛ يستهلك CSS variables أو settings الممررة أصلًا. AI feature switches تنهي الطلب قبل inference عند التعطيل، وDashboard Hot KPI يستخدم استعلامًا bounded على الأعمدة normalized بدل تحميل descriptions.
+
+أُبقيت defaults كاملة عند فشل D1 أو غياب keys، كما بقيت الصفحات العامة وroutes القديمة متوافقة. لم يُغيّر هذا الاستكمال بنية Worker أو provider integrations أو R2 bindings أو AI model.
+
+## 12. الاختبارات المنفذة
 
 | الاختبار | النتيجة |
 |---|---|
-| `node --check` لكل ملفات JavaScript الحالية | PASS |
-| `git diff --check` | PASS |
-| Theme resolver defaults/validation/CSS variables | `THEME_CSRF_UNIT=PASS` |
-| settings invalid colors/radius/font/density | PASS ضمن Theme unit |
-| adminShell CSRF injection | PASS ضمن Theme unit |
-| admin central CSRF gate | `ADMIN_CSRF_GATE_UNIT=PASS` |
-| AI service | `AI_SERVICE_UNIT=PASS` |
-| Job Intelligence | `JOB_INTELLIGENCE_UNIT=PASS` |
-| Matching | `MATCHING_UNIT=PASS` |
-| Career Assistant | `CAREER_ASSISTANT_UNIT=PASS` |
-| Admin Assistant | `ADMIN_ASSISTANT_UNIT=PASS` |
-| Content Intelligence | `CONTENT_INTELLIGENCE_UNIT=PASS` |
-| AI Control Center | `AI_CONTROL_CENTER_UNIT=PASS` |
-| audit/HOT PAY/R2/security unit | `FINAL_AUDIT_UNIT=PASS` |
-| correction/job-card unit | PASS |
-| user lifecycle | `USER_DELETE_LIFECYCLE_UNIT=PASS` |
-| static guards | `FINAL_STATIC_GUARDS=PASS` |
-| secret scan | لا توجد matches لأشكال private keys أو tokens؛ grep exit 1 يعني عدم وجود match |
-| Wrangler dry-run | PASS، exit 0؛ D1/R2/AI bindings ظهرت |
-| local public smoke | `/`, `/jobs`, `/companies`, `/blog`, robots، sitemap، feed = 200 |
-| local auth/API smoke | saved-jobs للزائر = 401؛ page bounds اختُبرت؛ admin settings للزائر = login gate |
-| browser visual | homepage وjobs حافظتا على الواجهة الجديدة؛ لا old card/sidebar/colored side border |
+| `node --check` للملفات المتأثرة | PASS |
+| `git diff --check` | PASS قبل آخر staging النهائي، وسيعاد في gate النهائي |
+| Theme/CSRF unit | `THEME_CSRF_UNIT=PASS` |
+| Company Card/Navigation/Homepage Copy/AI switches | `COMPLETION_CONTROLS_UNIT=PASS` |
+| AI switch disabled prevents binding call | PASS داخل completion unit |
+| AI service وJob Intelligence وMatching وCareer Assistant | PASS في regression السابقة |
+| Admin Assistant وContent Intelligence وAI Control Center | PASS في regression السابقة |
+| HOT PAY وR2/security/lifecycle | PASS في regression السابقة |
+| Admin central CSRF gate | `ADMIN_CSRF_GATE_UNIT=PASS` |
+| Static guards وsecret scan | PASS في regression السابقة؛ لا توجد أسرار فعلية |
+| Local Worker fresh smoke | `/`, `/jobs`, `/companies`, `/blog`, `/robots.txt`, `/sitemap.xml`, `/api/jobs` = 200 |
+| Unauthenticated account endpoint | `/api/user/saved-jobs` = 401 |
+| Admin auth gate | `/admin/settings` أعاد login gate للزائر |
+| Homepage markers | ظهرت `--nav-header-height:72px` و`--company-card-radius:14px` وcopy الحالية |
+| Security headers | CSP وReferrer-Policy وXCTO وXFO موجودة |
+| Wrangler local binding view | D1 وR2 ظهرا، وAI ظهر `not supported` في local inference |
 
-الـlocal D1 كان بلا jobs، لذلك ظهرت empty state بدل بطاقة ممتلئة. هذا لا يثبت بصريًا كل حالات tier المدعومة، لكنه لا يغيّر contract البطاقة الذي اجتاز unit tests السابقة.
+الفحص البصري من المتصفح أظهر استمرار header والـhero والبحث والفلاتر وcategory grid وlatest jobs/sidebar/editorial/footer ضمن التصميم المطور. تعذر رفع screenshot في أحد تنقلات `/jobs`، لذلك لا يُدّعى أكثر من دليل DOM/status لذلك المسار. كما أن قاعدة D1 المحلية لا تحتوي jobs مملوءة، فلا يثبت smoke المحلي جميع حالات البطاقات المملوءة أو كل tiers.
 
-## 10. الملفات المعدلة
+## 13. الملفات المعدلة في جولة الاستكمال
 
-| الملف | التغيير |
+| الملف | التعديل |
 |---|---|
-| `src/lib/settings.js` | Theme defaults، metadata، resolver، CSS variables، validation |
-| `src/layout/base-layout.js` | حقن theme variables وتحميل الخطوط المسموحة |
-| `src/styles/shared-css.js` | استخدام layout/radius/transition tokens |
-| `src/styles/job-card-css.js` | استخدام surface/border/radius/density tokens |
-| `src/pages/admin/settings.js` | Appearance section وpreview وreset button |
-| `src/pages/admin/shell.js` | تسمية navigation وحقن CSRF للنماذج وfetch wrapper |
-| `src/auth/admin-auth.js` | stateless admin CSRF helpers |
-| `src/routes/admin.router.js` | central CSRF gate وCSRF cookie |
-| `src/routes/admin/website.router.js` | CSRF checks لمسارات website الإضافية |
-| `src/pages/admin/dashboard.js` | AI Activity KPI وfeature chart من بيانات حقيقية |
-| `README.md` | توثيق Theme Engine وCSRF وAI analytics والحدود الحالية |
+| `src/lib/settings.js` | defaults وmetadata وvalidation لـCompany Card وNavigation وHomepage Copy وAI switches وSEO |
+| `src/lib/ai-service.js` | enforcement لمفاتيح AI feature قبل binding |
+| `src/components/company-card.js` | استهلاك tokens للـradius/padding/logo/gap/shadow/hover |
+| `src/components/nav.js` | CTA label وvisibility من settings |
+| `src/styles/shared-css.js` | header/logo/navigation spacing tokens |
+| `src/pages/home.js` | Homepage Copy وSEO robots وحقن theme variables في homepage renderer |
+| `src/pages/admin/settings.js` | Company Card وNavigation وHomepage Copy وSEO وAI controls وpreviews/resets |
+| `src/routes/admin/website.router.js` | reset routes جديدة وscope reset الصحيح لـAppearance |
+| `src/pages/admin/dashboard.js` | Hot KPI مطابق لسياسة midpoint وmin/max-only |
+| `README.md` | توثيق controls والـAI switches والـSEO والاختبارات |
 | `DESIGN_SYSTEM_CONTROL_CENTER_REPORT.md` | هذا التقرير |
 
-## 11. المخاطر والقضايا المتبقية
+لم تُنشأ ملفات runtime جديدة، ولم تُحذف ملفات، ولم تُضمّن اختبارات `/tmp` أو `.wrangler` في المستودع.
 
-أولًا، الوثيقة تطلب تفكيكًا كاملًا لكل CSS blob وإزالة كل duplicate selector وinline style، لكن المصدر الحالي يحتوي SSR styles كثيرة وعقود class مشتركة. لم يُنفذ حذف واسع لأن ذلك يحتاج mapping بصري وruntime لكل selector.
+## 14. القضايا المتبقية والمخاطر
 
-ثانيًا، لا توجد بعد لوحة تفصيلية مستقلة لـCompany Card وNavigation settings وfooter/announcements/static-content controls كلها ضمن Theme Engine واحد. الموجود الحالي يغطي homepage sections وJob Cards وsite settings وCMS pages ضمن subsystems آمنة، لكنه لا يحقق كل عناصر Definition of Done في الوثيقة.
+يبقى تنظيف CSS الشامل غير مكتمل؛ ما زالت بعض القيم inline وblobs داخل SSR، ولم تُحذف إلا التكرارات التي ثبت نقلها إلى tokens. يحتاج هذا البند إلى refactor مستقل مع snapshots لكل route حتى لا تتأثر الواجهة الجديدة.
 
-ثالثًا، لم تُنفذ production deployment أو اختبار authenticated admin حقيقي أو R2 real replacement أو Workers AI inference حقيقي في هذه المرحلة. Wrangler local لا يدعم AI، وdry-run لا ينشر. يلزم نشر مصرح به وsmoke آمن قبل إعلان READY.
+لا يوجد اختبار authenticated production لهذه الجولة. لذلك لم يُثبت بعد save/reset الحقيقي من `/admin/settings` داخل حساب admin، ولم يُختبر R2 replacement الحقيقي، ولم تُنفذ Workers AI inference حقيقية في local لأن Wrangler يعرض binding AI كـ`not supported` في local mode.
 
-رابعًا، dashboard AI Activity يعتمد على admin activity log؛ وهذا صحيح ومحافظ، لكنه ليس billing-grade usage telemetry. لا ينبغي تفسيره على أنه عدد كامل لكل inference إلا بعد وجود usage table أو contract رسمي جامع.
+يظل `seo_indexing_enabled` تحكمًا في meta robots للـHTML وليس مفتاح حذف أو تعطيل sitemap. إذا كان المطلوب منع الزحف بالكامل، يجب إضافة سياسة robots ديناميكية مع مراجعة مستقلة لأثر cache قبل تفعيلها.
 
-## 12. Production readiness
+تظل صور بعض company records القديمة التي تحتوي `logo_url` خارجيًا خاضعة لـCSP الحالية، بينما يظل المسار الموحد المفضل هو override/R2/Worker logo proxy. لم تُوسّع CSP إلى مضيفات عامة لتجنب إضعاف الأمان.
 
-**NOT READY — exact blockers:**
+## 15. Production Readiness
+
+**NOT READY — blockers الدقيقة:**
 
 | blocker | السبب |
 |---|---|
-| الوثيقة الكاملة لم تُنفذ بكل تفاصيلها | Company Card/Navigation controls وCSS full cleanup وcontent surfaces التفصيلية ما زالت مراحل لاحقة |
-| لا يوجد production deployment لهذه الجولة | لم يُثبت أن remote Worker الحالي يحمل هذه التغييرات |
-| لا يوجد authenticated production acceptance | لم تُختبر إدارة Appearance والـCSRF وreset داخل حساب admin حقيقي |
-| لا يوجد R2/AI production verification | local AI unsupported، وR2 replacement unit/mock فقط |
-| البيانات المحلية فارغة | لا يمكن تأكيد كل visual states لبطاقات jobs المملوءة محليًا |
+| النشر الفعلي لهذه الجولة لم يُثبت بعد | الاختبارات الحالية local وdry-run، وليست remote production acceptance |
+| admin authenticated acceptance غير منفذ | لا يمكن تأكيد save/reset وCSRF عبر حساب إنتاج حقيقي من دون جلسة مصادق عليها |
+| Workers AI inference production غير منفذ | local Wrangler لا يدعم inference؛ يلزم smoke مصرح وآمن على البيئة المرتبطة بـ`AI` |
+| R2 replacement production غير منفذ | اختبارات الترتيب والـrollback mock/unit فقط، من دون تعديل كائنات إنتاجية |
+| CSS full cleanup غير مكتمل | بقيت literals وinline SSR مصنفة MIGRATE لا DELETE حفاظًا على الواجهة |
 
-النتيجة الدقيقة هي أن **foundation آمن وقابل للدمج**، وليس أن الوثيقة كاملة أو أن الإنتاج تم تحديثه. الخطوة التالية الآمنة هي نشر commit منفصل بعد مراجعة المستخدم، ثم اختبار admin appearance preview/save/reset وCSRF وR2 وAI في بيئة الإنتاج أو staging دون تشغيل عمليات حذف أو cleanup destructive.
+النتيجة الدقيقة: **التغييرات آمنة وقابلة للدمج بعد gate النهائي، لكنها ليست إثباتًا بأن الإنتاج يحملها أو أن كل بنود الوثيقة أصبحت READY**. بعد نجاح commit/push والنشر المصرح، يجب تنفيذ smoke غير مدمر لـhomepage وjobs وadmin settings وAI Control Center وR2 asset وrobots/meta، ثم تحديث الحالة إلى READY فقط إذا نجحت تلك الخطوات.
 
-## مراجع المصدر
+## References
 
-[1]: ./src/lib/settings.js "Central settings and Theme Resolver"
-[2]: ./src/layout/base-layout.js "Public SSR layout"
-[3]: ./src/pages/admin/settings.js "Appearance settings and preview"
-[4]: ./src/routes/admin.router.js "Central admin routing and CSRF gate"
-[5]: ./src/pages/admin/dashboard.js "Operational dashboard and real metrics"
-[6]: ./src/styles/job-card-css.js "Authoritative Job Card CSS"
-[7]: ./src/styles/shared-css.js "Shared public design tokens and CSS"
+[1]: ./src/lib/settings.js "Central settings, defaults, validation, and Theme Resolver"
+[2]: ./src/lib/ai-service.js "Central Workers AI service and feature gates"
+[3]: ./src/pages/home.js "Homepage SSR renderer and homepage copy"
+[4]: ./src/pages/admin/settings.js "Admin settings controls and previews"
+[5]: ./src/routes/admin/website.router.js "Admin settings/reset routes and CSRF checks"
+[6]: ./src/pages/admin/dashboard.js "Real D1-backed dashboard metrics"
+[7]: ./src/components/company-card.js "Authoritative Company Card component"
+[8]: ./src/components/nav.js "Shared desktop/mobile navigation"
+[9]: ./src/styles/shared-css.js "Shared public CSS and navigation tokens"
+[10]: ./src/lib/hot-pay.js "HOT PAY normalization and classification policy"

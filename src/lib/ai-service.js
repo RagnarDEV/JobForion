@@ -18,6 +18,15 @@ export const AI_LIMITS = Object.freeze({
 export const FOUNDATION_SMOKE_TASK = 'foundation_smoke';
 export const DEFAULT_SMOKE_INPUT = 'Summarize this job in one sentence.';
 
+export const AI_FEATURE_SETTINGS = Object.freeze({
+  [FOUNDATION_SMOKE_TASK]: 'ai_foundation_smoke_enabled',
+  job_intelligence_v1: 'ai_job_intelligence_enabled',
+  job_matching_v1: 'ai_matching_enabled',
+  career_assistant_v1: 'ai_career_assistant_enabled',
+  content_intelligence_v1: 'ai_content_intelligence_enabled',
+  admin_assistant_v1: 'ai_admin_assistant_enabled',
+});
+
 const SAFE_ERROR_CODES = new Set([
   'ai_disabled',
   'ai_not_configured',
@@ -176,6 +185,12 @@ export async function runAiRequest(env, request, runtime = {}) {
   const settings = runtime.settings || {};
   if (settings.ai_enabled === '0' || settings.ai_enabled === false) {
     const result = safeFailure('ai_disabled', startedAt, { prompt_version: validated.promptVersion });
+    recordUsage(runtime.feature, result, validated.input.length);
+    return result;
+  }
+  const featureSetting = AI_FEATURE_SETTINGS[String(runtime.feature || validated.task)];
+  if (featureSetting && (settings[featureSetting] === '0' || settings[featureSetting] === false)) {
+    const result = safeFailure('ai_disabled', startedAt, { prompt_version: validated.promptVersion, feature: String(runtime.feature || validated.task).slice(0, AI_LIMITS.maxTaskChars) });
     recordUsage(runtime.feature, result, validated.input.length);
     return result;
   }

@@ -19,6 +19,8 @@ function authLinksHtml(user, mobile = false) {
 
 export function navHtml(settings, menuPages = [], navButtons = [], user = null) {
   const siteName = escapeHtml(settings?.site_name || SETTINGS_DEFAULTS.site_name);
+  const ctaText = escapeHtml(settings?.nav_cta_text || 'Post a job');
+  const ctaEnabled = settings?.nav_cta_enabled !== '0';
   const extraLinks = [
     ...menuPages.map(p => `<a href="/${escapeHtml(p.slug)}" class="nav-link">${escapeHtml(p.title)}</a>`),
     ...navButtons.map(b => `<a href="${escapeHtml(b.url)}" class="nav-link" style="color:${escapeHtml(b.color)}">${escapeHtml(b.icon)} ${escapeHtml(b.label)}</a>`),
@@ -35,13 +37,15 @@ export function navHtml(settings, menuPages = [], navButtons = [], user = null) 
     ${extraLinks}
     <a href="${user ? '/user/saved-jobs' : '/login?next=%2Fuser%2Fsaved-jobs'}" class="nav-link">${iconBookmark({ size: 14 })} Saved jobs</a>
     ${authLinksHtml(user, false)}
-    <button class="nav-cta" onclick="openPostJobModal()">${iconPlus({ size: 14 })} Post a job</button>
+    ${ctaEnabled ? `<button class="nav-cta" onclick="openPostJobModal()">${iconPlus({ size: 14 })} ${ctaText}</button>` : ''}
   </div>
 </nav>`;
 }
 
 export function mobileHeaderHtml(settings, menuPages = [], navButtons = [], user = null) {
   const siteName = escapeHtml(settings?.site_name || SETTINGS_DEFAULTS.site_name);
+  const ctaText = escapeHtml(settings?.nav_cta_text || 'Post a job');
+  const ctaEnabled = settings?.nav_cta_enabled !== '0';
   const extraMenuItems = [
     ...menuPages.map(p => `<a href="/${escapeHtml(p.slug)}">${iconFileText({ size: 16 })} ${escapeHtml(p.title)}</a>`),
     ...navButtons.map(b => `<a href="${escapeHtml(b.url)}" style="color:${escapeHtml(b.color)}"><span style="width:16px;display:inline-flex;justify-content:center">${escapeHtml(b.icon)}</span> ${escapeHtml(b.label)}</a>`),
@@ -62,7 +66,7 @@ export function mobileHeaderHtml(settings, menuPages = [], navButtons = [], user
   <a href="/privacy">${iconLock({ size: 16 })} Privacy</a>
   ${extraMenuItems}
   ${authLinksHtml(user, true)}
-  <button class="mob-menu-post-btn" onclick="openPostJobModal();closeMobMenu();">${iconPlus({ size: 18 })} Post a job</button>
+  ${ctaEnabled ? `<button class="mob-menu-post-btn" onclick="openPostJobModal();closeMobMenu();">${iconPlus({ size: 18 })} ${ctaText}</button>` : ''}
 </div>
 <script>
 (function(){

@@ -28,7 +28,7 @@
 // the 60s window.
 // ════════════════════════════════════════════════════════════════
 
-export const THEME_DEFAULTS = {
+export const APPEARANCE_DEFAULTS = {
   appearance_primary_color: '#6339E6',
   appearance_secondary_color: '#4F2BD0',
   appearance_accent_color: '#54C4D2',
@@ -48,6 +48,39 @@ export const THEME_DEFAULTS = {
   appearance_heading_font: 'Space Grotesk',
 };
 
+export const COMPONENT_DEFAULTS = {
+  company_card_radius: '14',
+  company_card_padding: '17',
+  company_card_logo_size: '52',
+  company_card_gap: '14',
+  company_card_shadow: 'soft',
+  company_card_hover: 'lift',
+  nav_logo_size: '31',
+  nav_header_height: '72',
+  nav_gap: '28',
+  nav_cta_text: 'Post a job',
+  nav_cta_enabled: '1',
+};
+
+export const HOMEPAGE_COPY_DEFAULTS = {
+  homepage_featured_title: 'Top companies hiring now',
+  homepage_categories_title: 'Browse by category',
+  homepage_jobs_eyebrow: 'FRESH FOR YOU',
+  homepage_jobs_title: 'Latest job opportunities',
+  homepage_jobs_cta: 'View all jobs',
+  homepage_alerts_title: 'Job alerts',
+  homepage_alerts_text: 'Get new roles in your inbox. Set a clear search once and stay in the loop.',
+  homepage_alerts_cta: 'Create alert',
+  homepage_career_title: 'Boost your career',
+  homepage_career_text: 'Build a profile that helps the right companies find you.',
+  homepage_career_cta: 'Complete profile',
+  homepage_resources_title: 'Career resources',
+  homepage_blog_title: 'Career tips and insights',
+  homepage_blog_cta: 'View all articles',
+};
+
+export const THEME_DEFAULTS = Object.freeze({ ...APPEARANCE_DEFAULTS, ...COMPONENT_DEFAULTS });
+
 export const THEME_SETTING_METADATA = Object.freeze({
   appearance_primary_color: { type: 'color', category: 'appearance', description: 'Primary brand color' },
   appearance_secondary_color: { type: 'color', category: 'appearance', description: 'Secondary brand color' },
@@ -66,10 +99,29 @@ export const THEME_SETTING_METADATA = Object.freeze({
   appearance_density: { type: 'enum', values: ['compact', 'comfortable', 'spacious'], category: 'layout', description: 'Public layout density' },
   appearance_font_family: { type: 'font', values: ['Manrope', 'Inter', 'Plus Jakarta Sans', 'Poppins'], category: 'typography', description: 'Body font family' },
   appearance_heading_font: { type: 'font', values: ['Space Grotesk', 'Plus Jakarta Sans', 'Poppins', 'Sora', 'Outfit'], category: 'typography', description: 'Heading font family' },
+  company_card_radius: { type: 'integer', min: 8, max: 24, category: 'company_card', description: 'Company Card radius' },
+  company_card_padding: { type: 'integer', min: 10, max: 28, category: 'company_card', description: 'Company Card padding' },
+  company_card_logo_size: { type: 'integer', min: 36, max: 76, category: 'company_card', description: 'Company Card logo size' },
+  company_card_gap: { type: 'integer', min: 6, max: 28, category: 'company_card', description: 'Company Card grid gap' },
+  company_card_shadow: { type: 'enum', values: ['none', 'soft', 'strong'], category: 'company_card', description: 'Company Card shadow' },
+  company_card_hover: { type: 'enum', values: ['none', 'lift'], category: 'company_card', description: 'Company Card hover behavior' },
+  nav_logo_size: { type: 'integer', min: 24, max: 44, category: 'navigation', description: 'Navigation logo size' },
+  nav_header_height: { type: 'integer', min: 56, max: 88, category: 'navigation', description: 'Navigation header height' },
+  nav_gap: { type: 'integer', min: 8, max: 48, category: 'navigation', description: 'Navigation spacing' },
+  nav_cta_text: { type: 'text', max: 40, category: 'navigation', description: 'Navigation CTA label' },
+  nav_cta_enabled: { type: 'boolean', category: 'navigation', description: 'Show navigation CTA' },
+  ai_foundation_smoke_enabled: { type: 'boolean', category: 'ai', description: 'Enable foundation smoke test' },
+  ai_job_intelligence_enabled: { type: 'boolean', category: 'ai', description: 'Enable job intelligence' },
+  ai_matching_enabled: { type: 'boolean', category: 'ai', description: 'Enable user matching' },
+  ai_career_assistant_enabled: { type: 'boolean', category: 'ai', description: 'Enable career assistant' },
+  ai_content_intelligence_enabled: { type: 'boolean', category: 'ai', description: 'Enable content intelligence' },
+  ai_admin_assistant_enabled: { type: 'boolean', category: 'ai', description: 'Enable admin assistant' },
+  ...Object.fromEntries(Object.keys(HOMEPAGE_COPY_DEFAULTS).map(key => [key, { type: 'text', max: 140, category: 'homepage', description: 'Homepage copy' }])),
 });
 
 export const SETTINGS_DEFAULTS = {
   ...THEME_DEFAULTS,
+  ...HOMEPAGE_COPY_DEFAULTS,
   site_name: 'JobForion',
   site_tagline: 'Find Your Next Remote Job',
   site_description: 'JobForion is a curated remote job board with verified positions in development, design, marketing, data and more. Updated every few hours.',
@@ -78,6 +130,7 @@ export const SETTINGS_DEFAULTS = {
   social_linkedin: '',
   social_facebook: '',
   ga_measurement_id: 'G-NQJM1B95TS',
+  seo_indexing_enabled: '1',
   maintenance_mode: '0',
   maintenance_message: 'JobForion is currently undergoing scheduled maintenance. We will be back online shortly — thank you for your patience.',
   ads_enabled: '1',
@@ -100,6 +153,12 @@ export const SETTINGS_DEFAULTS = {
   // The binding/model remain code/config controlled; this switch provides
   // the minimum safe runtime kill-switch without exposing AI to the browser.
   ai_enabled: '1',
+  ai_foundation_smoke_enabled: '1',
+  ai_job_intelligence_enabled: '1',
+  ai_matching_enabled: '1',
+  ai_career_assistant_enabled: '1',
+  ai_content_intelligence_enabled: '1',
+  ai_admin_assistant_enabled: '1',
 
   // ── Hero section customization (homepage) ─────────────────────────
   // Every field here is rendered by pages/home.js's hero block. Colors
@@ -221,13 +280,25 @@ export function resolveTheme(settings = {}) {
     sectionSpacing: boundedInteger(source.appearance_section_spacing, 46, 20, 96),
     cardGap: boundedInteger(source.appearance_card_gap, 14, 6, 32), density,
     fontFamily: font('appearance_font_family'), headingFont: font('appearance_heading_font'),
+    companyCardRadius: boundedInteger(source.company_card_radius, 14, 8, 24),
+    companyCardPadding: boundedInteger(source.company_card_padding, 17, 10, 28),
+    companyCardLogoSize: boundedInteger(source.company_card_logo_size, 52, 36, 76),
+    companyCardGap: boundedInteger(source.company_card_gap, 14, 6, 28),
+    companyCardShadow: ['none', 'soft', 'strong'].includes(String(source.company_card_shadow)) ? String(source.company_card_shadow) : COMPONENT_DEFAULTS.company_card_shadow,
+    companyCardHover: ['none', 'lift'].includes(String(source.company_card_hover)) ? String(source.company_card_hover) : COMPONENT_DEFAULTS.company_card_hover,
+    navLogoSize: boundedInteger(source.nav_logo_size, 31, 24, 44),
+    navHeaderHeight: boundedInteger(source.nav_header_height, 72, 56, 88),
+    navGap: boundedInteger(source.nav_gap, 28, 8, 48),
+    navCtaEnabled: String(source.nav_cta_enabled) !== '0',
   };
 }
 
 export function themeCssVariables(settings = {}) {
   const theme = resolveTheme(settings);
   const densityScale = theme.density === 'compact' ? 0.85 : theme.density === 'spacious' ? 1.15 : 1;
-  return `:root{--brand:${theme.primary};--brand2:${theme.secondary};--cyan:${theme.accent};--brand-soft:color-mix(in srgb, ${theme.primary} 10%, transparent);--bg:${theme.pageBackground};--bg2:${theme.elevatedSurface};--surface:${theme.surface};--surface2:${theme.elevatedSurface};--ink:${theme.textPrimary};--ink2:${theme.textSecondary};--ink3:${theme.textMuted};--border:${theme.border};--border2:${theme.border};--r:${theme.radius}px;--radius-sm:8px;--radius-md:${theme.radius}px;--radius-card:${Math.min(28, theme.radius + 2)}px;--container-width:${theme.containerWidth}px;--section-space:${theme.sectionSpacing}px;--card-gap:${theme.cardGap}px;--space-xs:4px;--space-sm:8px;--space-md:16px;--space-lg:24px;--space-xl:32px;--space-2xl:48px;--density-scale:${densityScale};--transition-fast:180ms;--transition-normal:240ms;--layout-header-height:72px;--font-body:'${theme.fontFamily}',sans-serif;--font-heading:'${theme.headingFont}',sans-serif}`;
+  const companyShadow = { none: 'none', soft: '0 8px 24px rgba(48,31,121,.10)', strong: '0 14px 34px rgba(48,31,121,.18)' }[theme.companyCardShadow] || '0 8px 24px rgba(48,31,121,.10)';
+  const companyHoverTransform = theme.companyCardHover === 'lift' ? 'translateY(-2px)' : 'none';
+  return `:root{--brand:${theme.primary};--brand2:${theme.secondary};--cyan:${theme.accent};--brand-soft:color-mix(in srgb, ${theme.primary} 10%, transparent);--bg:${theme.pageBackground};--bg2:${theme.elevatedSurface};--surface:${theme.surface};--surface2:${theme.elevatedSurface};--ink:${theme.textPrimary};--ink2:${theme.textSecondary};--ink3:${theme.textMuted};--border:${theme.border};--border2:${theme.border};--r:${theme.radius}px;--radius-sm:8px;--radius-md:${theme.radius}px;--radius-card:${Math.min(28, theme.radius + 2)}px;--container-width:${theme.containerWidth}px;--section-space:${theme.sectionSpacing}px;--card-gap:${theme.cardGap}px;--space-xs:4px;--space-sm:8px;--space-md:16px;--space-lg:24px;--space-xl:32px;--space-2xl:48px;--density-scale:${densityScale};--transition-fast:180ms;--transition-normal:240ms;--layout-header-height:${theme.navHeaderHeight}px;--nav-logo-size:${theme.navLogoSize}px;--nav-header-height:${theme.navHeaderHeight}px;--nav-gap:${theme.navGap}px;--company-card-radius:${theme.companyCardRadius}px;--company-card-padding:${theme.companyCardPadding}px;--company-card-logo-size:${theme.companyCardLogoSize}px;--company-card-gap:${theme.companyCardGap}px;--company-card-shadow:${companyShadow};--company-card-hover-transform:${companyHoverTransform};--font-body:'${theme.fontFamily}',sans-serif;--font-heading:'${theme.headingFont}',sans-serif}`;
 }
 
 
@@ -240,6 +311,7 @@ export function themeCssVariables(settings = {}) {
 // checkbox-style setting only needs to be added to this one list.
 export const CHECKBOX_SETTINGS_KEYS = [
   'maintenance_mode',
+  'seo_indexing_enabled',
   'feature_blog',
   'feature_job_alerts',
   'feature_company_pages',
@@ -248,6 +320,15 @@ export const CHECKBOX_SETTINGS_KEYS = [
   'feature_featured_jobs',
   'hot_pay_enabled',
   'ai_enabled',
+  'ai_foundation_smoke_enabled',
+  'ai_job_intelligence_enabled',
+  'ai_matching_enabled',
+  'ai_career_assistant_enabled',
+  'ai_content_intelligence_enabled',
+  'ai_admin_assistant_enabled',
+  'company_card_shadow',
+  'company_card_hover',
+  'nav_cta_enabled',
   'blog_auto_enabled',
   'blog_auto_publish',
   'blog_auto_delete',
@@ -309,6 +390,8 @@ function sanitizeSettingValue(key, value) {
   if (meta.type === 'integer') return String(boundedInteger(raw, parseInt(THEME_DEFAULTS[key], 10), meta.min, meta.max));
   if (meta.type === 'enum') return meta.values.includes(raw) ? raw : THEME_DEFAULTS[key];
   if (meta.type === 'font') return FONT_VALUES.has(raw) ? raw : THEME_DEFAULTS[key];
+  if (meta.type === 'boolean') return raw === '1' ? '1' : '0';
+  if (meta.type === 'text') return raw.slice(0, meta.max || 2000);
   return THEME_DEFAULTS[key];
 }
 

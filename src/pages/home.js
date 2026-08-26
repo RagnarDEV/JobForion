@@ -13,7 +13,7 @@ import { jobCardSSR, logoImgHtml } from '../components/job-card.js';
 import { adSlot } from '../components/ad-slot.js';
 import { escapeHtml, slugify, listCompanies } from '../lib/entities.js';
 import { googleAnalyticsTag } from '../lib/analytics-tag.js';
-import { getSettings, HERO_FONT_OPTIONS } from '../lib/settings.js';
+import { getSettings, HOMEPAGE_COPY_DEFAULTS, HERO_FONT_OPTIONS, themeCssVariables } from '../lib/settings.js';
 import { getCategories } from '../lib/categories.js';
 import { getCardStyles } from '../lib/job-card-styles.js';
 import { getAdSlotsConfig } from '../lib/ad-slots.js';
@@ -88,6 +88,22 @@ export async function renderMainHTML(env, base, user = null) {
   const heroTitleLine2 = settings.hero_title_line2 === legacyHeroDefaults.title2 ? 'Anywhere in the world.' : settings.hero_title_line2;
   const heroSubtitle = settings.hero_subtitle === legacyHeroDefaults.subtitle ? 'Discover flexible remote work from trusted companies, with global opportunities curated for the way you want to work.' : settings.hero_subtitle;
   const heroSearchButtonText = settings.hero_search_button_text === legacyHeroDefaults.button ? 'Search Jobs' : settings.hero_search_button_text;
+  const homepageCopy = {
+    featuredTitle: settings.homepage_featured_title || HOMEPAGE_COPY_DEFAULTS.homepage_featured_title,
+    categoriesTitle: settings.homepage_categories_title || HOMEPAGE_COPY_DEFAULTS.homepage_categories_title,
+    jobsEyebrow: settings.homepage_jobs_eyebrow || HOMEPAGE_COPY_DEFAULTS.homepage_jobs_eyebrow,
+    jobsTitle: settings.homepage_jobs_title || HOMEPAGE_COPY_DEFAULTS.homepage_jobs_title,
+    jobsCta: settings.homepage_jobs_cta || HOMEPAGE_COPY_DEFAULTS.homepage_jobs_cta,
+    alertsTitle: settings.homepage_alerts_title || HOMEPAGE_COPY_DEFAULTS.homepage_alerts_title,
+    alertsText: settings.homepage_alerts_text || HOMEPAGE_COPY_DEFAULTS.homepage_alerts_text,
+    alertsCta: settings.homepage_alerts_cta || HOMEPAGE_COPY_DEFAULTS.homepage_alerts_cta,
+    careerTitle: settings.homepage_career_title || HOMEPAGE_COPY_DEFAULTS.homepage_career_title,
+    careerText: settings.homepage_career_text || HOMEPAGE_COPY_DEFAULTS.homepage_career_text,
+    careerCta: settings.homepage_career_cta || HOMEPAGE_COPY_DEFAULTS.homepage_career_cta,
+    resourcesTitle: settings.homepage_resources_title || HOMEPAGE_COPY_DEFAULTS.homepage_resources_title,
+    blogTitle: settings.homepage_blog_title || HOMEPAGE_COPY_DEFAULTS.homepage_blog_title,
+    blogCta: settings.homepage_blog_cta || HOMEPAGE_COPY_DEFAULTS.homepage_blog_cta,
+  };
   let initialJobs = [], initialTotal = 0, totalJobsCount = 0, companiesCount = 0;
   try {
     const { results } = await env.DB.prepare(`SELECT ${JOB_LISTING_COLUMNS} FROM jobs WHERE ${PUBLIC_JOB_STATUS_SQL} ORDER BY ${JOB_TYPE_SORT_SQL} ASC, featured DESC, id DESC LIMIT 20`).all();
@@ -152,6 +168,7 @@ export async function renderMainHTML(env, base, user = null) {
 
   const siteName = escapeHtml(settings.site_name);
   const siteDescription = settings.site_description || `${settings.site_name} is a curated remote job board with ${totalJobsCount ? totalJobsCount.toLocaleString() + '+' : ''} verified positions in development, design, marketing, data and more. Updated every few hours.`;
+  const robotsDirective = settings.seo_indexing_enabled === '0' ? 'noindex, nofollow' : 'index, follow';
 
   // ── Homepage Sections (Admin Dashboard V2, Phase 4) ─────────────────
   // Each section is built as a standalone HTML string here, then
@@ -193,30 +210,30 @@ export async function renderMainHTML(env, base, user = null) {
 
     featured_companies: topCompanies.length ? `
     <section class="fc-strip">
-      <div class="fc-inner"><div class="section-heading compact-heading"><div><p class="eyebrow">CURATED EMPLOYERS</p><h2>Top companies hiring now</h2></div><a class="text-button" href="/companies">View all companies ${iconArrowRight({ size: 14 })}</a></div>
+      <div class="fc-inner"><div class="section-heading compact-heading"><div><p class="eyebrow">CURATED EMPLOYERS</p><h2>${escapeHtml(homepageCopy.featuredTitle)}</h2></div><a class="text-button" href="/companies">View all companies ${iconArrowRight({ size: 14 })}</a></div>
       <div class="fc-logos">${topCompanies.slice(0, 8).map(c => `<a class="company-tile" href="/companies/${escapeHtml(c.slug || slugify(c.name))}">${logoImgHtml(c.name, '38px', 'company-logo', companyLogoMap[String(c.name || '').toLowerCase()] || null, c.website)}<strong>${escapeHtml(c.name)}</strong><small>${Number(c.count || 0).toLocaleString()} open roles</small></a>`).join('')}</div></div>
     </section>` : '',
 
     categories_grid: categories.length ? `
-    <section class="category-strip"><div class="content-wrap category-inner"><div class="cg-title">Browse by category</div><div class="cg-grid">
+    <section class="category-strip"><div class="content-wrap category-inner"><div class="cg-title">${escapeHtml(homepageCopy.categoriesTitle)}</div><div class="cg-grid">
       ${categories.slice(0, 8).map(c => { const swatch = /^#[0-9a-fA-F]{6}$/.test(c.color || '') ? c.color : '#6339E6'; return `<a href="/categories/${c.key}" class="cg-item" style="--cat-color:${swatch}"><span class="cg-icon" style="background:${swatch}1a;color:${swatch}">${categoryIconSvg(c.key, { size: 18 })}</span><span><strong class="cg-label">${escapeHtml(c.label)}</strong><small>${categoryCounts[c.key] ? `${Number(categoryCounts[c.key]).toLocaleString()} open roles` : 'Explore roles'}</small></span></a>`; }).join('')}
     </div></div></section>` : '',
 
     job_listing: `
     <section class="content-wrap jobs-section"><div class="home-jobs-grid"><div class="home-jobs-column">
-      <div class="section-heading jobs-heading"><div><p class="eyebrow">FRESH FOR YOU</p><h2>Latest job opportunities</h2></div><a class="text-button" href="/jobs">View all jobs ${iconArrowRight({ size: 14 })}</a></div>
+      <div class="section-heading jobs-heading"><div><p class="eyebrow">${escapeHtml(homepageCopy.jobsEyebrow)}</p><h2>${escapeHtml(homepageCopy.jobsTitle)}</h2></div><a class="text-button" href="/jobs">${escapeHtml(homepageCopy.jobsCta)} ${iconArrowRight({ size: 14 })}</a></div>
       <div class="job-tabs" role="tablist"><button class="active" data-job-tab="all" onclick="quickJobTab('all',this)">All jobs</button><button data-job-tab="remote" onclick="quickJobTab('remote',this)">Remote</button><button data-job-tab="full_time" onclick="quickJobTab('full_time',this)">Full-time</button><button data-job-tab="part_time" onclick="quickJobTab('part_time',this)">Part-time</button><button data-job-tab="contract" onclick="quickJobTab('contract',this)">Contract</button></div>
       <div class="results-hdr"><div class="results-count" id="resultsCount" style="display:none"><strong>${initialTotal.toLocaleString()}</strong> jobs found</div></div>
       ${adSlot('homepage-results-top', '', adConfig, adsEnabled)}
-      <div class="jobs-list" id="jobsList">${ssrJobsHtml}</div><a class="jobs-view-all" href="/jobs">View all jobs ${iconArrowRight({ size: 14 })}</a>
+      <div class="jobs-list" id="jobsList">${ssrJobsHtml}</div><a class="jobs-view-all" href="/jobs">${escapeHtml(homepageCopy.jobsCta)} ${iconArrowRight({ size: 14 })}</a>
     </div><aside class="home-sidebar">
-      <div class="side-card alert-card"><div class="side-card-icon">${iconBell({ size: 18 })}</div><h3>Job alerts</h3><p>Get new roles in your inbox. Set a clear search once and stay in the loop.</p><a class="side-button" href="${user ? '/user/job-alerts' : '/register'}">Create alert ${iconArrowRight({ size: 13 })}</a></div>
-      <div class="side-card resume-card"><div><p class="eyebrow">STAND OUT</p><h3>Boost your career</h3><p>Build a profile that helps the right companies find you.</p><a class="side-button light" href="${user ? '/user/profile' : '/register'}">Complete profile ${iconArrowRight({ size: 13 })}</a></div><div class="resume-orbit"><span></span><span></span><span></span></div></div>
-      <div class="side-card resources-card"><h3>Career resources</h3><a href="/blog">${iconFileText({ size: 14 })}<span>Career advice</span>${iconArrowRight({ size: 13 })}</a><a href="/blog">${iconFileText({ size: 14 })}<span>Interview tips</span>${iconArrowRight({ size: 13 })}</a><a href="/skills">${iconFileText({ size: 14 })}<span>Browse by skill</span>${iconArrowRight({ size: 13 })}</a><a href="/countries">${iconFileText({ size: 14 })}<span>Remote by country</span>${iconArrowRight({ size: 13 })}</a></div>
+      <div class="side-card alert-card"><div class="side-card-icon">${iconBell({ size: 18 })}</div><h3>${escapeHtml(homepageCopy.alertsTitle)}</h3><p>${escapeHtml(homepageCopy.alertsText)}</p><a class="side-button" href="${user ? '/user/job-alerts' : '/register'}">${escapeHtml(homepageCopy.alertsCta)} ${iconArrowRight({ size: 13 })}</a></div>
+      <div class="side-card resume-card"><div><p class="eyebrow">STAND OUT</p><h3>${escapeHtml(homepageCopy.careerTitle)}</h3><p>${escapeHtml(homepageCopy.careerText)}</p><a class="side-button light" href="${user ? '/user/profile' : '/register'}">${escapeHtml(homepageCopy.careerCta)} ${iconArrowRight({ size: 13 })}</a></div><div class="resume-orbit"><span></span><span></span><span></span></div></div>
+      <div class="side-card resources-card"><h3>${escapeHtml(homepageCopy.resourcesTitle)}</h3><a href="/blog">${iconFileText({ size: 14 })}<span>Career advice</span>${iconArrowRight({ size: 13 })}</a><a href="/blog">${iconFileText({ size: 14 })}<span>Interview tips</span>${iconArrowRight({ size: 13 })}</a><a href="/skills">${iconFileText({ size: 14 })}<span>Browse by skill</span>${iconArrowRight({ size: 13 })}</a><a href="/countries">${iconFileText({ size: 14 })}<span>Remote by country</span>${iconArrowRight({ size: 13 })}</a></div>
     </aside></div></section>`,
 
     cta_banner: `
-    ${blogPosts.length ? `<section class="insights-strip"><div class="content-wrap"><div class="section-heading compact-heading"><div><p class="eyebrow">CAREER GUIDANCE</p><h2>Career tips and insights</h2></div><a class="text-button" href="/blog">View all articles ${iconArrowRight({ size: 14 })}</a></div><div class="insights-grid">${blogPosts.map((post, i) => `<a class="insight-tile" href="/blog/${escapeHtml(post.slug)}"><div class="insight-cover" style="${post.cover_image_url ? `background-image:url('${escapeHtml(post.cover_image_url)}')` : `background:linear-gradient(135deg,${['#6a53d8','#ed9d83','#54a9b5','#d47898'][i % 4]},#29244e)`}"><span>${escapeHtml(post.category || 'Career advice')}</span></div><strong>${escapeHtml(post.title)}</strong><small>${escapeHtml(post.excerpt || 'Practical guidance for your next remote opportunity.')}</small></a>`).join('')}</div></div></section>` : ''}<section class="trust-strip"><div class="content-wrap trust-grid"><div><span class="trust-icon">⌁</span><p><strong>100% Remote Jobs</strong><small>Work from anywhere in the world</small></p></div><div><span class="trust-icon">✓</span><p><strong>Verified companies</strong><small>Teams you can trust</small></p></div><div><span class="trust-icon">✦</span><p><strong>Daily updates</strong><small>Fresh roles added every day</small></p></div><div><span class="trust-icon">◌</span><p><strong>Free for job seekers</strong><small>Search and apply for free</small></p></div></div></section><div class="content-wrap"><div class="cta-banner"><div><div class="cta-title">Hiring remotely?</div><div class="cta-sub">Reach qualified candidates and post your job in minutes.</div></div><button class="cta-btn" onclick="openPostJobModal()">${iconPlus({ size: 13 })} Post a job</button></div></div>`,
+    ${blogPosts.length ? `<section class="insights-strip"><div class="content-wrap"><div class="section-heading compact-heading"><div><p class="eyebrow">CAREER GUIDANCE</p><h2>${escapeHtml(homepageCopy.blogTitle)}</h2></div><a class="text-button" href="/blog">${escapeHtml(homepageCopy.blogCta)} ${iconArrowRight({ size: 14 })}</a></div><div class="insights-grid">${blogPosts.map((post, i) => `<a class="insight-tile" href="/blog/${escapeHtml(post.slug)}"><div class="insight-cover" style="${post.cover_image_url ? `background-image:url('${escapeHtml(post.cover_image_url)}')` : `background:linear-gradient(135deg,${['#6a53d8','#ed9d83','#54a9b5','#d47898'][i % 4]},#29244e)`}"><span>${escapeHtml(post.category || 'Career advice')}</span></div><strong>${escapeHtml(post.title)}</strong><small>${escapeHtml(post.excerpt || 'Practical guidance for your next remote opportunity.')}</small></a>`).join('')}</div></div></section>` : ''}<section class="trust-strip"><div class="content-wrap trust-grid"><div><span class="trust-icon">⌁</span><p><strong>100% Remote Jobs</strong><small>Work from anywhere in the world</small></p></div><div><span class="trust-icon">✓</span><p><strong>Verified companies</strong><small>Teams you can trust</small></p></div><div><span class="trust-icon">✦</span><p><strong>Daily updates</strong><small>Fresh roles added every day</small></p></div><div><span class="trust-icon">◌</span><p><strong>Free for job seekers</strong><small>Search and apply for free</small></p></div></div></section><div class="content-wrap"><div class="cta-banner"><div><div class="cta-title">Hiring remotely?</div><div class="cta-sub">Reach qualified candidates and post your job in minutes.</div></div><button class="cta-btn" onclick="openPostJobModal()">${iconPlus({ size: 13 })} Post a job</button></div></div>`,
   };
   const homepageSectionsHtml = enabledSections.map(s => sectionHtml[s.key] || '').join('');
 
@@ -229,7 +246,7 @@ ${googleAnalyticsTag(settings.ga_measurement_id)}
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>${siteName} — ${escapeHtml(settings.site_tagline)}</title>
 <meta name="description" content="${escapeHtml(siteDescription)}">
-<meta name="robots" content="index, follow">
+<meta name="robots" content="${robotsDirective}">
 ${ICON_HEAD}
 <meta property="og:title" content="${siteName} — ${escapeHtml(settings.site_tagline)}">
 <meta property="og:description" content="${escapeHtml(siteDescription)}">
@@ -247,6 +264,7 @@ ${ICON_HEAD}
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Space+Grotesk:wght@700;800&family=JetBrains+Mono:wght@500;700${heroFontGoogleParam}&display=swap" rel="stylesheet">
 <style>
 ${SHARED_CSS}
+${themeCssVariables(settings)}
 
 /* ── HERO (light editorial surface with a purple decision path) ── */
 .hero{padding:66px 24px 84px;background:linear-gradient(116deg,#fff 0%,#fbfaff 55%,#f3efff 100%);position:relative;overflow:hidden;border-bottom:1px solid #f0edf8}

@@ -7,7 +7,7 @@
 // cache TTL), with zero code edits and zero redeploy.
 
 import { escapeHtml } from '../../lib/entities.js';
-import { getSettings, SETTINGS_DEFAULTS, THEME_DEFAULTS, HERO_FONT_OPTIONS } from '../../lib/settings.js';
+import { getSettings, SETTINGS_DEFAULTS, THEME_DEFAULTS, COMPONENT_DEFAULTS, HOMEPAGE_COPY_DEFAULTS, HERO_FONT_OPTIONS } from '../../lib/settings.js';
 
 function field(label, name, value, opts = {}) {
   const { type = 'text', placeholder = '', hint = '', full = false } = opts;
@@ -146,12 +146,66 @@ export async function renderSettingsContent(env) {
       </div>
 
       <div class="adm-card">
+        <div class="adm-card-title">Company Card <span style="font-weight:400;color:var(--ink3);font-size:12px">— structured controls for the authoritative company component</span></div>
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:14px">
+          ${field('Radius (px)', 'company_card_radius', s.company_card_radius || COMPONENT_DEFAULTS.company_card_radius, { type: 'number', hint: 'Safe range: 8–24px.' })}
+          ${field('Padding (px)', 'company_card_padding', s.company_card_padding || COMPONENT_DEFAULTS.company_card_padding, { type: 'number', hint: 'Safe range: 10–28px.' })}
+          ${field('Logo size (px)', 'company_card_logo_size', s.company_card_logo_size || COMPONENT_DEFAULTS.company_card_logo_size, { type: 'number', hint: 'Safe range: 36–76px.' })}
+          ${field('Grid gap (px)', 'company_card_gap', s.company_card_gap || COMPONENT_DEFAULTS.company_card_gap, { type: 'number', hint: 'Safe range: 6–28px.' })}
+          <label style="display:block"><span style="font-size:11px;font-weight:700;color:var(--ink3);text-transform:uppercase;letter-spacing:.4px;display:block;margin-bottom:6px">Shadow</span><select class="adm-input" style="width:100%" name="company_card_shadow"><option value="none" ${s.company_card_shadow === 'none' ? 'selected' : ''}>None</option><option value="soft" ${!s.company_card_shadow || s.company_card_shadow === 'soft' ? 'selected' : ''}>Soft</option><option value="strong" ${s.company_card_shadow === 'strong' ? 'selected' : ''}>Strong</option></select></label>
+          <label style="display:block"><span style="font-size:11px;font-weight:700;color:var(--ink3);text-transform:uppercase;letter-spacing:.4px;display:block;margin-bottom:6px">Hover</span><select class="adm-input" style="width:100%" name="company_card_hover"><option value="lift" ${!s.company_card_hover || s.company_card_hover === 'lift' ? 'selected' : ''}>Lift</option><option value="none" ${s.company_card_hover === 'none' ? 'selected' : ''}>None</option></select></label>
+        </div>
+        <div id="companyCardPreview" style="display:flex;align-items:center;gap:12px;max-width:440px;padding:${escapeHtml(s.company_card_padding || COMPONENT_DEFAULTS.company_card_padding)}px;border:1px solid ${escapeHtml(s.appearance_border_color || THEME_DEFAULTS.appearance_border_color)};border-radius:${escapeHtml(s.company_card_radius || COMPONENT_DEFAULTS.company_card_radius)}px;background:${escapeHtml(s.appearance_surface || THEME_DEFAULTS.appearance_surface)};box-shadow:var(--company-card-shadow,0 8px 24px rgba(48,31,121,.10))"><span id="companyCardPreviewLogo" style="width:${escapeHtml(s.company_card_logo_size || COMPONENT_DEFAULTS.company_card_logo_size)}px;height:${escapeHtml(s.company_card_logo_size || COMPONENT_DEFAULTS.company_card_logo_size)}px;border-radius:10px;background:${escapeHtml(s.appearance_elevated_surface || THEME_DEFAULTS.appearance_elevated_surface)};display:inline-flex;align-items:center;justify-content:center;color:${escapeHtml(s.appearance_primary_color || THEME_DEFAULTS.appearance_primary_color)};font-weight:900">J</span><span><strong style="display:block;color:${escapeHtml(s.appearance_text_primary || THEME_DEFAULTS.appearance_text_primary)};font-family:'${escapeHtml(s.appearance_heading_font || THEME_DEFAULTS.appearance_heading_font)}'">Company Card preview</strong><small style="color:${escapeHtml(s.appearance_text_secondary || THEME_DEFAULTS.appearance_text_secondary)}">12 open jobs · Verified</small></span></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px"><button class="adm-btn" type="submit" name="settings_scope" value="company_card">Save Company Card</button><button class="adm-btn" type="submit" formaction="/admin/settings/reset-components" formmethod="POST" onclick="return confirm('Reset Company Card and Navigation controls only?')">Reset Component Controls</button></div>
+        <script>
+        (function(){var form=document.currentScript.closest('form'),card=document.getElementById('companyCardPreview'),logo=document.getElementById('companyCardPreviewLogo');if(!form||!card||!logo)return;function v(n){var e=form.querySelector('[name="'+n+'"]');return e?e.value:''}function draw(){card.style.padding=v('company_card_padding')+'px';card.style.borderRadius=v('company_card_radius')+'px';logo.style.width=v('company_card_logo_size')+'px';logo.style.height=v('company_card_logo_size')+'px'}['company_card_padding','company_card_radius','company_card_logo_size'].forEach(function(n){var e=form.querySelector('[name="'+n+'"]');if(e)e.addEventListener('input',draw)});})();
+        </script>
+      </div>
+
+      <div class="adm-card">
+        <div class="adm-card-title">Navigation <span style="font-weight:400;color:var(--ink3);font-size:12px">— safe header and CTA controls for desktop and mobile</span></div>
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px">
+          ${field('Logo size (px)', 'nav_logo_size', s.nav_logo_size || COMPONENT_DEFAULTS.nav_logo_size, { type: 'number', hint: 'Safe range: 24–44px.' })}
+          ${field('Header height (px)', 'nav_header_height', s.nav_header_height || COMPONENT_DEFAULTS.nav_header_height, { type: 'number', hint: 'Safe range: 56–88px.' })}
+          ${field('Navigation gap (px)', 'nav_gap', s.nav_gap || COMPONENT_DEFAULTS.nav_gap, { type: 'number', hint: 'Safe range: 8–48px.' })}
+          ${field('CTA label', 'nav_cta_text', s.nav_cta_text || COMPONENT_DEFAULTS.nav_cta_text, { placeholder: COMPONENT_DEFAULTS.nav_cta_text, hint: 'Text only; max 40 characters.' })}
+        </div>
+        ${featureFlag('nav_cta_enabled', 'Show navigation CTA', s.nav_cta_enabled, 'Controls the Post a job CTA in desktop and mobile navigation.')}
+      </div>
+
+      <div class="adm-card">
+        <div class="adm-card-title">Homepage Copy <span style="font-weight:400;color:var(--ink3);font-size:12px">— structured text only; section order and visibility remain in Homepage Builder</span></div>
+        <div class="adm-form-grid">
+          ${field('Featured companies title', 'homepage_featured_title', s.homepage_featured_title || HOMEPAGE_COPY_DEFAULTS.homepage_featured_title, { placeholder: HOMEPAGE_COPY_DEFAULTS.homepage_featured_title })}
+          ${field('Categories title', 'homepage_categories_title', s.homepage_categories_title || HOMEPAGE_COPY_DEFAULTS.homepage_categories_title, { placeholder: HOMEPAGE_COPY_DEFAULTS.homepage_categories_title })}
+          ${field('Jobs eyebrow', 'homepage_jobs_eyebrow', s.homepage_jobs_eyebrow || HOMEPAGE_COPY_DEFAULTS.homepage_jobs_eyebrow, { placeholder: HOMEPAGE_COPY_DEFAULTS.homepage_jobs_eyebrow })}
+          ${field('Jobs section title', 'homepage_jobs_title', s.homepage_jobs_title || HOMEPAGE_COPY_DEFAULTS.homepage_jobs_title, { placeholder: HOMEPAGE_COPY_DEFAULTS.homepage_jobs_title })}
+          ${field('Jobs CTA label', 'homepage_jobs_cta', s.homepage_jobs_cta || HOMEPAGE_COPY_DEFAULTS.homepage_jobs_cta, { placeholder: HOMEPAGE_COPY_DEFAULTS.homepage_jobs_cta })}
+          ${field('Alerts title', 'homepage_alerts_title', s.homepage_alerts_title || HOMEPAGE_COPY_DEFAULTS.homepage_alerts_title, { placeholder: HOMEPAGE_COPY_DEFAULTS.homepage_alerts_title })}
+          ${field('Alerts description', 'homepage_alerts_text', s.homepage_alerts_text || HOMEPAGE_COPY_DEFAULTS.homepage_alerts_text, { full: true })}
+          ${field('Alerts CTA label', 'homepage_alerts_cta', s.homepage_alerts_cta || HOMEPAGE_COPY_DEFAULTS.homepage_alerts_cta, { placeholder: HOMEPAGE_COPY_DEFAULTS.homepage_alerts_cta })}
+          ${field('Career title', 'homepage_career_title', s.homepage_career_title || HOMEPAGE_COPY_DEFAULTS.homepage_career_title, { placeholder: HOMEPAGE_COPY_DEFAULTS.homepage_career_title })}
+          ${field('Career description', 'homepage_career_text', s.homepage_career_text || HOMEPAGE_COPY_DEFAULTS.homepage_career_text, { full: true })}
+          ${field('Career CTA label', 'homepage_career_cta', s.homepage_career_cta || HOMEPAGE_COPY_DEFAULTS.homepage_career_cta, { placeholder: HOMEPAGE_COPY_DEFAULTS.homepage_career_cta })}
+          ${field('Resources title', 'homepage_resources_title', s.homepage_resources_title || HOMEPAGE_COPY_DEFAULTS.homepage_resources_title, { placeholder: HOMEPAGE_COPY_DEFAULTS.homepage_resources_title })}
+          ${field('Blog section title', 'homepage_blog_title', s.homepage_blog_title || HOMEPAGE_COPY_DEFAULTS.homepage_blog_title, { placeholder: HOMEPAGE_COPY_DEFAULTS.homepage_blog_title })}
+          ${field('Blog CTA label', 'homepage_blog_cta', s.homepage_blog_cta || HOMEPAGE_COPY_DEFAULTS.homepage_blog_cta, { placeholder: HOMEPAGE_COPY_DEFAULTS.homepage_blog_cta })}
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px"><button class="adm-btn" type="submit" name="settings_scope" value="homepage_copy">Save Homepage Copy</button><button class="adm-btn" type="submit" formaction="/admin/settings/reset-homepage-copy" formmethod="POST" onclick="return confirm('Reset Homepage Copy only?')">Reset Homepage Copy</button></div>
+      </div>
+
+      <div class="adm-card">
         <div class="adm-card-title">Social Links <span style="font-weight:400;color:var(--ink3);font-size:12px">— shown in the site footer once filled in</span></div>
         <div class="adm-form-grid">
           ${field('Twitter / X URL', 'social_twitter', s.social_twitter, { type: 'url', placeholder: 'https://x.com/yourhandle' })}
           ${field('LinkedIn URL', 'social_linkedin', s.social_linkedin, { type: 'url', placeholder: 'https://linkedin.com/company/...' })}
           ${field('Facebook URL', 'social_facebook', s.social_facebook, { type: 'url', placeholder: 'https://facebook.com/...' })}
         </div>
+      </div>
+
+      <div class="adm-card">
+        <div class="adm-card-title">SEO &amp; Indexing <span style="font-weight:400;color:var(--ink3);font-size:12px">— controls page-level search indexing without changing routes</span></div>
+        ${featureFlag('seo_indexing_enabled', 'Allow public pages to be indexed', s.seo_indexing_enabled, 'When disabled, public HTML pages emit noindex, nofollow. Sitemap routes remain available for operational inspection.')}
       </div>
 
       <div class="adm-card">
@@ -171,17 +225,25 @@ export async function renderSettingsContent(env) {
 
       <div class="adm-card">
         <div class="adm-card-title">🔥 HOT PAY <span style="font-weight:400;color:var(--ink3);font-size:12px">— high-salary job indicator</span></div>
-        <div style="font-size:12px;color:var(--ink2);line-height:1.7;margin-bottom:14px">Jobs are classified from normalized annual USD salary data. Ranges qualify when the maximum annual USD value reaches the threshold; missing or unparseable salaries are never marked HOT PAY.</div>
+        <div style="font-size:12px;color:var(--ink2);line-height:1.7;margin-bottom:14px">Jobs are classified from normalized annual USD salary data. A salary range uses its midpoint; a minimum-only value uses the minimum and a maximum-only value uses the maximum. Missing or unparseable salaries are never marked HOT PAY.</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:start">
           ${featureFlag('hot_pay_enabled', 'Enable HOT PAY badges', s.hot_pay_enabled, 'Shows the shared HOT PAY indicator on qualifying jobs.')}
-          ${field('Annual threshold (USD)', 'hot_pay_threshold_usd', s.hot_pay_threshold_usd, { type: 'number', placeholder: SETTINGS_DEFAULTS.hot_pay_threshold_usd, hint: 'Compared against normalized annual maximum salary.' })}
+          ${field('Annual threshold (USD)', 'hot_pay_threshold_usd', s.hot_pay_threshold_usd, { type: 'number', placeholder: SETTINGS_DEFAULTS.hot_pay_threshold_usd, hint: 'Compared against the normalized annual salary value for each job.' })}
         </div>
       </div>
 
       <div class="adm-card">
         <div class="adm-card-title">AI Foundation <span style="font-weight:400;color:var(--ink3);font-size:12px">— server-side enhancement layer</span></div>
         <div style="font-size:12px;color:var(--ink2);line-height:1.7;margin-bottom:8px">Workers AI is available only to authorized backend operations. Public pages never call AI, and disabling this switch fails AI requests safely without affecting JobForion.</div>
-        ${featureFlag('ai_enabled', 'Enable the AI foundation', s.ai_enabled, 'Required for the protected internal smoke test; no public AI feature is enabled in Phase 12.1.')}
+        ${featureFlag('ai_enabled', 'Enable the AI foundation', s.ai_enabled, 'Global kill switch for all protected AI operations.')}
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 20px;margin-top:6px">
+          ${featureFlag('ai_foundation_smoke_enabled', 'Foundation smoke test', s.ai_foundation_smoke_enabled, 'Protected admin connectivity check.')}
+          ${featureFlag('ai_job_intelligence_enabled', 'Job intelligence', s.ai_job_intelligence_enabled, 'Protected job analysis and enrichment.')}
+          ${featureFlag('ai_matching_enabled', 'User matching', s.ai_matching_enabled, 'Private profile-to-job matching.')}
+          ${featureFlag('ai_career_assistant_enabled', 'Career assistant', s.ai_career_assistant_enabled, 'Authenticated career guidance.')}
+          ${featureFlag('ai_content_intelligence_enabled', 'Content intelligence', s.ai_content_intelligence_enabled, 'Admin editorial review only.')}
+          ${featureFlag('ai_admin_assistant_enabled', 'Admin assistant', s.ai_admin_assistant_enabled, 'Protected admin operational assistant.')}
+        </div>
       </div>
 
       <div class="adm-card" style="border-color:${s.maintenance_mode === '1' ? 'rgba(255,92,122,.4)' : 'var(--border)'}">

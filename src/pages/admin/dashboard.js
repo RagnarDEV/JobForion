@@ -66,6 +66,12 @@ export async function renderDashboardContent(env) {
   const settings = await getSettings(env);
   const hotPayEnabled = settings.hot_pay_enabled !== '0';
   const hotPayThreshold = hotPayThresholdUsd(settings);
+  // Mirror lib/hot-pay.js for persisted normalized salary columns: a genuine
+  // range uses its midpoint, while min-only/max-only rows use the disclosed
+  // side. Negative/sentinel values never qualify.
+  const hotPaySql = `(salary_min_usd IS NOT NULL AND salary_max_usd IS NULL AND salary_min_usd >= ?)
+    OR (salary_min_usd IS NULL AND salary_max_usd IS NOT NULL AND salary_max_usd >= ?)
+    OR (salary_min_usd IS NOT NULL AND salary_max_usd IS NOT NULL AND salary_min_usd >= 0 AND salary_max_usd >= 0 AND ((salary_min_usd + salary_max_usd) / 2.0) >= ?)`;
 
   const [{ results: totalJobsR }, { results: jobsTodayR }, { results: jobsWeekR }, { results: jobsMonthR }, { results: subsR }, { results: companiesR }, { results: hotR }, { results: usersR }, { results: articlesR }, { results: recentJobsR }, { results: recentUsersR }, { results: recentCompaniesR }, { results: aiActivityR }] = await Promise.all([
     q("SELECT COUNT(*) c FROM jobs"),
@@ -74,7 +80,7 @@ export async function renderDashboardContent(env) {
     q("SELECT COUNT(*) c FROM jobs WHERE created_at >= datetime('now','-30 day')"),
     q("SELECT COUNT(*) c FROM subscribers"),
     q("SELECT COUNT(DISTINCT LOWER(company)) c FROM jobs WHERE company IS NOT NULL AND company != ''"),
-    hotPayEnabled ? q("SELECT COUNT(*) c FROM jobs WHERE salary_max_usd >= ?", hotPayThreshold) : q("SELECT 0 c"),
+    hotPayEnabled ? q(`SELECT COUNT(*) c FROM jobs WHERE ${hotPaySql}`, hotPayThreshold, hotPayThreshold, hotPayThreshold) : q("SELECT 0 c"),
     q("SELECT COUNT(*) c FROM users"),
     q("SELECT COUNT(*) c FROM blog_posts WHERE status = 'published'"),
     q("SELECT id, title, company, location, created_at, status FROM jobs ORDER BY id DESC LIMIT 6"),
@@ -228,7 +234,7 @@ export async function renderDashboardContent(env) {
       ${kpi('Expiring Soon', (expiringSoonR[0]?.c || 0).toLocaleString(), 'Within 3 days', 'var(--amber, #F59E0B)')}
       ${kpi('Deleted Today', (deletedTodayR[0]?.c || 0).toLocaleString(), 'By daily cleanup job', 'var(--coral)')}
       ${kpi('This Month', (jobsMonthR[0]?.c || 0).toLocaleString(), 'New jobs, last 30 days', 'var(--brand2)')}
-      ${kpi('Featured / Hot', (hotR[0]?.c || 0).toLocaleString(), 'Salary ≥ $150k', 'var(--pink)')}
+      ${kpi('Featured / Hot', (hotR[0]?.c || 0).toLocaleString(), `Normalized salary ≥ $${Math.round(hotPayThreshold / 1000)}k`, 'var(--pink)')}
       ${kpi('Pending Postings', (pendingR[0]?.c || 0).toLocaleString(), 'Awaiting review', 'var(--coral)')}
       ${kpi('Companies', (companiesR[0]?.c || 0).toLocaleString(), 'Distinct employers', 'var(--cyan)')}
       ${kpi('Skills', skillsCount.toLocaleString(), 'Distinct, sampled', 'var(--green)')}

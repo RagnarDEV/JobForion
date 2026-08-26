@@ -58,15 +58,15 @@ jobforion/
 @cf/zai-org/glm-4.7-flash
 ```
 
-توجد خدمة مركزية في `src/lib/ai-service.js` لتوحيد model ID وservice/prompt versions والتحقق من المدخلات وحدود البيانات وprompt boundary والتطبيع الآمن للأخطاء وtelemetry الخفيف. لا تصل الأسرار أو binding إلى المتصفح، ولا تُستدعى AI تلقائيًا في homepage أو listing أو search أو job detail أو company أو auth أو feed أو cron.
+توجد خدمة مركزية في `src/lib/ai-service.js` لتوحيد model ID وservice/prompt versions والتحقق من المدخلات وحدود البيانات وprompt boundary والتطبيع الآمن للأخطاء وtelemetry الخفيف. لا تصل الأسرار أو binding إلى المتصفح، ولا تُستدعى AI تلقائيًا في homepage أو listing أو search أو job detail أو company أو auth أو feed أو cron. يدعم `site_settings` الآن kill switch عامًا `ai_enabled` ومفاتيح مستقلة لـfoundation smoke وJob Intelligence وMatching وCareer Assistant وContent Intelligence وAdmin Assistant؛ كل مفتاح يُفحص مركزيًا قبل استدعاء binding.
 
 الميزات المطبقة هي: **Job Intelligence** عند الطلب من محرر الوظيفة الإداري، **Matching** داخل حساب المستخدم، **Career Assistant** للمستخدم المصادق عليه، **Admin Assistant** للقراءة التشغيلية فقط، **Content Intelligence** للمراجعة التحريرية دون نشر تلقائي، و**AI Control Center** للعرض والمراقبة فقط. لا يملك أي مساعد صلاحية تنفيذ sync أو cleanup أو حذف أو نشر أو إرسال بريد أو تغيير إعدادات حساسة تلقائيًا.
 
 ## Design System وAppearance Theme
 
-يستخدم القالب العام `src/layout/base-layout.js` Theme Resolver مركزيًا من `src/lib/settings.js`. مفاتيح `appearance_*` محفوظة في `site_settings` وتخضع لـallow-list وvalidation قبل الكتابة: ألوان hex، خطوط من قائمة curated، كثافة layout، radius، عرض container، ومسافات البطاقات. عند غياب الإعداد أو فساده يعود الموقع تلقائيًا إلى defaults الآمنة، وتُحقن القيم كـCSS variables داخل نفس `baseLayout` الذي تستخدمه الصفحات العامة؛ لا يوجد arbitrary CSS أو HTML أو JavaScript في لوحة الإدارة.
+يستخدم القالب العام `src/layout/base-layout.js` وhomepage renderer Theme Resolver مركزيًا من `src/lib/settings.js`. مفاتيح `appearance_*` وCompany Card وNavigation محفوظة في `site_settings` وتخضع لـallow-list وvalidation قبل الكتابة: ألوان hex، خطوط من قائمة curated، كثافة layout، radius، عرض container، مسافات البطاقات، حجم الشعار، ارتفاع header، CTA label، الظل، وسلوك hover. عند غياب الإعداد أو فساده يعود الموقع تلقائيًا إلى defaults الآمنة، وتُحقن القيم كـCSS variables داخل نفس renderers؛ لا يوجد arbitrary CSS أو HTML أو JavaScript في لوحة الإدارة.
 
-صفحة `/admin/settings` تتضمن Appearance Theme section مع live preview يستخدم نفس tokens، وزر reset يعيد مفاتيح appearance فقط ولا يلمس jobs أو companies أو users أو AI أو blog. كما أن `job-card-css.js` و`shared-css.js` يستخدمان tokens المركزية في البطاقة والسطوح والـradius والمسافات، بينما بقي `job-card-styles.js` مصدر التحكم التفصيلي المنظم حسب tier.
+صفحة `/admin/settings` تتضمن Appearance Theme وCompany Card وNavigation وHomepage Copy وSEO & Indexing sections. توجد live previews لواجهة theme وCompany Card، مع أزرار reset مستقلة لـappearance وcomponent controls وhomepage copy. كما أن `job-card-css.js` و`shared-css.js` و`company-card.js` تستخدم tokens المركزية في السطوح والـradius والمسافات، بينما بقي `job-card-styles.js` مصدر التحكم التفصيلي المنظم حسب tier. ويظل `homepage_sections` مسؤولًا عن التفعيل والترتيب دون page builder حر.
 
 ## الأمان
 
@@ -74,7 +74,7 @@ jobforion/
 
 يضع Worker security headers موحدة تشمل `X-Content-Type-Options` و`X-Frame-Options` و`Referrer-Policy` و`Permissions-Policy` وHSTS وCSP. تسمح CSP بالـinline scripts/styles المطلوبة حاليًا للواجهة SSR، لكنها لا تسمح بمضيفات صور عامة عشوائية؛ الشعارات الخارجية تُجلب عبر Worker logo proxy أو R2 الموثق.
 
-سجلات النشاط لا تخزن نصوص prompts أو الإجابات أو profile data، وتم تقليل PII من سجلات الحساب إلى معرّفات داخلية. يعرض Control Center الآن AI Activity (7d) وchart حسب feature من `admin_activity_log` فقط عندما توجد سجلات حقيقية؛ لا تُخترع usage statistics. عند حذف الحساب تُطهّر محادثات Career Assistant ونتائج Matching والجلسات قبل إكمال soft-delete للهوية.
+سجلات النشاط لا تخزن نصوص prompts أو الإجابات أو profile data، وتم تقليل PII من سجلات الحساب إلى معرّفات داخلية. يعرض Control Center الآن AI Activity (7d) وchart حسب feature من `admin_activity_log` فقط عندما توجد سجلات حقيقية؛ لا تُخترع usage statistics. كما أن Hot KPI الإداري يستخدم نفس سياسة HOT PAY المركزية للنطاقات وmin/max-only. يتحكم `seo_indexing_enabled` في meta robots للصفحات العامة، مع بقاء sitemap متاحًا للفحص التشغيلي. عند حذف الحساب تُطهّر محادثات Career Assistant ونتائج Matching والجلسات قبل إكمال soft-delete للهوية.
 
 ## الإعداد المحلي
 
@@ -129,6 +129,8 @@ npx wrangler deploy --dry-run
 for f in $(git ls-files '*.js'); do node --check "$f"; done
 git diff --check
 ```
+
+في هذه الجولة اجتازت suite مؤقتة `COMPLETION_CONTROLS_UNIT=PASS` لاختبار حدود Company Card وNavigation وHomepage Copy وAI feature switches، كما اجتاز `THEME_CSRF_UNIT=PASS` و`ADMIN_CSRF_GATE_UNIT=PASS` ووحدات AI وHOT PAY وR2 وlifecycle السابقة. خدم Worker محلي جديد الصفحة الرئيسية وصفحة الوظائف وcompanies/blog وrobots/sitemap وAPI bounds، وظهرت tokens الجديدة في homepage HTML، مع بقاء CSP دون `img-src *`. يبقى اختبار الحساب الإداري المصادق عليه وWorkers AI وR2 الحقيقيين deployment-gated.
 
 قبل الدمج يجب التحقق من عدم وجود استدعاءات AI في المسارات العامة، وعدم وجود أسرار أو prompts في السجلات، ونجاح regression لخدمات AI وHOT PAY وR2 والـAPI. يجب أيضًا اختبار الصفحات العامة، صفحة تفاصيل الوظيفة، لوحة الإدارة، الحساب، النماذج المحمية، و404/410 بعد تغييرات lifecycle.
 

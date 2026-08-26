@@ -12,7 +12,7 @@ import { renderSettingsContent } from '../../pages/admin/settings.js';
 import { adminShell } from '../../pages/admin/shell.js';
 import { setHomepageSectionEnabled, moveHomepageSection } from '../../lib/homepage-sections.js';
 import { updateCardStyle, resetCardStyle, CARD_STYLE_JOB_TYPES } from '../../lib/job-card-styles.js';
-import { setSettings, SETTINGS_KEYS, CHECKBOX_SETTINGS_KEYS, THEME_DEFAULTS } from '../../lib/settings.js';
+import { setSettings, SETTINGS_KEYS, CHECKBOX_SETTINGS_KEYS, APPEARANCE_DEFAULTS, COMPONENT_DEFAULTS, HOMEPAGE_COPY_DEFAULTS } from '../../lib/settings.js';
 import { logActivity } from '../../lib/activity-log.js';
 import { errorPage } from './error-page.js';
 
@@ -121,9 +121,33 @@ export async function handleAdminWebsiteRoute(url, request, env, base) {
       if (!ok) return new Response('Unauthorized', { status: 401 });
       const form = await request.formData();
       if (!await verifyAdminCsrf(env, request.headers.get('Cookie'), (form.get('_admin_csrf') || '').toString())) return new Response('Invalid CSRF token', { status: 403 });
-      await setSettings(env, THEME_DEFAULTS);
+      await setSettings(env, APPEARANCE_DEFAULTS);
       await logActivity(env, 'appearance_reset', 'Appearance defaults');
       return new Response(null, { status: 302, headers: { 'Location': `/admin/settings?flash=${encodeURIComponent('Appearance reset to defaults')}` } });
+    } catch (e) { return errorPage(e); }
+  }
+
+  if (url.pathname === '/admin/settings/reset-homepage-copy' && request.method === 'POST') {
+    try {
+      const ok = await verifyAdminCookie(env, request.headers.get('Cookie'));
+      if (!ok) return new Response('Unauthorized', { status: 401 });
+      const form = await request.formData();
+      if (!await verifyAdminCsrf(env, request.headers.get('Cookie'), (form.get('_admin_csrf') || '').toString())) return new Response('Invalid CSRF token', { status: 403 });
+      await setSettings(env, HOMEPAGE_COPY_DEFAULTS);
+      await logActivity(env, 'homepage_copy_reset', 'Homepage copy defaults');
+      return new Response(null, { status: 302, headers: { 'Location': `/admin/settings?flash=${encodeURIComponent('Homepage Copy reset to defaults')}` } });
+    } catch (e) { return errorPage(e); }
+  }
+
+  if (url.pathname === '/admin/settings/reset-components' && request.method === 'POST') {
+    try {
+      const ok = await verifyAdminCookie(env, request.headers.get('Cookie'));
+      if (!ok) return new Response('Unauthorized', { status: 401 });
+      const form = await request.formData();
+      if (!await verifyAdminCsrf(env, request.headers.get('Cookie'), (form.get('_admin_csrf') || '').toString())) return new Response('Invalid CSRF token', { status: 403 });
+      await setSettings(env, COMPONENT_DEFAULTS);
+      await logActivity(env, 'component_controls_reset', 'Company Card and Navigation defaults');
+      return new Response(null, { status: 302, headers: { 'Location': `/admin/settings?flash=${encodeURIComponent('Company Card and Navigation reset to defaults')}` } });
     } catch (e) { return errorPage(e); }
   }
 
