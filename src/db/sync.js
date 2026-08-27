@@ -10,6 +10,7 @@ import { logSync } from './analytics.js';
 import { PROVIDERS } from '../providers/index.js';
 import { getSettings } from '../lib/settings.js';
 import { parseSalary, extractSalaryFromDescription } from '../lib/salary.js';
+import { classifySalaryFromParsed, salaryClassificationForJob } from '../lib/salary-tier.js';
 import { extractSkillsFromText } from '../lib/skill-extraction.js';
 
 // QUERIES only applies to a future keyword-search provider (ignoresQuery ===
@@ -359,7 +360,7 @@ function enrichJobFromDescription(j) {
   return enriched;
 }
 
-async function saveJobs(env, jobs, counters, errorLog, providerId) {
+async function saveJobs(env, jobs, counters, errorLog, providerId, settings = {}) {
   const validJobs = (jobs || []).filter((j) => j && j.url).map(enrichJobFromDescription);
   const skippedCount = (jobs || []).length - validJobs.length;
   counters.skipped += skippedCount;
@@ -376,14 +377,15 @@ async function saveJobs(env, jobs, counters, errorLog, providerId) {
 
     const insertStmts = chunk.map((j) => {
       const sal = parseSalary(j.salary);
+      const salaryTier = classifySalaryFromParsed(sal, settings);
       return env.DB.prepare(
-        `INSERT OR IGNORE INTO jobs (title,company,location,url,description,salary,remote_type,skills,seniority,employment_type,job_handle,source,status,updated_at,expires_at,salary_min_usd,salary_max_usd)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,'active',CURRENT_TIMESTAMP,datetime('now','+45 days'),?,?)`
+        `INSERT OR IGNORE INTO jobs (title,company,location,url,description,salary,remote_type,skills,seniority,employment_type,job_handle,source,status,updated_at,expires_at,salary_min_usd,salary_max_usd,salary_tier,salary_tier_confidence)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,'active',CURRENT_TIMESTAMP,datetime('now','+45 days'),?,?,?,?)`
       ).bind(
         j.title || 'Unknown', j.company || 'Company', j.location || '', j.url,
         j.description || '', j.salary || '', j.remote_type || '',
         JSON.stringify(j.skills || []), j.seniority || '', j.employment_type || '', j.job_handle || '',
-        providerId, sal.annualMinUsd, sal.annualMaxUsd
+        providerId, sal.annualMinUsd, sal.annualMaxUsd, salaryTier.tier, salaryTier.confidence
       );
     });
 
@@ -404,13 +406,14 @@ async function saveJobs(env, jobs, counters, errorLog, providerId) {
     if (toUpdate.length) {
       const updateStmts = toUpdate.map((j) => {
         const sal = parseSalary(j.salary);
+        const salaryTier = classifySalaryFromParsed(sal, settings);
         return env.DB.prepare(
-          `UPDATE jobs SET title=?,company=?,location=?,description=?,salary=?,remote_type=?,skills=?,seniority=?,employment_type=?,job_handle=?,source=?,status='active',updated_at=CURRENT_TIMESTAMP,expires_at=datetime('now','+45 days'),salary_min_usd=?,salary_max_usd=? WHERE url=?`
+          `UPDATE jobs SET title=?,company=?,location=?,description=?,salary=?,remote_type=?,skills=?,seniority=?,employment_type=?,job_handle=?,source=?,status='active',updated_at=CURRENT_TIMESTAMP,expires_at=datetime('now','+45 days'),salary_min_usd=?,salary_max_usd=?,salary_tier=?,salary_tier_confidence=? WHERE url=?`
         ).bind(
           j.title || 'Unknown', j.company || 'Company', j.location || '',
           j.description || '', j.salary || '', j.remote_type || '',
           JSON.stringify(j.skills || []), j.seniority || '', j.employment_type || '', j.job_handle || '',
-          providerId, sal.annualMinUsd, sal.annualMaxUsd, j.url
+          providerId, sal.annualMinUsd, sal.annualMaxUsd, salaryTier.tier, salaryTier.confidence, j.url
         );
       });
       try {
@@ -449,6 +452,7 @@ function rotatingCapSlice(jobs, cap) {
 
 export async function syncJobs(env, { onlyProvider = null } = {}) {
   await ensureTable(env);
+  const settings = await getSettings(env);
   const sources = await getActiveSources(env, { onlyProvider });
   // Run cheap, single-request providers (every provider currently
   // registered is ignoresQuery=true) before any future keyword-search
@@ -545,7 +549,7 @@ export async function syncJobs(env, { onlyProvider = null } = {}) {
           jobs = rotatingCapSlice(jobs, remainingCap);
           errorLog.add(source.provider, `Capped at ${perRunCap} of ${total} jobs this run (rotating window)${warmupActive ? ' (warm-up mode)' : ''} — the rest will sync on a later run`, undefined);
         }
-        const saved = await saveJobs(env, jobs, counters, errorLog, source.provider);
+        const saved = await saveJobs(env, jobs, counters, errorLog, source.provider, settings);
         subrequestsUsed += saved.batchesUsed;
         remainingCap -= jobs.length;
         own.fetched += saved.fetched; own.inserted += saved.inserted; own.updated += saved.updated; own.skipped += saved.skipped; own.failed += saved.failed;
@@ -597,28 +601,49 @@ export async function syncJobs(env, { onlyProvider = null } = {}) {
 // ────────────────────────────────────────────────────────────────
 export async function backfillSalaryUsd(env, { batchSize = 300 } = {}) {
   await ensureTable(env);
+  const safeBatchSize = Math.max(1, Math.min(300, Number.isFinite(Number(batchSize)) ? Math.floor(Number(batchSize)) : 300));
+  const settings = await getSettings(env);
   const { results: rows } = await env.DB.prepare(
-    `SELECT id, salary FROM jobs WHERE salary IS NOT NULL AND salary != '' AND salary_min_usd IS NULL LIMIT ?`
-  ).bind(batchSize).all();
+    `SELECT id, salary, description, salary_min_usd, salary_max_usd
+       FROM jobs
+      WHERE salary_tier IS NULL
+      ORDER BY id ASC
+      LIMIT ?`
+  ).bind(safeBatchSize).all();
 
-  let processed = 0;
+  const stats = { processed: 0, high: 0, good: 0, standard: 0, unknown: 0, errors: 0 };
   if (rows && rows.length) {
-    const stmts = rows.map((r) => {
-      const sal = parseSalary(r.salary);
-      // Jobs whose salary text genuinely can't be parsed (e.g.
-      // "Competitive") get salary_min_usd = -1 as a sentinel — NOT NULL,
-      // so this same backfill query never picks them up again on the next
-      // batch, without falsely claiming they have a real numeric salary.
-      const min = sal.annualMinUsd ?? -1;
-      const max = sal.annualMaxUsd ?? -1;
-      return env.DB.prepare('UPDATE jobs SET salary_min_usd = ?, salary_max_usd = ? WHERE id = ?').bind(min, max, r.id);
+    const prepared = rows.map((row) => {
+      // salaryClassificationForJob uses persisted normalized values when
+      // available and otherwise performs the single canonical parse (with
+      // the same description fallback used by ingestion).
+      const classified = salaryClassificationForJob(row, settings);
+      const min = classified.parsed?.annualMinUsd ?? -1;
+      const max = classified.parsed?.annualMaxUsd ?? -1;
+      return { row, classified, stmt: env.DB.prepare(
+        `UPDATE jobs
+            SET salary_min_usd = ?, salary_max_usd = ?, salary_tier = ?, salary_tier_confidence = ?
+          WHERE id = ? AND salary_tier IS NULL`
+      ).bind(min, max, classified.tier, classified.confidence, row.id) };
     });
-    await env.DB.batch(stmts);
-    processed = rows.length;
+    try {
+      const results = await env.DB.batch(prepared.map((entry) => entry.stmt));
+      results.forEach((result, index) => {
+        if (result.meta?.changes > 0) {
+          stats.processed++;
+          const tierKey = prepared[index].classified.tier.toLowerCase();
+          if (tierKey in stats) stats[tierKey]++;
+        }
+      });
+    } catch (error) {
+      // Keep salary_tier NULL when the batch fails so the next invocation can
+      // safely retry it; no row is falsely counted as processed.
+      stats.errors = rows.length;
+    }
   }
 
   const { results: remainingRows } = await env.DB.prepare(
-    `SELECT COUNT(*) c FROM jobs WHERE salary IS NOT NULL AND salary != '' AND salary_min_usd IS NULL`
+    `SELECT COUNT(*) c FROM jobs WHERE salary_tier IS NULL`
   ).all();
-  return { processed, remaining: remainingRows?.[0]?.c || 0 };
+  return { ...stats, remaining: Number(remainingRows?.[0]?.c || 0) };
 }

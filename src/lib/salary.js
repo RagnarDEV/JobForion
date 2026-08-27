@@ -16,29 +16,36 @@
 // api.router.js, all updated to do exactly that.
 // ════════════════════════════════════════════════════════════════
 
-const CURRENCY_TO_USD = {
+const CURRENCY_TO_USD = Object.freeze({
   '$': 1,
   '€': 1.08,
   '£': 1.27,
   'c$': 0.73,
   'a$': 0.66,
-};
+});
 
 function detectCurrency(text) {
   const s = text.toLowerCase();
-  if (s.includes('€') || /\beur\b/.test(s)) return '€';
-  if (s.includes('£') || /\bgbp\b/.test(s)) return '£';
-  if (/c\$|\bcad\b/.test(s)) return 'c$';
-  if (/a\$|\baud\b/.test(s)) return 'a$';
-  return '$'; // default assumption — the large majority of listings here are USD
+  if (s.includes('€') || /\beur\b/.test(s)) return { value: '€', known: true, explicit: true };
+  if (s.includes('£') || /\bgbp\b/.test(s)) return { value: '£', known: true, explicit: true };
+  if (/c\$|\bcad\b/.test(s)) return { value: 'c$', known: true, explicit: true };
+  if (/a\$|\baud\b/.test(s)) return { value: 'a$', known: true, explicit: true };
+  if (/\busd\b|\$/.test(s)) return { value: '$', known: true, explicit: true };
+  // No currency marker is treated as the existing safe USD default. An
+  // explicit but unsupported code is rejected rather than silently converted.
+  if (/\b(?:chf|jpy|inr|sek|nok|dkk|sgd|nzd|brl|mxn|zar|pln|hkd)\b/i.test(s)) return { value: null, known: false, explicit: true };
+  return { value: '$', known: true, explicit: false };
 }
 
 function detectPeriod(text) {
   const s = text.toLowerCase();
-  if (/\/\s*(hr|hour)\b|\bhourly\b/.test(s)) return 'hour';
-  if (/\/\s*(mo|month)\b|\bmonthly\b/.test(s)) return 'month';
-  if (/\/\s*(wk|week)\b|\bweekly\b/.test(s)) return 'week';
-  return 'year'; // default — the large majority of listed salaries are annual
+  if (/\/\s*(hr|hour)\b|\bhourly\b|\bper\s+hour\b/.test(s)) return { value: 'hour', explicit: true };
+  if (/\/\s*(day|daily)\b|\bdaily\b|\bper\s+day\b/.test(s)) return { value: 'day', explicit: true };
+  if (/\/\s*(mo|month)\b|\bmonthly\b|\bper\s+month\b/.test(s)) return { value: 'month', explicit: true };
+  if (/\/\s*(wk|week)\b|\bweekly\b|\bper\s+week\b/.test(s)) return { value: 'week', explicit: true };
+  if (/\/\s*(yr|year)\b|\bannual(?:ly)?\b|\byearly\b|\bper\s+year\b/.test(s)) return { value: 'year', explicit: true };
+  if (/\b(?:per|\/)\s*(quarter|contract|project|dayrate)\b/.test(s)) return { value: null, explicit: true };
+  return { value: 'year', explicit: false }; // safe initial default for unqualified figures
 }
 
 // Deliberately approximate (2080 working hours/year for hourly, 12 for
@@ -48,6 +55,7 @@ function toAnnualUsd(amount, currency, period) {
   const usdRate = CURRENCY_TO_USD[currency] ?? 1;
   let annual = amount * usdRate;
   if (period === 'hour') annual *= 2080;
+  else if (period === 'day') annual *= 260;
   else if (period === 'month') annual *= 12;
   else if (period === 'week') annual *= 52;
   return Math.round(annual);
@@ -73,16 +81,24 @@ function extractFigures(text) {
 // Never throws — always returns this shape, with every field `null` if
 // the string couldn't be parsed at all (e.g. "Competitive", "DOE", "").
 export function parseSalary(raw) {
-  const empty = { min: null, max: null, currency: null, period: null, annualMinUsd: null, annualMaxUsd: null };
+  const empty = { min: null, max: null, currency: null, period: null, annualMinUsd: null, annualMaxUsd: null, currencyKnown: false, currencyExplicit: false, periodExplicit: false, reason: 'missing_or_invalid' };
   if (!raw || typeof raw !== 'string') return empty;
   const text = raw.trim();
   if (!text) return empty;
+  // A negative salary must never lose its sign during numeric extraction.
+  // The figure extractor intentionally strips punctuation, so reject an
+  // explicit negative amount before it can become a positive annual value.
+  if (/^\s*[-−]\s*(?:[$€£]|c\$|a\$)?\s*\d/i.test(text)) return { ...empty, reason: 'negative_salary' };
 
   const figures = extractFigures(text);
   if (!figures.length) return empty;
 
-  const currency = detectCurrency(text);
-  const period = detectPeriod(text);
+  const currencyInfo = detectCurrency(text);
+  const periodInfo = detectPeriod(text);
+  if (!currencyInfo.known) return { ...empty, reason: 'unsupported_currency' };
+  if (!periodInfo.value) return { ...empty, reason: 'unsupported_period' };
+  const currency = currencyInfo.value;
+  const period = periodInfo.value;
   const min = figures[0];
   const max = figures.length > 1 ? figures[figures.length - 1] : figures[0];
   // Real salary figures are essentially never below 1000 once written out
@@ -95,6 +111,10 @@ export function parseSalary(raw) {
     min, max, currency, period,
     annualMinUsd: toAnnualUsd(min, currency, period),
     annualMaxUsd: toAnnualUsd(max, currency, period),
+    currencyKnown: currencyInfo.known,
+    currencyExplicit: currencyInfo.explicit,
+    periodExplicit: periodInfo.explicit,
+    reason: 'parsed',
   };
 }
 

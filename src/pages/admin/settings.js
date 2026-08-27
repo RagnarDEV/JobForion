@@ -8,6 +8,7 @@
 
 import { escapeHtml } from '../../lib/entities.js';
 import { getSettings, SETTINGS_DEFAULTS, THEME_DEFAULTS, COMPONENT_DEFAULTS, HOMEPAGE_COPY_DEFAULTS, HERO_FONT_OPTIONS } from '../../lib/settings.js';
+import { salaryTierBadgeHtml } from '../../components/job-card.js';
 
 function field(label, name, value, opts = {}) {
   const { type = 'text', placeholder = '', hint = '', full = false } = opts;
@@ -31,6 +32,14 @@ function featureFlag(name, label, value, hint) {
       <span style="font-size:12.5px;font-weight:700;color:var(--ink);display:block">${label}</span>
       ${hint ? `<span style="font-size:10.5px;color:var(--ink3)">${hint}</span>` : ''}
     </span>
+  </label>`;
+}
+
+function enumField(label, name, value, options, hint = '') {
+  return `<label style="display:block">
+    <span style="font-size:11px;font-weight:700;color:var(--ink3);text-transform:uppercase;letter-spacing:.4px;display:block;margin-bottom:6px">${label}</span>
+    <select class="adm-input" style="width:100%" name="${name}">${options.map(option => `<option value="${escapeHtml(option.value)}" ${String(value) === option.value ? 'selected' : ''}>${escapeHtml(option.label)}</option>`).join('')}</select>
+    ${hint ? `<span style="font-size:11px;color:var(--ink3);display:block;margin-top:4px">${hint}</span>` : ''}
   </label>`;
 }
 
@@ -235,6 +244,35 @@ export async function renderSettingsContent(env) {
           ${featureFlag('hot_pay_enabled', 'Enable HOT PAY badges', s.hot_pay_enabled, 'Shows the shared HOT PAY indicator on qualifying jobs.')}
           ${field('Annual threshold (USD)', 'hot_pay_threshold_usd', s.hot_pay_threshold_usd, { type: 'number', placeholder: SETTINGS_DEFAULTS.hot_pay_threshold_usd, hint: 'Compared against the normalized annual salary value for each job.' })}
         </div>
+      </div>
+
+      <div class="adm-card" id="settings-salary-tier">
+        <div class="adm-card-title">Salary Tier Classification <span style="font-weight:400;color:var(--ink3);font-size:12px">— persisted annual USD classification; UNKNOWN is never treated as STANDARD</span></div>
+        <div style="font-size:12px;color:var(--ink2);line-height:1.7;margin-bottom:14px">The central classifier uses normalized annual USD values. Ranges use their midpoint, while missing, unsupported, or invalid salary data remains UNKNOWN. These controls change thresholds and presentation only; HOT PAY remains an independent indicator.</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:start">
+          ${featureFlag('salary_tier_badges_enabled', 'Show salary tier badges', s.salary_tier_badges_enabled, 'Applies to public job cards and job detail chips. UNKNOWN is intentionally not shown as a badge.')}
+          <div></div>
+          ${field('HIGH minimum (annual USD)', 'salary_tier_high_min_usd', s.salary_tier_high_min_usd, { type: 'number', placeholder: SETTINGS_DEFAULTS.salary_tier_high_min_usd, hint: 'Safe range: $1,000–$10,000,000.' })}
+          ${field('GOOD minimum (annual USD)', 'salary_tier_good_min_usd', s.salary_tier_good_min_usd, { type: 'number', placeholder: SETTINGS_DEFAULTS.salary_tier_good_min_usd, hint: 'Values below GOOD are STANDARD.' })}
+          ${field('HIGH label', 'salary_tier_high_label', s.salary_tier_high_label, { placeholder: SETTINGS_DEFAULTS.salary_tier_high_label })}
+          ${field('GOOD label', 'salary_tier_good_label', s.salary_tier_good_label, { placeholder: SETTINGS_DEFAULTS.salary_tier_good_label })}
+          ${field('STANDARD label', 'salary_tier_standard_label', s.salary_tier_standard_label, { placeholder: SETTINGS_DEFAULTS.salary_tier_standard_label })}
+          <div></div>
+          ${enumField('HIGH color token', 'salary_tier_high_token', s.salary_tier_high_token, [{ value: 'green', label: 'Green' }, { value: 'blue', label: 'Blue' }, { value: 'slate', label: 'Slate' }])}
+          ${enumField('GOOD color token', 'salary_tier_good_token', s.salary_tier_good_token, [{ value: 'green', label: 'Green' }, { value: 'blue', label: 'Blue' }, { value: 'slate', label: 'Slate' }])}
+          ${enumField('STANDARD color token', 'salary_tier_standard_token', s.salary_tier_standard_token, [{ value: 'green', label: 'Green' }, { value: 'blue', label: 'Blue' }, { value: 'slate', label: 'Slate' }])}
+        </div>
+        <div style="margin-top:16px;padding:14px;border:1px solid var(--border2);border-radius:10px;background:var(--surface2)">
+          <div style="font-size:10px;font-weight:800;letter-spacing:.8px;text-transform:uppercase;color:var(--ink3);margin-bottom:9px">Live badge preview</div>
+          <div id="salaryTierPreview" style="display:${s.salary_tier_badges_enabled === '0' ? 'none' : 'flex'};gap:7px;flex-wrap:wrap;align-items:center">
+            ${salaryTierBadgeHtml('HIGH', s)}${salaryTierBadgeHtml('GOOD', s)}${salaryTierBadgeHtml('STANDARD', s)}
+          </div>
+          <div id="salaryTierPreviewDisabled" style="display:${s.salary_tier_badges_enabled === '0' ? 'block' : 'none'};font-size:11px;color:var(--ink3)">Badges are disabled in the public interface.</div>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px"><button class="adm-btn" type="submit" name="settings_scope" value="salary_tier">Save Salary Tier Settings</button></div>
+        <script>
+        (function(){var form=document.currentScript.closest('form'),preview=document.getElementById('salaryTierPreview'),disabled=document.getElementById('salaryTierPreviewDisabled');if(!form||!preview||!disabled)return;function v(n){var e=form.querySelector('[name="'+n+'"]');return e?e.value:''}function draw(){var on=form.querySelector('[name="salary_tier_badges_enabled"]');var enabled=!!on&&on.checked;preview.style.display=enabled?'flex':'none';disabled.style.display=enabled?'none':'block';var labels=[v('salary_tier_high_label'),v('salary_tier_good_label'),v('salary_tier_standard_label')];preview.querySelectorAll('.salary-tier-badge').forEach(function(el,i){if(labels[i])el.textContent=labels[i]});}['salary_tier_badges_enabled','salary_tier_high_label','salary_tier_good_label','salary_tier_standard_label','salary_tier_high_token','salary_tier_good_token','salary_tier_standard_token'].forEach(function(n){var e=form.querySelector('[name="'+n+'"]');if(e){e.addEventListener('input',draw);e.addEventListener('change',draw)}});draw();})();
+        </script>
       </div>
 
       <div class="adm-card">

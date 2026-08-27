@@ -46,6 +46,9 @@ export const APPEARANCE_DEFAULTS = {
   appearance_density: 'comfortable',
   appearance_font_family: 'Manrope',
   appearance_heading_font: 'Space Grotesk',
+  salary_tier_high_token: 'green',
+  salary_tier_good_token: 'blue',
+  salary_tier_standard_token: 'slate',
 };
 
 export const COMPONENT_DEFAULTS = {
@@ -99,6 +102,15 @@ export const THEME_SETTING_METADATA = Object.freeze({
   appearance_density: { type: 'enum', values: ['compact', 'comfortable', 'spacious'], category: 'layout', description: 'Public layout density' },
   appearance_font_family: { type: 'font', values: ['Manrope', 'Inter', 'Plus Jakarta Sans', 'Poppins'], category: 'typography', description: 'Body font family' },
   appearance_heading_font: { type: 'font', values: ['Space Grotesk', 'Plus Jakarta Sans', 'Poppins', 'Sora', 'Outfit'], category: 'typography', description: 'Heading font family' },
+  salary_tier_high_token: { type: 'enum', values: ['green', 'blue', 'slate'], category: 'salary_tier', description: 'High Pay badge token' },
+  salary_tier_good_token: { type: 'enum', values: ['green', 'blue', 'slate'], category: 'salary_tier', description: 'Good Pay badge token' },
+  salary_tier_standard_token: { type: 'enum', values: ['green', 'blue', 'slate'], category: 'salary_tier', description: 'Standard Pay badge token' },
+  salary_tier_badges_enabled: { type: 'boolean', category: 'salary_tier', description: 'Show salary tier badges' },
+  salary_tier_high_min_usd: { type: 'integer', min: 1000, max: 10000000, category: 'salary_tier', description: 'High Pay annual USD threshold' },
+  salary_tier_good_min_usd: { type: 'integer', min: 1000, max: 10000000, category: 'salary_tier', description: 'Good Pay annual USD threshold' },
+  salary_tier_high_label: { type: 'text', max: 40, category: 'salary_tier', description: 'High Pay display label' },
+  salary_tier_good_label: { type: 'text', max: 40, category: 'salary_tier', description: 'Good Pay display label' },
+  salary_tier_standard_label: { type: 'text', max: 40, category: 'salary_tier', description: 'Standard Pay display label' },
   company_card_radius: { type: 'integer', min: 8, max: 24, category: 'company_card', description: 'Company Card radius' },
   company_card_padding: { type: 'integer', min: 10, max: 28, category: 'company_card', description: 'Company Card padding' },
   company_card_logo_size: { type: 'integer', min: 36, max: 76, category: 'company_card', description: 'Company Card logo size' },
@@ -148,6 +160,16 @@ export const SETTINGS_DEFAULTS = {
   // normalizes salary_min_usd/salary_max_usd at sync/backfill time.
   hot_pay_enabled: '1',
   hot_pay_threshold_usd: '150000',
+
+  // ── Salary tiers — derived from normalized annual USD values ─────────
+  // These are conservative initial thresholds, not a claim of universal
+  // regional salary parity. Unknown or invalid salary data remains UNKNOWN.
+  salary_tier_badges_enabled: '1',
+  salary_tier_high_min_usd: '120000',
+  salary_tier_good_min_usd: '70000',
+  salary_tier_high_label: 'High Pay',
+  salary_tier_good_label: 'Good Pay',
+  salary_tier_standard_label: 'Standard Pay',
 
   // ── AI Foundation (Phase 12.1) ───────────────────────────────────
   // The binding/model remain code/config controlled; this switch provides
@@ -270,6 +292,7 @@ export function resolveTheme(settings = {}) {
   const color = (key) => HEX_PATTERN.test(String(source[key] || '')) ? String(source[key]).toUpperCase() : THEME_DEFAULTS[key];
   const font = (key) => FONT_VALUES.has(String(source[key] || '')) ? String(source[key]) : THEME_DEFAULTS[key];
   const density = DENSITY_VALUES.has(String(source.appearance_density || '')) ? String(source.appearance_density) : THEME_DEFAULTS.appearance_density;
+  const token = (key, fallback) => ['green', 'blue', 'slate'].includes(String(source[key])) ? String(source[key]) : fallback;
   return {
     primary: color('appearance_primary_color'), secondary: color('appearance_secondary_color'), accent: color('appearance_accent_color'),
     pageBackground: color('appearance_page_background'), surface: color('appearance_surface'), elevatedSurface: color('appearance_elevated_surface'),
@@ -279,6 +302,7 @@ export function resolveTheme(settings = {}) {
     sectionSpacing: boundedInteger(source.appearance_section_spacing, 46, 20, 96),
     cardGap: boundedInteger(source.appearance_card_gap, 14, 6, 32), density,
     fontFamily: font('appearance_font_family'), headingFont: font('appearance_heading_font'),
+    salaryHighToken: token('salary_tier_high_token', 'green'), salaryGoodToken: token('salary_tier_good_token', 'blue'), salaryStandardToken: token('salary_tier_standard_token', 'slate'),
     companyCardRadius: boundedInteger(source.company_card_radius, 14, 8, 24),
     companyCardPadding: boundedInteger(source.company_card_padding, 17, 10, 28),
     companyCardLogoSize: boundedInteger(source.company_card_logo_size, 52, 36, 76),
@@ -297,7 +321,9 @@ export function themeCssVariables(settings = {}) {
   const densityScale = theme.density === 'compact' ? 0.85 : theme.density === 'spacious' ? 1.15 : 1;
   const companyShadow = { none: 'none', soft: '0 8px 24px rgba(48,31,121,.10)', strong: '0 14px 34px rgba(48,31,121,.18)' }[theme.companyCardShadow] || '0 8px 24px rgba(48,31,121,.10)';
   const companyHoverTransform = theme.companyCardHover === 'lift' ? 'translateY(-2px)' : 'none';
-  return `:root{--brand:${theme.primary};--brand2:${theme.secondary};--cyan:${theme.accent};--brand-soft:color-mix(in srgb, ${theme.primary} 10%, transparent);--bg:${theme.pageBackground};--bg2:${theme.elevatedSurface};--surface:${theme.surface};--surface2:${theme.elevatedSurface};--ink:${theme.textPrimary};--ink2:${theme.textSecondary};--ink3:${theme.textMuted};--border:${theme.border};--border2:${theme.border};--r:${theme.radius}px;--radius-sm:8px;--radius-md:${theme.radius}px;--radius-card:${Math.min(28, theme.radius + 2)}px;--container-width:${theme.containerWidth}px;--section-space:${theme.sectionSpacing}px;--card-gap:${theme.cardGap}px;--space-xs:4px;--space-sm:8px;--space-md:16px;--space-lg:24px;--space-xl:32px;--space-2xl:48px;--density-scale:${densityScale};--transition-fast:180ms;--transition-normal:240ms;--layout-header-height:${theme.navHeaderHeight}px;--nav-logo-size:${theme.navLogoSize}px;--nav-header-height:${theme.navHeaderHeight}px;--nav-gap:${theme.navGap}px;--company-card-radius:${theme.companyCardRadius}px;--company-card-padding:${theme.companyCardPadding}px;--company-card-logo-size:${theme.companyCardLogoSize}px;--company-card-gap:${theme.companyCardGap}px;--company-card-shadow:${companyShadow};--company-card-hover-transform:${companyHoverTransform};--font-body:'${theme.fontFamily}',sans-serif;--font-heading:'${theme.headingFont}',sans-serif}`;
+  const salaryPalette = { green: { bg: 'rgba(22,163,74,.10)', text: '#166534', border: 'rgba(22,163,74,.24)' }, blue: { bg: 'rgba(37,99,235,.10)', text: '#1D4ED8', border: 'rgba(37,99,235,.24)' }, slate: { bg: 'rgba(71,85,105,.10)', text: '#475569', border: 'rgba(71,85,105,.24)' } };
+  const salaryColor = (token, part) => salaryPalette[token]?.[part] || salaryPalette.slate[part];
+  return `:root{--brand:${theme.primary};--brand2:${theme.secondary};--cyan:${theme.accent};--brand-soft:color-mix(in srgb, ${theme.primary} 10%, transparent);--bg:${theme.pageBackground};--bg2:${theme.elevatedSurface};--surface:${theme.surface};--surface2:${theme.elevatedSurface};--ink:${theme.textPrimary};--ink2:${theme.textSecondary};--ink3:${theme.textMuted};--border:${theme.border};--border2:${theme.border};--r:${theme.radius}px;--radius-sm:8px;--radius-md:${theme.radius}px;--radius-card:${Math.min(28, theme.radius + 2)}px;--container-width:${theme.containerWidth}px;--section-space:${theme.sectionSpacing}px;--card-gap:${theme.cardGap}px;--space-xs:4px;--space-sm:8px;--space-md:16px;--space-lg:24px;--space-xl:32px;--space-2xl:48px;--density-scale:${densityScale};--transition-fast:180ms;--transition-normal:240ms;--layout-header-height:${theme.navHeaderHeight}px;--nav-logo-size:${theme.navLogoSize}px;--nav-header-height:${theme.navHeaderHeight}px;--nav-gap:${theme.navGap}px;--company-card-radius:${theme.companyCardRadius}px;--company-card-padding:${theme.companyCardPadding}px;--company-card-logo-size:${theme.companyCardLogoSize}px;--company-card-gap:${theme.companyCardGap}px;--company-card-shadow:${companyShadow};--company-card-hover-transform:${companyHoverTransform};--salary-high-bg:${salaryColor(theme.salaryHighToken, 'bg')};--salary-high-text:${salaryColor(theme.salaryHighToken, 'text')};--salary-high-border:${salaryColor(theme.salaryHighToken, 'border')};--salary-good-bg:${salaryColor(theme.salaryGoodToken, 'bg')};--salary-good-text:${salaryColor(theme.salaryGoodToken, 'text')};--salary-good-border:${salaryColor(theme.salaryGoodToken, 'border')};--salary-standard-bg:${salaryColor(theme.salaryStandardToken, 'bg')};--salary-standard-text:${salaryColor(theme.salaryStandardToken, 'text')};--salary-standard-border:${salaryColor(theme.salaryStandardToken, 'border')};--font-body:'${theme.fontFamily}',sans-serif;--font-heading:'${theme.headingFont}',sans-serif}`;
 }
 
 
@@ -318,6 +344,7 @@ export const CHECKBOX_SETTINGS_KEYS = [
   'feature_skill_pages',
   'feature_featured_jobs',
   'hot_pay_enabled',
+  'salary_tier_badges_enabled',
   'ai_enabled',
   'ai_foundation_smoke_enabled',
   'ai_job_intelligence_enabled',
@@ -386,7 +413,10 @@ function sanitizeSettingValue(key, value) {
   const meta = THEME_SETTING_METADATA[key];
   if (!meta) return raw.slice(0, 2000);
   if (meta.type === 'color') return HEX_PATTERN.test(raw) ? raw.toUpperCase() : THEME_DEFAULTS[key];
-  if (meta.type === 'integer') return String(boundedInteger(raw, parseInt(THEME_DEFAULTS[key], 10), meta.min, meta.max));
+  if (meta.type === 'integer') {
+    const fallback = parseInt(THEME_DEFAULTS[key] ?? SETTINGS_DEFAULTS[key], 10);
+    return String(boundedInteger(raw, Number.isFinite(fallback) ? fallback : meta.min, meta.min, meta.max));
+  }
   if (meta.type === 'enum') return meta.values.includes(raw) ? raw : THEME_DEFAULTS[key];
   if (meta.type === 'font') return FONT_VALUES.has(raw) ? raw : THEME_DEFAULTS[key];
   if (meta.type === 'boolean') return raw === '1' ? '1' : '0';

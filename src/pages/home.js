@@ -228,6 +228,7 @@ export async function renderMainHTML(env, base, user = null) {
           <label class="filter-field"><span>Seniority</span><select id="fSeniority" onchange="onFilterChange()"><option value="">Any</option><option value="Junior">Junior</option><option value="Mid">Mid-level</option><option value="Senior">Senior</option><option value="Lead">Lead</option></select></label>
           <label class="filter-field"><span>Min salary (USD/yr)</span><input type="number" id="fSalaryMin" placeholder="e.g. 80000" min="0" step="5000" oninput="debounceFilterChange()"></label>
           <label class="filter-field"><span>Max salary (USD/yr)</span><input type="number" id="fSalaryMax" placeholder="e.g. 150000" min="0" step="5000" oninput="debounceFilterChange()"></label>
+          <label class="filter-field"><span>Salary tier</span><select id="fSalaryTier" onchange="onFilterChange()"><option value="">Any tier</option><option value="HIGH">HIGH</option><option value="GOOD">GOOD</option><option value="STANDARD">STANDARD</option></select></label>
           <label class="filter-field"><span>Posted within</span><select id="fDays" onchange="onFilterChange()"><option value="">Any time</option><option value="1">Last 24 hours</option><option value="3">Last 3 days</option><option value="7">Last 7 days</option><option value="14">Last 14 days</option><option value="30">Last 30 days</select></label>
           <label class="filter-field"><span>Source</span><select id="fSourceType" onchange="onFilterChange()"><option value="">Any</option><option value="employer">Direct from employer</option><option value="provider">Aggregated</option></select></label>
           <label class="filter-field"><span>Sort by</span><select id="fSort" onchange="onFilterChange()"><option value="relevance">Relevance</option><option value="newest">Newest</option><option value="updated">Recently updated</option><option value="salary">Highest salary</option><option value="oldest">Oldest</option></select></label>
@@ -455,7 +456,7 @@ ${postJobModalHtml(categoryOrder, categoryMap)}
   <div class="toast-bar" id="toastBar"></div>
 </div>
 
-<script>window.__CATEGORY_META__=${JSON.stringify(categoryMap)};window.__CATEGORY_ORDER__=${JSON.stringify(categoryOrder)};window.__ICONS__=${JSON.stringify(CLIENT_ICONS)};window.__JOB_TYPE_META__=${JSON.stringify(JOB_TYPE_META)};window.__JOB_CARD_STYLES__=${JSON.stringify(cardStyles)};window.__FEATURES__=${JSON.stringify({ featuredJobs: featuredEnabled })};window.__HOT_PAY_LABEL__=${JSON.stringify(HOT_PAY_LABEL)};</script>
+<script>window.__CATEGORY_META__=${JSON.stringify(categoryMap)};window.__CATEGORY_ORDER__=${JSON.stringify(categoryOrder)};window.__ICONS__=${JSON.stringify(CLIENT_ICONS)};window.__JOB_TYPE_META__=${JSON.stringify(JOB_TYPE_META)};window.__JOB_CARD_STYLES__=${JSON.stringify(cardStyles)};window.__FEATURES__=${JSON.stringify({ featuredJobs: featuredEnabled })};window.__HOT_PAY_LABEL__=${JSON.stringify(HOT_PAY_LABEL)};window.__SALARY_TIER_UI__=${JSON.stringify({ enabled: settings.salary_tier_badges_enabled !== '0', labels: { HIGH: settings.salary_tier_high_label || 'High Pay', GOOD: settings.salary_tier_good_label || 'Good Pay', STANDARD: settings.salary_tier_standard_label || 'Standard Pay' } }).replace(/</g,'\\u003c')};</script>
 <script>
 const CAT_META=window.__CATEGORY_META__;
 const CAT_ORDER=window.__CATEGORY_ORDER__;
@@ -464,8 +465,15 @@ const COMPANY_LOGOS=${JSON.stringify(companyLogoMap).replace(/</g,'\\u003c')};
 const JOB_TYPE_META=window.__JOB_TYPE_META__;
 const JOB_CARD_STYLES=window.__JOB_CARD_STYLES__;
 const FEATURES=window.__FEATURES__;
- const HOT_PAY_LABEL=window.__HOT_PAY_LABEL__||'HOT PAY';
-function normalizeJobType(t){return(t&&JOB_TYPE_META[t])?t:'Free';}
+  const HOT_PAY_LABEL=window.__HOT_PAY_LABEL__||'HOT PAY';
+ const SALARY_TIER_UI=window.__SALARY_TIER_UI__||{enabled:false,labels:{}};
+ function salaryTierBadgeClient(tier){
+   if(!SALARY_TIER_UI.enabled||!['HIGH','GOOD','STANDARD'].includes(tier))return'';
+   const key=tier.toLowerCase();
+   const label=SALARY_TIER_UI.labels[tier]||tier;
+   return '<span class="salary-tier-badge salary-tier-'+key+'" aria-label="'+esc(label)+'">'+esc(label)+'</span>';
+ }
+ function normalizeJobType(t){return(t&&JOB_TYPE_META[t])?t:'Free';}
 // Mirrors lib/job-card-styles.js's buildCardStyleAttr/buildBadgeStyleAttr
 // exactly (same shadow presets, same gradient/solid logic) so cards
 // re-rendered client-side after a filter/search look identical to the
@@ -620,6 +628,7 @@ function renderJobsList(){
               \${FEATURES.featuredJobs && j.featured?'<span class="tag-pinned">'+ICONS.pin+' Pinned</span>':''}
               \${nw?'<span class="tag-new">'+ICONS.sparkle+' NEW</span>':''}
               \${hot?'<span class="tag-hot">'+ICONS.flame+' '+HOT_PAY_LABEL+'</span>':''}
+              \${salaryTierBadgeClient(j.salary_tier)}
             </div>
             <div class="job-title-card">\${esc(j.title)}</div>
             <div class="job-co-card">\${esc(j.company)} \${j.is_verified?'<span class="verified-ico" title="Verified Company">'+ICONS.badgeCheck+'</span>':''}</div>
@@ -647,6 +656,7 @@ function buildQueryParams(){
   if(adv.seniority)p.set('seniority',adv.seniority);
   if(adv.salaryMin)p.set('salary_min',adv.salaryMin);
   if(adv.salaryMax)p.set('salary_max',adv.salaryMax);
+  if(adv.salaryTier)p.set('salary_tier',adv.salaryTier);
   if(adv.days)p.set('days',adv.days);
   if(adv.sourceType)p.set('source_type',adv.sourceType);
   if(adv.sort&&adv.sort!=='relevance')p.set('sort',adv.sort);
@@ -692,14 +702,14 @@ function applyStateFromUrl(){
   adv={
     remote:p.get('remote_type')||'', employ:p.get('employment_type')||'',
     seniority:p.get('seniority')||'', salaryMin:p.get('salary_min')||'',
-    salaryMax:p.get('salary_max')||'', days:p.get('days')||'',
+    salaryMax:p.get('salary_max')||'', salaryTier:p.get('salary_tier')||'', days:p.get('days')||'',
     sourceType:p.get('source_type')||'', sort:p.get('sort')||'relevance',
     country:p.get('country')||'', skill:p.get('skill')||'', company:p.get('company')||'',
   };
   const setVal=(id,v)=>{const el=document.getElementById(id);if(el)el.value=v;};
   setVal('fCategory',cat); setVal('searchInput',srch); setVal('fCountry',adv.country); setVal('fRemote',adv.remote);
   setVal('fEmploy',adv.employ); setVal('fSeniority',adv.seniority); setVal('fSalaryMin',adv.salaryMin);
-  setVal('fSalaryMax',adv.salaryMax); setVal('fDays',adv.days); setVal('fSourceType',adv.sourceType);
+  setVal('fSalaryMax',adv.salaryMax); setVal('fSalaryTier',adv.salaryTier); setVal('fDays',adv.days); setVal('fSourceType',adv.sourceType);
   setVal('fSort',adv.sort);
   document.querySelectorAll('.chip[data-cat]').forEach(el=>el.classList.toggle('active',el.dataset.cat===cat));
   updateFiltersBadge();
@@ -767,7 +777,7 @@ function renderSaved(){
           <div class="card-body">
             <div class="job-title-card">\${esc(j.title)}</div>
             <div class="job-co-card">\${esc(j.company)}</div>
-            <div class="job-meta-row">\${remoteTag(j.remote_type)}</div>
+            <div class="job-meta-row">\${remoteTag(j.remote_type)}\${salaryTierBadgeClient(j.salary_tier)}</div>
           </div>
         </a>
         <div class="card-right">
@@ -809,6 +819,7 @@ function onFilterChange(){
   adv.country=document.getElementById('fCountry')?.value.trim() || '';
   adv.seniority=document.getElementById('fSeniority').value;
   adv.days=document.getElementById('fDays').value;
+  adv.salaryTier=document.getElementById('fSalaryTier').value;
   adv.sourceType=document.getElementById('fSourceType').value;
   adv.sort=document.getElementById('fSort').value;
   pg=1;
@@ -828,7 +839,7 @@ function debounceFilterChange(){
 }
 function clearFilters(){
   cat='';adv={};
-  ['fCategory','fCountry','fRemote','fEmploy','fSeniority','fDays','fSalaryMin','fSalaryMax','fSourceType'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  ['fCategory','fCountry','fRemote','fEmploy','fSeniority','fDays','fSalaryMin','fSalaryMax','fSalaryTier','fSourceType'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
   document.getElementById('fSort').value='relevance';
   pg=1;
   updateFiltersBadge();

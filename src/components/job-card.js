@@ -9,6 +9,7 @@ import { iconSparkle, iconFlame, iconPin, iconMapPin, iconBadgeCheck, iconClock,
 import { DEFAULT_CARD_STYLES, buildCardStyleAttr, buildBadgeStyleAttr } from '../lib/job-card-styles.js';
 import { logoProxyPath } from '../lib/logo-proxy.js';
 import { isHotPayJob, HOT_PAY_LABEL } from '../lib/hot-pay.js';
+import { salaryTierEnabled } from '../lib/salary-tier.js';
 
 // Shared empty-Set default for jobCardSSR's optional verifiedCompanySet
 // param — a single frozen instance instead of allocating `new Set()` on
@@ -73,7 +74,17 @@ export function remoteTagHtml(t) {
 // logo, title/company/meta, salary, and action — even in the worst case.
 // The `.related-card` CLASS is still applied on top for the hover-lift
 // transition (see base-layout.js), but nothing structural depends on it.
-export function jobRowMini(job, logoOverrides = {}) {
+export function salaryTierBadgeHtml(jobOrTier, settings = {}) {
+  const tier = typeof jobOrTier === 'object' ? jobOrTier?.salary_tier : jobOrTier;
+  if (!salaryTierEnabled(settings) || !['HIGH', 'GOOD', 'STANDARD'].includes(tier)) return '';
+  const key = tier.toLowerCase();
+  const defaults = { HIGH: 'High Pay', GOOD: 'Good Pay', STANDARD: 'Standard Pay' };
+  const label = settings[`salary_tier_${key}_label`] || defaults[tier];
+  const safeLabel = escapeHtml(label);
+  return `<span class="salary-tier-badge salary-tier-${key}" aria-label="${safeLabel}" title="${safeLabel}">${safeLabel}</span>`;
+}
+
+export function jobRowMini(job, logoOverrides = {}, settings = {}) {
   const jobType = normalizeJobType(job.job_type);
   const tierIcon = jobType !== 'Free'
     ? `<span title="${escapeHtml(JOB_TYPE_META[jobType].label)}" style="margin-right:4px;flex-shrink:0">${JOB_TYPE_META[jobType].icon}</span>`
@@ -88,6 +99,7 @@ export function jobRowMini(job, logoOverrides = {}) {
         <span style="font-size:12px;font-weight:600;color:var(--brand);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:160px">${escapeHtml(job.company)}</span>
         ${jobLocationHtml(job, { compact: true })}
         ${remoteBadge}
+        ${salaryTierBadgeHtml(job, settings)}
       </div>
     </div>
     <div style="flex-shrink:0;display:flex;align-items:center;gap:12px">
@@ -264,6 +276,7 @@ export function jobCardSSR(job, idx, categoryMap = CATEGORY_META, categoryOrder 
             ${featuredEnabled && job.featured ? `<span class="tag-pinned">${iconPin({ size: 11 })} Pinned</span>` : ''}
             ${isNew ? `<span class="tag-new">${iconSparkle({ size: 11 })} NEW</span>` : ''}
             ${isHot ? `<span class="tag-hot">${iconFlame({ size: 11 })} ${HOT_PAY_LABEL}</span>` : ''}
+            ${salaryTierBadgeHtml(job, hotPaySettings)}
           </div>
           <div class="job-title-card">${escapeHtml(job.title)}</div>
           <div class="job-co-card">${escapeHtml(job.company)} ${verifiedCompanySet.has((job.company || '').toLowerCase()) ? `<span class="verified-ico" title="Verified Company">${iconBadgeCheck({ size: 12 })}</span>` : ''}</div>

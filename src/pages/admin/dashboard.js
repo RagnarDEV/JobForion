@@ -129,7 +129,7 @@ export async function renderDashboardContent(env) {
     OR (salary_min_usd IS NULL AND salary_max_usd IS NOT NULL AND salary_max_usd >= ?)
     OR (salary_min_usd IS NOT NULL AND salary_max_usd IS NOT NULL AND salary_min_usd >= 0 AND salary_max_usd >= 0 AND ((salary_min_usd + salary_max_usd) / 2.0) >= ?)`;
 
-  const [{ results: totalJobsR }, { results: jobsTodayR }, { results: jobsWeekR }, { results: jobsMonthR }, { results: subsR }, { results: companiesR }, { results: hotR }, { results: usersR }, { results: articlesR }, { results: recentJobsR }, { results: recentUsersR }, { results: recentCompaniesR }, { results: aiActivityR }] = await Promise.all([
+  const [{ results: totalJobsR }, { results: jobsTodayR }, { results: jobsWeekR }, { results: jobsMonthR }, { results: subsR }, { results: companiesR }, { results: hotR }, { results: usersR }, { results: articlesR }, { results: recentJobsR }, { results: recentUsersR }, { results: recentCompaniesR }, { results: aiActivityR }, { results: salaryTierR }] = await Promise.all([
     q("SELECT COUNT(*) c FROM jobs"),
     q("SELECT COUNT(*) c FROM jobs WHERE created_at >= datetime('now','-1 day')"),
     q("SELECT COUNT(*) c FROM jobs WHERE created_at >= datetime('now','-7 day')"),
@@ -143,6 +143,7 @@ export async function renderDashboardContent(env) {
     q("SELECT id, email, status, email_verified, created_at FROM users ORDER BY id DESC LIMIT 6"),
     q("SELECT company, COUNT(*) c, MAX(created_at) created_at FROM jobs WHERE company IS NOT NULL AND company != '' GROUP BY LOWER(company), company ORDER BY created_at DESC LIMIT 6"),
     q("SELECT action, meta AS metadata FROM admin_activity_log WHERE created_at >= datetime('now','-7 day') AND (action LIKE 'ai_%' OR action LIKE 'admin_%intelligence' OR action = 'admin_career_assistant' OR action = 'user_job_matching' OR action = 'user_career_assistant') ORDER BY id DESC LIMIT 1000"),
+    q("SELECT COALESCE(salary_tier, 'UNKNOWN') tier, COUNT(*) c FROM jobs GROUP BY COALESCE(salary_tier, 'UNKNOWN')"),
   ]);
 
   const [{ results: totalVisitsR }, { results: visitsTodayR }, { results: visits7dR }, { results: uniqCountriesR }] = await Promise.all([
@@ -174,6 +175,9 @@ export async function renderDashboardContent(env) {
   ]);
   const statusCounts = Object.fromEntries((statusBreakdownR || []).map(r => [r.s, r.c]));
   const sourceTypeCounts = Object.fromEntries((sourceTypeR || []).map(r => [r.s, r.c]));
+  const salaryTierCounts = Object.fromEntries((salaryTierR || []).map(r => [String(r.tier).toUpperCase(), Number(r.c || 0)]));
+  const salaryTierRows = ['HIGH', 'GOOD', 'STANDARD', 'UNKNOWN'].map(tier => ({ label: tier, count: salaryTierCounts[tier] || 0 }));
+  const salaryTierTotal = salaryTierRows.reduce((sum, row) => sum + row.count, 0);
   const { results: cleanupLogs } = await q("SELECT * FROM cleanup_logs ORDER BY id DESC LIMIT 6");
   const { results: lastCleanupR } = await q("SELECT created_at FROM cleanup_logs ORDER BY id DESC LIMIT 1");
 
@@ -304,6 +308,14 @@ export async function renderDashboardContent(env) {
       ${pulse('Hot Pay jobs', (hotR[0]?.c || 0).toLocaleString(), `≥ $${Math.round(hotPayThreshold / 1000)}k normalized`, 'var(--pink)')}
       ${pulse('AI activity', aiActivityCount.toLocaleString(), `${aiFailureCount} failed or errored`, 'var(--brand)')}
     </div>
+
+    ${salaryTierTotal > 0 ? `<div class="adm-grid dashboard-overview-grid" style="margin-bottom:16px">
+      <div class="adm-card dashboard-section-card" style="grid-column:span 2">
+        <div class="dashboard-card-heading"><div class="adm-card-title">Salary Tier Distribution</div><span class="dashboard-card-note">${salaryTierTotal.toLocaleString()} jobs · persisted annual USD tiers</span></div>
+        ${barChart(salaryTierRows)}
+        <div style="margin-top:8px;color:var(--ink3);font-size:10px;line-height:1.45">UNKNOWN includes missing, unsupported, or invalid salary data. It is not counted as STANDARD.</div>
+      </div>
+    </div>` : ''}
 
     ${(pendingPostings || []).length ? `
     <div class="adm-card dashboard-pending-card" style="margin-bottom:16px">

@@ -176,6 +176,8 @@ export async function handleApiRoute(url, request, env) {
     const seniority = queryValue("seniority", 80);
     const salaryMin = queryValue("salary_min", 20);
     const salaryMax = queryValue("salary_max", 20);
+    const salaryTierRaw = queryValue("salary_tier", 20).toUpperCase();
+    const salaryTier = ['HIGH', 'GOOD', 'STANDARD', 'UNKNOWN'].includes(salaryTierRaw) ? salaryTierRaw : '';
     // Date Posted (plan §5) — a fixed whitelist of day-counts, not an
     // arbitrary integer straight from the query string. The value is
     // still bound as a parameter either way (never string-concatenated
@@ -230,8 +232,11 @@ export async function handleApiRoute(url, request, env) {
     if (remoteType) { conditions.push("remote_type = ?"); params.push(remoteType); }
     if (employType) { conditions.push("employment_type = ?"); params.push(employType); }
     if (seniority) { conditions.push("LOWER(seniority) LIKE ?"); params.push(`%${seniority.toLowerCase()}%`); }
-    if (salaryMin) { conditions.push("salary_max_usd >= ?"); params.push(parseInt(salaryMin) * 1000); }
-    if (salaryMax) { conditions.push("salary_min_usd <= ?"); params.push(parseInt(salaryMax) * 1000); }
+    const salaryMinUsd = Number.parseInt(salaryMin, 10);
+    const salaryMaxUsd = Number.parseInt(salaryMax, 10);
+    if (Number.isFinite(salaryMinUsd) && salaryMinUsd >= 0) { conditions.push("salary_max_usd >= ?"); params.push(salaryMinUsd); }
+    if (Number.isFinite(salaryMaxUsd) && salaryMaxUsd >= 0) { conditions.push("salary_min_usd <= ?"); params.push(salaryMaxUsd); }
+    if (salaryTier) { conditions.push("COALESCE(salary_tier, 'UNKNOWN') = ?"); params.push(salaryTier); }
     if (days) { conditions.push("created_at >= datetime('now', '-' || ? || ' days')"); params.push(days); }
     if (sourceType) { conditions.push("source_type = ?"); params.push(sourceType); }
     if (country) {

@@ -13,7 +13,7 @@ import { JOB_TYPE_META } from '../../config/constants.js';
 import { getSettings } from '../../lib/settings.js';
 import { logActivity } from '../../lib/activity-log.js';
 import { errorPage } from './error-page.js';
-import { parseSalary } from '../../lib/salary.js';
+import { salaryClassificationForJob } from '../../lib/salary-tier.js';
 
 export async function handleAdminJobsRoute(url, request, env, base) {
   // ── CSV Export (plan §22) — admin-only, respects whatever filters are
@@ -94,14 +94,17 @@ export async function handleAdminJobsRoute(url, request, env, base) {
             // synced job is what makes an employer job's "Hot 🔥" badge,
             // salary sort, and salary_min search filter all work
             // identically to a synced one.
-            const parsedSalary = parseSalary(p.salary);
+            const settings = await getSettings(env);
+            const classification = salaryClassificationForJob(p, settings);
+            const parsedSalary = classification.parsed;
+            const salaryTier = classification;
             const insertResult = await env.DB.prepare(
-              `INSERT OR IGNORE INTO jobs (title,company,location,url,description,salary,remote_type,skills,seniority,employment_type,job_handle,source,source_type,company_id,submitted_by_user_id,salary_min_usd,salary_max_usd,status,updated_at,expires_at)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,'manual','employer',?,?,?,?,'active',CURRENT_TIMESTAMP,datetime('now','+45 days'))`
+              `INSERT OR IGNORE INTO jobs (title,company,location,url,description,salary,remote_type,skills,seniority,employment_type,job_handle,source,source_type,company_id,submitted_by_user_id,salary_min_usd,salary_max_usd,salary_tier,salary_tier_confidence,status,updated_at,expires_at)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,'manual','employer',?,?,?,?,?,?,'active',CURRENT_TIMESTAMP,datetime('now','+45 days'))`
             ).bind(
               p.title, p.company, p.location || 'Remote', p.url, p.description || '', p.salary || '', p.remote_type || 'fully_remote',
               p.skills || '[]', p.seniority || '', p.employment_type || 'full_time', '',
-              p.company_id || null, p.user_id || null, parsedSalary.annualMinUsd, parsedSalary.annualMaxUsd
+              p.company_id || null, p.user_id || null, parsedSalary.annualMinUsd, parsedSalary.annualMaxUsd, salaryTier.tier, salaryTier.confidence
             ).run();
             await env.DB.prepare("UPDATE job_postings SET status='approved' WHERE id = ?").bind(id).run();
             // Duplicate Detection (plan §11): jobs.url is UNIQUE, so
@@ -162,6 +165,7 @@ export async function handleAdminJobsRoute(url, request, env, base) {
       }
 
       let changed = 0;
+      const settings = action === 'approve' ? await getSettings(env) : null;
       if (action === 'reject') {
         const reasonCode = (form.get('reason') || 'Other').toString().slice(0, 60);
         const placeholders = ids.map(() => '?').join(',');
@@ -174,14 +178,16 @@ export async function handleAdminJobsRoute(url, request, env, base) {
             const { results } = await env.DB.prepare("SELECT * FROM job_postings WHERE id = ? AND status = 'pending'").bind(id).all();
             const p = results[0];
             if (!p) continue;
-            const parsedSalary = parseSalary(p.salary);
+            const classification = salaryClassificationForJob(p, settings);
+            const parsedSalary = classification.parsed;
+            const salaryTier = classification;
             await env.DB.prepare(
-              `INSERT OR IGNORE INTO jobs (title,company,location,url,description,salary,remote_type,skills,seniority,employment_type,job_handle,source,source_type,company_id,submitted_by_user_id,salary_min_usd,salary_max_usd,status,updated_at,expires_at)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,'manual','employer',?,?,?,?,'active',CURRENT_TIMESTAMP,datetime('now','+45 days'))`
+              `INSERT OR IGNORE INTO jobs (title,company,location,url,description,salary,remote_type,skills,seniority,employment_type,job_handle,source,source_type,company_id,submitted_by_user_id,salary_min_usd,salary_max_usd,salary_tier,salary_tier_confidence,status,updated_at,expires_at)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,'manual','employer',?,?,?,?,?,?,'active',CURRENT_TIMESTAMP,datetime('now','+45 days'))`
             ).bind(
               p.title, p.company, p.location || 'Remote', p.url, p.description || '', p.salary || '', p.remote_type || 'fully_remote',
               p.skills || '[]', p.seniority || '', p.employment_type || 'full_time', '',
-              p.company_id || null, p.user_id || null, parsedSalary.annualMinUsd, parsedSalary.annualMaxUsd
+              p.company_id || null, p.user_id || null, parsedSalary.annualMinUsd, parsedSalary.annualMaxUsd, salaryTier.tier, salaryTier.confidence
             ).run();
             await env.DB.prepare("UPDATE job_postings SET status='approved' WHERE id = ?").bind(id).run();
             changed++;
@@ -232,19 +238,26 @@ export async function handleAdminJobsRoute(url, request, env, base) {
       const skills = (form.get('skills') || '').toString().split(',').map(s => s.trim()).filter(Boolean);
       const submittedJobType = (form.get('job_type') || '').toString();
       const jobType = JOB_TYPE_META[submittedJobType] ? submittedJobType : 'Free';
+      const editedSalary = (form.get('salary') || '').toString().slice(0, 60);
+      const editedDescription = (form.get('description') || '').toString().slice(0, 20000);
+      const settings = await getSettings(env);
+      const classification = salaryClassificationForJob({ salary: editedSalary, description: editedDescription }, settings);
+      const parsedSalary = classification.parsed;
+      const salaryTier = classification;
       await env.DB.prepare(
-        `UPDATE jobs SET title=?, company=?, location=?, url=?, salary=?, seniority=?, remote_type=?, employment_type=?, skills=?, description=?, featured=?, job_type=?, job_type_note=? WHERE id=?`
+        `UPDATE jobs SET title=?, company=?, location=?, url=?, salary=?, seniority=?, remote_type=?, employment_type=?, skills=?, description=?, salary_min_usd=?, salary_max_usd=?, salary_tier=?, salary_tier_confidence=?, featured=?, job_type=?, job_type_note=? WHERE id=?`
       ).bind(
         (form.get('title') || '').toString().slice(0, 200),
         (form.get('company') || '').toString().slice(0, 200),
         (form.get('location') || '').toString().slice(0, 200),
         (form.get('url') || '').toString().slice(0, 500),
-        (form.get('salary') || '').toString().slice(0, 60),
+        editedSalary,
         (form.get('seniority') || '').toString().slice(0, 60),
         (form.get('remote_type') || '').toString(),
         (form.get('employment_type') || '').toString(),
         JSON.stringify(skills),
-        (form.get('description') || '').toString().slice(0, 20000),
+        editedDescription,
+        parsedSalary.annualMinUsd, parsedSalary.annualMaxUsd, salaryTier.tier, salaryTier.confidence,
         form.get('featured') ? 1 : 0,
         jobType,
         (form.get('job_type_note') || '').toString().slice(0, 140),

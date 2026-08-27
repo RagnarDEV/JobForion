@@ -220,6 +220,11 @@ export async function ensureTable(env) {
   // handles by design.
   await ensureColumn(env, 'jobs', 'salary_min_usd', 'INTEGER');
   await ensureColumn(env, 'jobs', 'salary_max_usd', 'INTEGER');
+  // Salary Tier classification is derived centrally from the normalized annual
+  // USD values. Existing rows start as UNKNOWN until the bounded admin
+  // backfill runs; no job or unrelated field is deleted or rewritten.
+  await ensureColumn(env, 'jobs', 'salary_tier', 'TEXT');
+  await ensureColumn(env, 'jobs', 'salary_tier_confidence', 'TEXT');
 
   // Daily cleanup run history — mirrors sync_logs's shape so the future
   // stats dashboard can reuse the same rendering pattern for both.

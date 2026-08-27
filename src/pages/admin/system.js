@@ -44,10 +44,17 @@ export async function renderSystemContent(env) {
     }
   }));
 
-  const { results: salaryRemainingRows } = await q(
-    "SELECT COUNT(*) c FROM jobs WHERE salary IS NOT NULL AND salary != '' AND salary_min_usd IS NULL"
+  const { results: salaryTierStatsRows } = await q(
+    `SELECT
+       SUM(CASE WHEN salary_tier IS NULL THEN 1 ELSE 0 END) pending,
+       SUM(CASE WHEN salary_tier = 'HIGH' THEN 1 ELSE 0 END) high,
+       SUM(CASE WHEN salary_tier = 'GOOD' THEN 1 ELSE 0 END) good,
+       SUM(CASE WHEN salary_tier = 'STANDARD' THEN 1 ELSE 0 END) standard,
+       SUM(CASE WHEN salary_tier = 'UNKNOWN' OR salary_tier IS NULL THEN 1 ELSE 0 END) unknown
+       FROM jobs`
   );
-  const salaryRemaining = salaryRemainingRows?.[0]?.c || 0;
+  const salaryTierStats = salaryTierStatsRows?.[0] || {};
+  const salaryRemaining = Number(salaryTierStats.pending || 0);
   const emailConfigured = Boolean(env.BREVO_API_KEY && env.EMAIL_FROM_ADDRESS);
   const storageConfigured = Boolean(env.COMPANY_ASSETS);
   const settings = await getSettings(env);
@@ -136,18 +143,24 @@ export async function renderSystemContent(env) {
         <div style="font-size:10.5px;color:var(--ink3);margin-top:8px">${(orphanSaved + orphanApps) ? 'A nonzero count here is expected over time — jobs are only ever hard-deleted after passing through Expired to Archived (see Job Management), roughly 89 days of inactivity. It means a user saved/applied to a job that has since been permanently removed.' : 'No orphaned references found.'}</div>
       </div>
       <div class="adm-card" style="grid-column:span 2">
-        <div class="adm-card-title">Salary Data Backfill <span style="font-weight:400;color:var(--ink3);font-size:12px">— normalizes free-text salaries (e.g. "$90k - $130k") into sortable/filterable USD numbers</span></div>
+        <div class="adm-card-title">Salary Tier Backfill <span style="font-weight:400;color:var(--ink3);font-size:12px">— classifies normalized annual USD into HIGH, GOOD, STANDARD, or UNKNOWN</span></div>
         <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
           <div style="font-size:12.5px;color:var(--ink2)">
             ${salaryRemaining > 0
-              ? `<b style="color:var(--ink)">${salaryRemaining.toLocaleString()}</b> job${salaryRemaining === 1 ? '' : 's'} with a salary still need processing`
-              : `<span style="color:var(--green);font-weight:700">✓ All parseable salaries are up to date</span>`}
+              ? `<b style="color:var(--ink)">${salaryRemaining.toLocaleString()}</b> row${salaryRemaining === 1 ? '' : 's'} still need classification`
+              : `<span style="color:var(--green);font-weight:700">✓ All job rows have a persisted salary tier</span>`}
           </div>
           <form method="POST" action="/admin/system/backfill-salary">
-            <button class="adm-btn adm-btn-primary" type="submit" ${salaryRemaining === 0 ? 'disabled' : ''}>Run Batch (300 jobs)</button>
+            <button class="adm-btn adm-btn-primary" type="submit" ${salaryRemaining === 0 ? 'disabled' : ''}>Run Batch (300 rows)</button>
           </form>
         </div>
-        ${salaryRemaining > 300 ? `<div style="font-size:10.5px;color:var(--ink3);margin-top:8px">Processes 300 at a time to stay well inside Cloudflare's subrequest budget — click again to continue the remaining ${(salaryRemaining - 300).toLocaleString()}.</div>` : ''}
+        <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;font-size:10.5px;font-weight:700">
+          <span class="salary-tier-badge salary-tier-high">HIGH ${Number(salaryTierStats.high || 0).toLocaleString()}</span>
+          <span class="salary-tier-badge salary-tier-good">GOOD ${Number(salaryTierStats.good || 0).toLocaleString()}</span>
+          <span class="salary-tier-badge salary-tier-standard">STANDARD ${Number(salaryTierStats.standard || 0).toLocaleString()}</span>
+          <span class="salary-tier-badge salary-tier-standard">UNKNOWN ${Number(salaryTierStats.unknown || 0).toLocaleString()}</span>
+        </div>
+        ${salaryRemaining > 300 ? `<div style="font-size:10.5px;color:var(--ink3);margin-top:8px">Processes up to 300 rows per request; return to this page and run again to continue. Rows are not deleted or rewritten outside the salary fields.</div>` : ''}
       </div>
     </div>
 

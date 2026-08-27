@@ -49,10 +49,12 @@ export async function handleAdminSystemRoute(url, request, env, base) {
       const ok = await verifyAdminCookie(env, request.headers.get('Cookie'));
       if (!ok) return new Response('Unauthorized', { status: 401 });
       const result = await backfillSalaryUsd(env);
-      await logActivity(env, 'salary_backfill_run', `${result.processed} processed, ${result.remaining} remaining`);
-      const msg = result.remaining > 0
-        ? `Processed ${result.processed} — ${result.remaining} remaining, click again to continue`
-        : `Processed ${result.processed} — all salaries are now up to date`;
+      await logActivity(env, 'salary_backfill_run', `${result.processed} processed (HIGH ${result.high}, GOOD ${result.good}, STANDARD ${result.standard}, UNKNOWN ${result.unknown}), ${result.errors} errors, ${result.remaining} remaining`);
+      const msg = result.errors > 0
+        ? `Backfill batch failed — ${result.errors} row(s) can be retried; ${result.remaining} remaining`
+        : result.remaining > 0
+          ? `Processed ${result.processed} — HIGH ${result.high}, GOOD ${result.good}, STANDARD ${result.standard}, UNKNOWN ${result.unknown}; ${result.remaining} remaining`
+          : `Processed ${result.processed} — HIGH ${result.high}, GOOD ${result.good}, STANDARD ${result.standard}, UNKNOWN ${result.unknown}; all rows are classified`;
       return new Response(null, { status: 302, headers: { 'Location': `/admin/system?flash=${encodeURIComponent(msg)}` } });
     } catch (e) { return errorPage(e); }
   }

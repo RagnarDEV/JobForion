@@ -4,6 +4,7 @@
 // only falls back to the shared salary parser for legacy rows.
 
 import { parseSalary, extractSalaryFromDescription } from './salary.js';
+import { classifySalary } from './salary-tier.js';
 
 export const DEFAULT_HOT_PAY_THRESHOLD_USD = 150000;
 export const HOT_PAY_LABEL = 'HOT PAY';
@@ -56,10 +57,15 @@ export function isHotPayJob(job = {}, settings = {}) {
 }
 
 export function annotateHotPay(jobs, settings = {}) {
-  return (Array.isArray(jobs) ? jobs : []).map(job => ({
-    ...job,
-    isHotPay: isHotPayJob(job, settings),
-  }));
+  return (Array.isArray(jobs) ? jobs : []).map(job => {
+    const salaryClassification = classifySalary(job, settings);
+    return {
+      ...job,
+      salary_tier: salaryClassification.tier,
+      salary_tier_confidence: salaryClassification.confidence,
+      isHotPay: isHotPayJob(job, settings),
+    };
+  });
 }
 
 // Listing queries intentionally omit the large description column. For old

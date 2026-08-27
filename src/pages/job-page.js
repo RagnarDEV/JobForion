@@ -14,6 +14,7 @@ import { getFooterPages, getMenuPages } from '../lib/pages-cms.js';
 import { getNavButtons } from '../lib/nav-buttons.js';
 import { getLogoOverrides, attachCompanyLogos } from '../lib/company-logos.js';
 import { hydrateHotPay, HOT_PAY_LABEL } from '../lib/hot-pay.js';
+import { salaryTierBadgeHtml } from '../components/job-card.js';
 import { getVerifiedCompanyNameSet, getPublicCompanyBySlug } from '../lib/companies.js';
 
 // SECURITY: JSON.stringify() does NOT escape "<", so a malicious job title
@@ -202,6 +203,7 @@ export async function renderJobPage(job, related, base, env, user = null) {
         ${job.seniority ? `<span class="tag tag-type">${escapeHtml(job.seniority)}</span>` : ''}
         ${isNew ? `<span class="tag tag-new">${iconSparkle({ size: 11 })} NEW</span>` : ''}
         ${job.isHotPay ? `<span class="tag tag-hot">${iconFlame({ size: 11 })} ${HOT_PAY_LABEL}</span>` : ''}
+        ${salaryTierBadgeHtml(job, settings)}
       </div>
       ${job.salary ? `<div class="job-salary-lg">${iconDollarSign({ size: 20 })} ${escapeHtml(job.salary)}</div>` : ''}
       <div class="job-primary-actions"><button class="job-save-outline" onclick="toggleJobSave(${job.id});return false">${iconBookmark({ size: 16 })} Save</button></div>
