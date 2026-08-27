@@ -59,19 +59,13 @@ export async function renderSettingsContent(env) {
       </div>
 
       <div class="adm-card" id="settings-hero">
-        <div class="adm-card-title">🎨 Hero &amp; Branding <span style="font-weight:400;color:var(--ink3);font-size:12px">— the homepage banner (title, gradient, search bar, font)</span></div>
+        <div class="adm-card-title">🎨 Hero &amp; Branding <span style="font-weight:400;color:var(--ink3);font-size:12px">— the homepage banner (title, search bar, font; colors use Appearance Theme)</span></div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px">
           ${field('Title — line 1', 'hero_title_line1', s.hero_title_line1, { placeholder: SETTINGS_DEFAULTS.hero_title_line1 })}
           ${field('Title — line 2 (highlighted)', 'hero_title_line2', s.hero_title_line2, { placeholder: SETTINGS_DEFAULTS.hero_title_line2 })}
           ${field('Subtitle', 'hero_subtitle', s.hero_subtitle, { full: true })}
           ${field('Search placeholder', 'hero_search_placeholder', s.hero_search_placeholder, { placeholder: SETTINGS_DEFAULTS.hero_search_placeholder })}
           ${field('Search button text', 'hero_search_button_text', s.hero_search_button_text, { placeholder: SETTINGS_DEFAULTS.hero_search_button_text })}
-        </div>
-        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:14px">
-          ${field('Gradient start', 'hero_gradient_start', s.hero_gradient_start, { type: 'color' })}
-          ${field('Gradient middle', 'hero_gradient_mid', s.hero_gradient_mid, { type: 'color' })}
-          ${field('Gradient end', 'hero_gradient_end', s.hero_gradient_end, { type: 'color' })}
-          ${field('Search button color', 'hero_search_button_color', s.hero_search_button_color, { type: 'color' })}
         </div>
         <label style="display:block;max-width:280px">
           <span style="font-size:11px;font-weight:700;color:var(--ink3);text-transform:uppercase;letter-spacing:.4px;display:block;margin-bottom:6px">Heading Font</span>
@@ -81,10 +75,10 @@ export async function renderSettingsContent(env) {
           <span style="font-size:11px;color:var(--ink3);display:block;margin-top:4px">Applies to the homepage headline only.</span>
         </label>
         <div style="margin-top:16px;border-radius:12px;overflow:hidden;border:1px solid var(--border2)">
-          <div id="heroPreviewBg" style="padding:26px 22px;background:linear-gradient(135deg,${escapeHtml(s.hero_gradient_start)} 0%,${escapeHtml(s.hero_gradient_mid)} 55%,${escapeHtml(s.hero_gradient_end)} 100%)">
+          <div id="heroPreviewBg" style="padding:26px 22px;background:linear-gradient(135deg,${escapeHtml(s.appearance_primary_color || THEME_DEFAULTS.appearance_primary_color)} 0%,${escapeHtml(s.appearance_secondary_color || THEME_DEFAULTS.appearance_secondary_color)} 100%)">
             <div id="heroPreviewTitle" style="font-family:'${escapeHtml(s.hero_heading_font)}',sans-serif;font-size:22px;font-weight:800;color:#fff;margin-bottom:6px">${escapeHtml(s.hero_title_line1)} ${escapeHtml(s.hero_title_line2)}</div>
             <div style="font-size:12px;color:rgba(255,255,255,.85);margin-bottom:14px">Live preview — updates as you type/pick colors below</div>
-            <span id="heroPreviewBtn" style="display:inline-block;background:${escapeHtml(s.hero_search_button_color)};color:#fff;padding:8px 18px;border-radius:9px;font-size:12px;font-weight:700">${escapeHtml(s.hero_search_button_text)}</span>
+            <span id="heroPreviewBtn" style="display:inline-block;background:${escapeHtml(s.appearance_primary_color || THEME_DEFAULTS.appearance_primary_color)};color:#fff;padding:8px 18px;border-radius:9px;font-size:12px;font-weight:700">${escapeHtml(s.hero_search_button_text)}</span>
           </div>
         </div>
         <script>
@@ -96,13 +90,13 @@ export async function renderSettingsContent(env) {
             var bg = document.getElementById('heroPreviewBg');
             var title = document.getElementById('heroPreviewTitle');
             var btn = document.getElementById('heroPreviewBtn');
-            bg.style.background = 'linear-gradient(135deg,' + val('hero_gradient_start') + ' 0%,' + val('hero_gradient_mid') + ' 55%,' + val('hero_gradient_end') + ' 100%)';
+            bg.style.background = 'linear-gradient(135deg,' + val('appearance_primary_color') + ' 0%,' + val('appearance_secondary_color') + ' 100%)';
             title.style.fontFamily = "'" + val('hero_heading_font') + "',sans-serif";
             title.textContent = val('hero_title_line1') + ' ' + val('hero_title_line2');
-            btn.style.background = val('hero_search_button_color');
+            btn.style.background = val('appearance_primary_color');
             btn.textContent = val('hero_search_button_text') || 'Search';
           }
-          ['hero_gradient_start','hero_gradient_mid','hero_gradient_end','hero_search_button_color','hero_title_line1','hero_title_line2','hero_search_button_text','hero_heading_font'].forEach(function(name){
+          ['appearance_primary_color','appearance_secondary_color','hero_title_line1','hero_title_line2','hero_search_button_text','hero_heading_font'].forEach(function(name){
             var el = form.querySelector('[name="'+name+'"]');
             if (el) el.addEventListener('input', update);
           });

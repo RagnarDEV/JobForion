@@ -161,18 +161,17 @@ export const SETTINGS_DEFAULTS = {
   ai_admin_assistant_enabled: '1',
 
   // ── Hero section customization (homepage) ─────────────────────────
-  // Every field here is rendered by pages/home.js's hero block. Colors
-  // are plain hex strings so they can feed straight into <input
-  // type="color"> on the admin form without any parsing/formatting step.
+  // Every field here is rendered by pages/home.js's hero block. Hero
+  // surface colors come from the validated Design System appearance tokens
+  // above, so this group contains copy, search, and typography controls only.
   hero_title_line1: 'Find the work you love.',
   hero_title_line2: 'Anywhere in the world.',
   hero_subtitle: 'Discover flexible remote work from trusted companies, with global opportunities curated for the way you want to work.',
-  hero_gradient_start: '#2563EB',
-  hero_gradient_mid: '#1D4ED8',
-  hero_gradient_end: '#1E3A8A',
+  // Hero surface colors are controlled by the validated Design System
+  // appearance tokens below; the old per-Hero gradient/button-color keys
+  // were removed because the current public renderer never consumed them.
   hero_search_placeholder: 'Job title, skill, or company...',
   hero_search_button_text: 'Search Jobs',
-  hero_search_button_color: '#FF5C7A',
   // One of the curated options in HERO_FONT_OPTIONS below — anything else
   // silently falls back to the first option, so a bad/stale value can
   // never break the Google Fonts <link> or leave the heading unstyled.
