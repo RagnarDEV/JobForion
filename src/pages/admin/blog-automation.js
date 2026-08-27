@@ -1,10 +1,9 @@
 // src/pages/admin/blog-automation.js
-// Blog Automation admin page: stats cards, settings form (posts to the
-// EXISTING /admin/settings/update handler — see routes/admin/website.router.js
-// — since every blog_auto_* key is already registered in lib/settings.js's
-// SETTINGS_KEYS/CHECKBOX_SETTINGS_KEYS, this page needs no save route of
-// its own), a "Generate Article Now" trigger for on-demand testing, and a
-// recent activity log sourced from lib/blog-automation/logger.js.
+// Blog Automation admin page: stats cards, a dedicated partial settings
+// form (posts to /admin/blog-automation/update so it can never overwrite
+// unrelated Site/SEO feature flags), a "Generate Article Now" trigger for
+// on-demand testing, and a recent activity log sourced from
+// lib/blog-automation/logger.js.
 
 import { escapeHtml } from '../../lib/entities.js';
 import { getSettings, SETTINGS_DEFAULTS, WEEKDAY_OPTIONS } from '../../lib/settings.js';
@@ -106,7 +105,7 @@ export async function renderBlogAutomationContent(env) {
       ${statCard('Failed (7d)', stats.failedRecent, stats.failedRecent > 0 ? 'var(--coral)' : 'var(--ink3)', 'Generation errors')}
     </div>
 
-    <form method="POST" action="/admin/settings/update" style="display:flex;flex-direction:column;gap:16px">
+    <form method="POST" action="/admin/blog-automation/update" style="display:flex;flex-direction:column;gap:16px">
 
       <div class="adm-card">
         <div class="adm-card-title">General</div>

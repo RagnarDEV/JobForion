@@ -57,6 +57,7 @@ export const ACTION_LABELS = {
   homepage_custom_section_deleted: 'Custom homepage section deleted',
   homepage_section_code_updated: 'Homepage section code updated',
   homepage_section_code_cleared: 'Homepage section code restored',
+  blog_automation_settings_updated: 'Blog Automation settings changed',
 
   // ── Accounts & Companies (Identity system) ─────────────────────
   user_registered: 'User registered',
