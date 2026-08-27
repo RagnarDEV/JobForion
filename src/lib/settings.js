@@ -111,6 +111,12 @@ export const THEME_SETTING_METADATA = Object.freeze({
   salary_tier_high_label: { type: 'text', max: 40, category: 'salary_tier', description: 'High Pay display label' },
   salary_tier_good_label: { type: 'text', max: 40, category: 'salary_tier', description: 'Good Pay display label' },
   salary_tier_standard_label: { type: 'text', max: 40, category: 'salary_tier', description: 'Standard Pay display label' },
+  monetization_featured_enabled: { type: 'boolean', category: 'monetization', description: 'Enable Featured Job product activation' },
+  monetization_sponsored_enabled: { type: 'boolean', category: 'monetization', description: 'Enable Sponsored Job product activation' },
+  monetization_featured_placement: { type: 'enum', values: ['homepage', 'jobs', 'both'], category: 'monetization', description: 'Featured placement' },
+  monetization_sponsored_placement: { type: 'enum', values: ['homepage', 'jobs', 'both'], category: 'monetization', description: 'Sponsored placement' },
+  monetization_max_featured: { type: 'integer', min: 1, max: 100, category: 'monetization', description: 'Maximum active Featured campaigns' },
+  monetization_ordering: { type: 'enum', values: ['relevance', 'priority', 'newest'], category: 'monetization', description: 'Paid placement ordering rule' },
   company_card_radius: { type: 'integer', min: 8, max: 24, category: 'company_card', description: 'Company Card radius' },
   company_card_padding: { type: 'integer', min: 10, max: 28, category: 'company_card', description: 'Company Card padding' },
   company_card_logo_size: { type: 'integer', min: 36, max: 76, category: 'company_card', description: 'Company Card logo size' },
@@ -170,6 +176,16 @@ export const SETTINGS_DEFAULTS = {
   salary_tier_high_label: 'High Pay',
   salary_tier_good_label: 'Good Pay',
   salary_tier_standard_label: 'Standard Pay',
+
+  // ── Monetization controls ────────────────────────────────────────
+  // These controls govern placement/availability only; prices remain in
+  // monetization_products and payment state remains provider-controlled.
+  monetization_featured_enabled: '1',
+  monetization_sponsored_enabled: '1',
+  monetization_featured_placement: 'homepage',
+  monetization_sponsored_placement: 'homepage',
+  monetization_max_featured: '10',
+  monetization_ordering: 'relevance',
 
   // ── AI Foundation (Phase 12.1) ───────────────────────────────────
   // The binding/model remain code/config controlled; this switch provides

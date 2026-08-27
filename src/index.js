@@ -23,6 +23,7 @@ import { renderNotFoundPage } from './pages/public-content.js';
 import { runBlogGeneration } from './lib/blog-automation/generator.js';
 import { runBlogExpirationCleanup } from './lib/blog-automation/expiration.js';
 import { runJobAlertsDispatch } from './lib/job-alerts-dispatcher.js';
+import { expireMonetizationCampaigns } from './lib/monetization.js';
 
 import { handleAssetsRoute, handleR2AssetRoute, ASSET_PATHS } from './routes/assets.router.js';
 import { handleLogoProxyRoute } from './lib/logo-proxy.js';
@@ -237,6 +238,7 @@ export default {
     if (event.cron === '0 3 * * *') {
       ctx.waitUntil(cleanupStaleJobs(env));
       ctx.waitUntil(runBlogExpirationCleanup(env));
+      ctx.waitUntil(expireMonetizationCampaigns(env));
     } else if (event.cron === '0 8 * * *') {
       ctx.waitUntil(runJobAlertsDispatch(env));
     } else if (event.cron === '0 9 * * *') {

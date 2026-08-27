@@ -49,6 +49,7 @@ const NAV_GROUPS = [
     { id: 'settings', label: 'Site, SEO & Appearance', icon: iconSettingsGear, href: '/admin/settings' },
   ]},
   { title: 'Monetization', items: [
+    { id: 'monetization', label: 'Monetization Center', icon: iconMegaphone, href: '/admin/monetization' },
     { id: 'ads', label: 'Ads', icon: iconMegaphone, href: '/admin/ads' },
   ]},
   { title: 'System & Security', items: [

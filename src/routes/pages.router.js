@@ -14,6 +14,7 @@ import { BASE_URL, PUBLIC_JOB_STATUS_SQL } from '../config/constants.js';
 import { getSettings } from '../lib/settings.js';
 import { getCategoryData } from '../lib/categories.js';
 import { getSessionUser } from '../lib/accounts/session.js';
+import { renderPricingPage } from '../pages/pricing.js';
 
 // A deleted/expired job's row is hard-removed from D1 (see
 // db/cleanup.js), so at request time there's no way to tell "this id
@@ -133,6 +134,8 @@ export async function handlePagesRoute(url, request, env, base) {
   if (url.pathname === '/blog') return new Response(await renderBlogIndex(base, env, user), { headers: { "Content-Type": "text/html; charset=utf-8" } });
 
   if (url.pathname === '/resources') return new Response(await renderResourcesHub(base, env, user), { headers: { "Content-Type": "text/html; charset=utf-8" } });
+
+  if (url.pathname === '/pricing') return new Response(await renderPricingPage(base, env, user), { headers: { "Content-Type": "text/html; charset=utf-8" } });
 
   const blogMatch = url.pathname.match(/^\/blog\/([a-z0-9-]+)$/);
   if (blogMatch) {

@@ -546,6 +546,188 @@ export async function ensureTable(env) {
     )
   `).run();
 
+  // ── Monetization domain ────────────────────────────────────────
+  // Additive, provider-neutral financial records. No card data, CVV,
+  // credentials, or client-supplied payment state is stored here.
+  await env.DB.prepare(`
+    CREATE TABLE IF NOT EXISTS monetization_products (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      slug TEXT UNIQUE NOT NULL,
+      name TEXT NOT NULL,
+      description TEXT,
+      type TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'active',
+      price_minor INTEGER NOT NULL,
+      currency TEXT NOT NULL DEFAULT 'USD',
+      billing_model TEXT NOT NULL DEFAULT 'one_time',
+      duration_days INTEGER NOT NULL DEFAULT 30,
+      target_audience TEXT NOT NULL DEFAULT 'employer',
+      metadata TEXT,
+      display_order INTEGER NOT NULL DEFAULT 100,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `).run();
+  await env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_monetization_products_status_order ON monetization_products(status, display_order, id)').run();
+  const defaultMonetizationProducts = [
+    ['featured-job', 'Featured Job', 'Give one job a highlighted placement for a defined period.', 'featured_job', 900, 'USD', 30, 10],
+    ['sponsored-job', 'Sponsored Job', 'Run a clearly labelled sponsored job campaign for a defined period.', 'sponsored_job', 1900, 'USD', 30, 20],
+    ['job-boost', 'Job Boost', 'Increase visibility temporarily without bypassing search filters or relevance.', 'job_boost', 500, 'USD', 7, 30],
+    ['premium-company', 'Premium Company', 'Foundation for enhanced company profile capabilities backed by an entitlement.', 'premium_company', 4900, 'USD', 30, 40],
+  ];
+  for (const [slug, name, description, type, price, currency, duration, displayOrder] of defaultMonetizationProducts) {
+    await env.DB.prepare(`INSERT OR IGNORE INTO monetization_products (slug,name,description,type,status,price_minor,currency,billing_model,duration_days,target_audience,display_order) VALUES (?,?,?,?, 'active',?,?, 'one_time',?,'employer',?)`).bind(slug, name, description, type, price, currency, duration, displayOrder).run();
+  }
+  await env.DB.prepare(`
+    CREATE TABLE IF NOT EXISTS monetization_orders (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      order_ref TEXT UNIQUE NOT NULL,
+      user_id INTEGER NOT NULL,
+      company_id INTEGER,
+      product_id INTEGER NOT NULL,
+      amount_minor INTEGER NOT NULL,
+      currency TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      payment_provider TEXT,
+      provider_transaction_id TEXT,
+      idempotency_key TEXT NOT NULL,
+      metadata TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      paid_at DATETIME,
+      expired_at DATETIME,
+      UNIQUE(user_id, idempotency_key)
+    )
+  `).run();
+  await env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_monetization_orders_status_created ON monetization_orders(status, created_at DESC)').run();
+  await env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_monetization_orders_company ON monetization_orders(company_id, id DESC)').run();
+  await env.DB.prepare(`
+    CREATE TABLE IF NOT EXISTS monetization_transactions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      order_id INTEGER NOT NULL,
+      provider TEXT NOT NULL,
+      provider_reference TEXT NOT NULL UNIQUE,
+      gross_amount_minor INTEGER NOT NULL,
+      currency TEXT NOT NULL,
+      provider_fee_minor INTEGER,
+      net_amount_minor INTEGER,
+      status TEXT NOT NULL,
+      metadata TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `).run();
+  await env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_monetization_transactions_order ON monetization_transactions(order_id, id DESC)').run();
+  await env.DB.prepare(`
+    CREATE TABLE IF NOT EXISTS monetization_entitlements (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER,
+      company_id INTEGER,
+      product_id INTEGER NOT NULL,
+      order_id INTEGER,
+      job_id INTEGER,
+      kind TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      starts_at DATETIME,
+      ends_at DATETIME,
+      source TEXT NOT NULL DEFAULT 'payment',
+      metadata TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `).run();
+  await env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_monetization_entitlements_owner ON monetization_entitlements(company_id, user_id, status, ends_at)').run();
+  await env.DB.prepare(`
+    CREATE TABLE IF NOT EXISTS monetization_campaigns (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      kind TEXT NOT NULL,
+      job_id INTEGER,
+      company_id INTEGER,
+      entitlement_id INTEGER,
+      status TEXT NOT NULL DEFAULT 'draft',
+      starts_at DATETIME,
+      ends_at DATETIME,
+      budget_minor INTEGER,
+      currency TEXT,
+      priority INTEGER NOT NULL DEFAULT 0,
+      placement TEXT,
+      metadata TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `).run();
+  await env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_monetization_campaigns_active ON monetization_campaigns(status, starts_at, ends_at, priority)').run();
+  await env.DB.prepare(`
+    CREATE TABLE IF NOT EXISTS monetization_refunds (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      order_id INTEGER NOT NULL,
+      transaction_id INTEGER,
+      amount_minor INTEGER NOT NULL,
+      currency TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'requested',
+      reason TEXT,
+      admin_user_id INTEGER,
+      provider_reference TEXT,
+      metadata TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `).run();
+  await env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_monetization_refunds_order ON monetization_refunds(order_id, id DESC)').run();
+  await env.DB.prepare(`
+    CREATE TABLE IF NOT EXISTS affiliate_programs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      slug TEXT UNIQUE NOT NULL,
+      base_url TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'inactive',
+      metadata TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `).run();
+  await env.DB.prepare(`
+    CREATE TABLE IF NOT EXISTS affiliate_clicks (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      program_id INTEGER NOT NULL,
+      campaign TEXT,
+      source_page TEXT,
+      destination TEXT NOT NULL,
+      ip_hash TEXT,
+      user_agent TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `).run();
+  await env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_affiliate_clicks_program_created ON affiliate_clicks(program_id, created_at DESC)').run();
+  await env.DB.prepare(`
+    CREATE TABLE IF NOT EXISTS monetization_revenue_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      event_type TEXT NOT NULL,
+      order_id INTEGER,
+      transaction_id INTEGER,
+      product_id INTEGER,
+      gross_amount_minor INTEGER NOT NULL DEFAULT 0,
+      currency TEXT NOT NULL DEFAULT 'USD',
+      provider_fee_minor INTEGER,
+      net_amount_minor INTEGER,
+      occurred_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      metadata TEXT
+    )
+  `).run();
+  await env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_monetization_revenue_events_time ON monetization_revenue_events(occurred_at DESC, event_type)').run();
+  await env.DB.prepare(`
+    CREATE TABLE IF NOT EXISTS monetization_webhook_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      event_id TEXT UNIQUE NOT NULL,
+      provider TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'received',
+      payload TEXT,
+      error TEXT,
+      received_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      processed_at DATETIME
+    )
+  `).run();
+
   schemaEnsured = true;
 }
 

@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
-    "test": "node tests/salary-tier.test.mjs && node tests/home-layout.test.mjs && node tests/trust-strip.test.mjs"
+    "test": "node tests/salary-tier.test.mjs && node tests/home-layout.test.mjs && node tests/trust-strip.test.mjs && node tests/monetization.test.mjs"
   },
   "devDependencies": {
     "wrangler": "^4.0.0"

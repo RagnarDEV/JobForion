@@ -44,6 +44,10 @@ remote = true
 # R2_PUBLIC_BASE_URL  -> OPTIONAL, see R2 bucket note above. The public
 #                        https://pub-xxxx.r2.dev (or custom) domain mapped
 #                        to the COMPANY_ASSETS bucket.
+# PAYMENT_PROVIDER     -> optional provider adapter name (no adapter ships
+#                        enabled by default; checkout remains unavailable).
+# PAYMENT_WEBHOOK_SECRET -> optional secret for the signed webhook boundary;
+#                        set via `wrangler secret put`, never commit it.
 #
 # NOTE: API_KEY is no longer used. Every job provider (Greenhouse, Lever,
 # Ashby, SmartRecruiters, Workable, Teamtailor, Recruitee, Workday, iCIMS)
