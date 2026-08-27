@@ -24,7 +24,7 @@ a:hover{text-decoration:underline}
 <h1>⚠️ حدث خطأ أثناء تنفيذ العملية</h1>
 <p>هذه رسالة الخطأ الفعلية القادمة من الخادم أو قاعدة البيانات:</p>
 <pre>${msg}</pre>
-<p style="margin-top:18px"><a href="/admin">← العودة إلى لوحة التحكم</a></p>
+<p style="margin-top:18px"><a href="/admin">العودة إلى لوحة التحكم</a></p>
 </div>
 </body></html>`, { status: 500, headers: { "Content-Type": "text/html; charset=utf-8" } });
 }

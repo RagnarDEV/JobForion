@@ -5,7 +5,7 @@
 
 import { CATEGORY_META, CATEGORY_ORDER, JOB_TYPE_META } from '../config/constants.js';
 import { slugify, escapeHtml } from '../lib/entities.js';
-import { iconSparkle, iconFlame, iconPin, iconMapPin, iconBadgeCheck, iconClock, iconGlobe, iconBuilding, iconArrowRight, iconBookmark } from '../assets/icons.js';
+import { iconSparkle, iconFlame, iconPin, iconMapPin, iconBadgeCheck, iconClock, iconGlobe, iconBuilding, iconBookmark } from '../assets/icons.js';
 import { DEFAULT_CARD_STYLES, buildCardStyleAttr, buildBadgeStyleAttr } from '../lib/job-card-styles.js';
 import { logoProxyPath } from '../lib/logo-proxy.js';
 import { isHotPayJob, HOT_PAY_LABEL } from '../lib/hot-pay.js';
@@ -38,14 +38,14 @@ export function logoImgHtml(company, size = '64px', cls = 'job-logo', overrideUr
   const src = trustedOverride || logoProxyPath(company, website);
   if (src) {
     const safeSrc = escapeHtml(src);
-    return `<div class="${cls}" style="width:${size};height:${size}">
+    return `<div class="${cls}" style="width:${size};height:${size};background:#fff">
     <img src="${safeSrc}" alt="${safeCompany}" loading="lazy"
       style="width:100%;height:100%;object-fit:contain;padding:7px"
       onerror="this.onerror=null;this.style.display='none';this.nextElementSibling.style.display='flex'">
     <span style="display:none;width:100%;height:100%;align-items:center;justify-content:center;font-size:${fs};font-weight:800;color:var(--brand)">${escapeHtml(ini)}</span>
   </div>`;
   }
-  return `<div class="${cls} monogram-logo" role="img" aria-label="${safeCompany}" style="width:${size};height:${size};display:flex;align-items:center;justify-content:center;font-size:${fs};font-weight:800;color:var(--brand)">${escapeHtml(ini)}</div>`;
+  return `<div class="${cls} monogram-logo" role="img" aria-label="${safeCompany}" style="width:${size};height:${size};display:flex;align-items:center;justify-content:center;font-size:${fs};font-weight:800;color:var(--brand);background:#fff">${escapeHtml(ini)}</div>`;
 }
 
 export function jobLocationHtml(jobOrLocation, { compact = false, className = '' } = {}) {
@@ -70,7 +70,7 @@ export function remoteTagHtml(t) {
 // in layout/base-layout.js. Inline styles are near-impossible to
 // accidentally override via specificity conflicts or a stale cached
 // stylesheet, so this card always renders as one clean horizontal row —
-// logo → title/company/meta → salary + arrow — even in the worst case.
+// logo, title/company/meta, salary, and action — even in the worst case.
 // The `.related-card` CLASS is still applied on top for the hover-lift
 // transition (see base-layout.js), but nothing structural depends on it.
 export function jobRowMini(job, logoOverrides = {}) {
@@ -92,7 +92,6 @@ export function jobRowMini(job, logoOverrides = {}) {
     </div>
     <div style="flex-shrink:0;display:flex;align-items:center;gap:12px">
       ${job.salary ? `<span style="font-family:var(--font-mono,inherit);font-size:12px;font-weight:700;color:var(--salary);white-space:nowrap">${escapeHtml(job.salary)}</span>` : ''}
-      <span style="color:var(--ink3);display:inline-flex;flex-shrink:0">${iconArrowRight({ size: 15 })}</span>
     </div>
   </a>`;
 }

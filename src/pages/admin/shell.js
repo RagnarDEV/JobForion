@@ -77,7 +77,7 @@ const DARK_THEME_CSS = `
 const SHELL_CSS = `
 .adm-shell{display:flex;min-height:100vh}
 .adm-sidebar{width:244px;flex-shrink:0;background:linear-gradient(180deg,#fff 0%,#fbfaff 100%);border-right:1px solid var(--border);padding:20px 14px;position:sticky;top:0;height:100vh;overflow-y:auto;box-shadow:8px 0 28px rgba(37,24,92,.035)}
-.adm-logo{display:flex;align-items:center;gap:8px;padding:6px 8px 18px;font-family:'Plus Jakarta Sans',sans-serif;font-weight:800;font-size:16px;color:var(--ink)}
+.adm-logo{display:flex;align-items:center;gap:8px;padding:6px 8px 18px;font-family:var(--font-heading,sans-serif);font-weight:800;font-size:16px;color:var(--ink)}
 .adm-logo img{width:26px;height:26px;border-radius:7px}
 .adm-nav-link{display:flex;align-items:center;gap:10px;padding:10px 11px;border-radius:10px;font-size:12.5px;font-weight:700;color:var(--ink2);text-decoration:none;margin-bottom:3px;transition:background .18s,color .18s,transform .18s}
 .adm-nav-link:hover{background:var(--brand-soft);color:var(--brand);transform:translateX(1px)}
@@ -191,7 +191,7 @@ export function adminShell(activeId, content, csrfToken = '') {
 <style>${SHARED_CSS}${DARK_THEME_CSS}${SHELL_CSS}${PROVIDER_COMPANIES_CSS}
 .adm-wrap{max-width:1180px;margin:0 auto;padding:24px 20px 60px}
 .adm-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:22px;flex-wrap:wrap;gap:12px}
-.adm-title{font-family:'Plus Jakarta Sans',sans-serif;font-size:24px;font-weight:700;color:var(--ink)}
+.adm-title{font-family:var(--font-heading,sans-serif);font-size:24px;font-weight:700;color:var(--ink)}
 .adm-sub{font-size:13px;color:var(--ink3)}
 .adm-btn{padding:9px 16px;border-radius:9px;border:1px solid var(--border2);background:var(--surface);color:var(--ink2);font-size:13px;font-weight:700;font-family:inherit;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center}
 .adm-btn-primary{background:var(--brand);border-color:var(--brand);color:#fff}

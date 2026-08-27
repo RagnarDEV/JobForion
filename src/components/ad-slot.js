@@ -71,11 +71,11 @@ function adFrameScript(uid, code) {
 // EVERY slot renders nothing at all, site-wide, instantly.
 //
 // Three distinct outcomes per slot, by design:
-//  - global off, OR this slot's `enabled` is false → render nothing
+//  - global off, OR this slot's `enabled` is false to render nothing
 //    (a deliberately hidden ad leaves no visual gap/placeholder)
-//  - enabled but no code configured → the dev-facing "reserved space"
+//  - enabled but no code configured to the dev-facing "reserved space"
 //    placeholder (useful while setting a new placement up)
-//  - enabled with code → the real, sandboxed ad iframe
+//  - enabled with code to the real, sandboxed ad iframe
 export function adSlot(id, style = '', config = DEFAULT_AD_CONFIG, globalAdsEnabled = true) {
   if (!globalAdsEnabled) return '';
   const slot = config[id] || DEFAULT_AD_CONFIG[id];

@@ -77,8 +77,9 @@ export async function renderSettingsContent(env) {
         <div style="margin-top:16px;border-radius:12px;overflow:hidden;border:1px solid var(--border2)">
           <div id="heroPreviewBg" style="padding:26px 22px;background:linear-gradient(135deg,${escapeHtml(s.appearance_primary_color || THEME_DEFAULTS.appearance_primary_color)} 0%,${escapeHtml(s.appearance_secondary_color || THEME_DEFAULTS.appearance_secondary_color)} 100%)">
             <div id="heroPreviewTitle" style="font-family:'${escapeHtml(s.hero_heading_font)}',sans-serif;font-size:22px;font-weight:800;color:#fff;margin-bottom:6px">${escapeHtml(s.hero_title_line1)} ${escapeHtml(s.hero_title_line2)}</div>
-            <div style="font-size:12px;color:rgba(255,255,255,.85);margin-bottom:14px">Live preview — uses the current Design System colors and updates as you edit Hero content</div>
-            <span id="heroPreviewBtn" style="display:inline-block;background:${escapeHtml(s.appearance_primary_color || THEME_DEFAULTS.appearance_primary_color)};color:#fff;padding:8px 18px;border-radius:9px;font-size:12px;font-weight:700">${escapeHtml(s.hero_search_button_text)}</span>
+            <div id="heroPreviewSubtitle" style="font-size:12px;line-height:1.55;color:rgba(255,255,255,.85);max-width:620px;margin-bottom:12px">${escapeHtml(s.hero_subtitle)}</div>
+            <div id="heroPreviewSearch" style="display:inline-flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:11px;color:rgba(255,255,255,.8);margin-bottom:12px"><span style="padding:7px 10px;border-radius:7px;background:rgba(255,255,255,.14)">${escapeHtml(s.hero_search_placeholder)}</span><span id="heroPreviewBtn" style="display:inline-block;background:${escapeHtml(s.appearance_primary_color || THEME_DEFAULTS.appearance_primary_color)};color:#fff;padding:8px 18px;border-radius:9px;font-size:12px;font-weight:700">${escapeHtml(s.hero_search_button_text)}</span></div>
+            <div style="font-size:11px;color:rgba(255,255,255,.72)">Live preview — updates as you edit Hero content and typography</div>
           </div>
         </div>
         <script>
@@ -91,17 +92,22 @@ export async function renderSettingsContent(env) {
             function update(){
               var bg = document.getElementById('heroPreviewBg');
               var title = document.getElementById('heroPreviewTitle');
+              var subtitle = document.getElementById('heroPreviewSubtitle');
+              var search = document.getElementById('heroPreviewSearch');
               var btn = document.getElementById('heroPreviewBtn');
-              if (!bg || !title || !btn) return;
+              if (!bg || !title || !subtitle || !search || !btn) return;
               bg.style.background = 'linear-gradient(135deg,' + val('appearance_primary_color') + ' 0%,' + val('appearance_secondary_color') + ' 100%)';
               title.style.fontFamily = "'" + val('hero_heading_font') + "',sans-serif";
               title.textContent = val('hero_title_line1') + ' ' + val('hero_title_line2');
+              subtitle.textContent = val('hero_subtitle');
+              var placeholder = search.querySelector('span');
+              if (placeholder) placeholder.textContent = val('hero_search_placeholder');
               btn.style.background = val('appearance_primary_color');
               btn.textContent = val('hero_search_button_text') || 'Search';
             }
-            ['appearance_primary_color','appearance_secondary_color','hero_title_line1','hero_title_line2','hero_search_button_text','hero_heading_font'].forEach(function(name){
+            ['appearance_primary_color','appearance_secondary_color','hero_title_line1','hero_title_line2','hero_subtitle','hero_search_placeholder','hero_search_button_text','hero_heading_font'].forEach(function(name){
               var el = form.querySelector('[name="'+name+'"]');
-              if (el) el.addEventListener('input', update);
+              if (el) { el.addEventListener('input', update); el.addEventListener('change', update); }
             });
           }
           if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
@@ -194,7 +200,7 @@ export async function renderSettingsContent(env) {
       </div>
 
       <div class="adm-card">
-        <div class="adm-card-title">Social Links <span style="font-weight:400;color:var(--ink3);font-size:12px">— shown in the site footer once filled in</span></div>
+        <div class="adm-card-title">Social Links <span style="font-weight:400;color:var(--ink3);font-size:12px">— placeholder buttons are always shown; entered URLs become live links</span></div>
         <div class="adm-form-grid">
           ${field('Twitter / X URL', 'social_twitter', s.social_twitter, { type: 'url', placeholder: 'https://x.com/yourhandle' })}
           ${field('LinkedIn URL', 'social_linkedin', s.social_linkedin, { type: 'url', placeholder: 'https://linkedin.com/company/...' })}

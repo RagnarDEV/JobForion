@@ -3,7 +3,7 @@
 // for why this is a rename/hide layer rather than full CRUD: these three
 // directories have no independent existence, they're aggregated live
 // from job.location / job.skills free text. An admin can fix a messy
-// auto-detected label (e.g. "CA" → "California") or hide a junk/
+// auto-detected label (e.g. "CA" to "California") or hide a junk/
 // misclassified entry (e.g. a US state that slipped into the countries
 // list) — new entries simply appear on their own as jobs sync in.
 //

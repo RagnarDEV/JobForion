@@ -29,7 +29,7 @@ export async function renderSecurityContent(env) {
         <div class="adm-title">🛡️ Admin &amp; Security</div>
         <div class="adm-sub">Activity log, sign-in attempts, and account security</div>
       </div>
-      <a href="/admin" class="adm-btn">← Dashboard</a>
+      <a href="/admin" class="adm-btn">Dashboard</a>
     </div>
 
     <div class="adm-grid" style="margin-bottom:16px">

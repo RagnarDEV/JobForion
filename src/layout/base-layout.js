@@ -83,11 +83,11 @@ ${themeVariables}
 .job-hero::before{content:'';position:absolute;top:0;left:0;right:0;height:4px;background:linear-gradient(90deg,var(--brand),var(--brand2),var(--cyan))}
 .job-hero-hdr{padding:28px 24px}
 .job-co-row{display:flex;align-items:center;gap:14px;margin-bottom:18px}
-.job-logo{width:64px;height:64px;border-radius:14px;background:var(--surface2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:800;color:var(--brand);overflow:hidden;flex-shrink:0}
+.job-logo{width:64px;height:64px;border-radius:14px;background:#fff;border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:800;color:var(--brand);overflow:hidden;flex-shrink:0}
 .job-logo img{width:100%;height:100%;object-fit:contain;padding:8px}
 .job-co-name{font-size:16px;font-weight:700;color:var(--brand);margin-bottom:3px;display:flex;align-items:center;gap:5px}
 .job-co-loc{font-size:12px;color:var(--ink3)}
-.job-title-h1{font-family:'Plus Jakarta Sans',sans-serif;font-size:26px;font-weight:700;letter-spacing:-.5px;line-height:1.25;margin-bottom:14px;color:var(--ink)}
+.job-title-h1{font-family:var(--font-heading,sans-serif);font-size:26px;font-weight:700;letter-spacing:-.5px;line-height:1.25;margin-bottom:14px;color:var(--ink)}
 .job-chips{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:16px}
 .job-salary-lg{font-family:var(--font-mono);font-size:21px;font-weight:700;color:var(--salary)}
 .job-body{padding:24px;border-top:1px solid var(--border)}
@@ -105,18 +105,18 @@ ${themeVariables}
 .tag-new{background:rgba(15,174,121,.12);color:var(--green);border:1px solid rgba(15,174,121,.25);font-size:10px;padding:3px 9px;font-weight:800;letter-spacing:.8px;border-radius:20px}
 .tag-hot{background:rgba(255,92,122,.12);color:var(--coral);border:1px solid rgba(255,92,122,.25);font-size:10px;padding:3px 9px;font-weight:800;border-radius:20px}
 .verified-ico{color:var(--brand);font-size:13px}
-.related-title{font-size:17px;font-weight:800;margin-bottom:14px;color:var(--ink);font-family:'Plus Jakarta Sans',sans-serif}
+.related-title{font-size:17px;font-weight:800;margin-bottom:14px;color:var(--ink);font-family:var(--font-heading,sans-serif)}
 .related-grid{display:flex;flex-direction:column;gap:8px}
 .related-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px 18px;display:flex;align-items:center;gap:14px;transition:all .2s;text-decoration:none}
 .related-card:hover{border-color:var(--brand);transform:translateX(3px);box-shadow:var(--shadow)}
-.related-logo{width:38px;height:38px;border-radius:8px;background:var(--surface2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;color:var(--brand);overflow:hidden;flex-shrink:0}
+.related-logo{width:38px;height:38px;border-radius:8px;background:#fff;border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;color:var(--brand);overflow:hidden;flex-shrink:0}
 .related-logo img{width:100%;height:100%;object-fit:contain;padding:5px}
 .related-info{flex:1;min-width:0}
 .related-jt{font-size:13px;font-weight:700;color:var(--ink);margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .related-co{font-size:12px;color:var(--brand)}
 .related-sal{font-family:var(--font-mono);font-size:11.5px;font-weight:700;color:var(--salary);white-space:nowrap}
 .article-cat{font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--brand);margin-bottom:12px}
-.article-title{font-family:'Plus Jakarta Sans',sans-serif;font-size:28px;font-weight:700;letter-spacing:-.5px;line-height:1.25;margin-bottom:14px;color:var(--ink)}
+.article-title{font-family:var(--font-heading,sans-serif);font-size:28px;font-weight:700;letter-spacing:-.5px;line-height:1.25;margin-bottom:14px;color:var(--ink)}
 .article-meta{font-size:12px;color:var(--ink3);display:flex;gap:16px;margin-bottom:28px;flex-wrap:wrap}
 .article-body{font-size:15px;color:var(--ink2);line-height:1.85}
 .article-body h2{font-size:19px;font-weight:700;margin:28px 0 12px;color:var(--ink);padding-left:14px;border-left:3px solid var(--brand)}
@@ -124,7 +124,7 @@ ${themeVariables}
 .article-body ul{padding-left:20px;margin-bottom:14px}
 .article-body ul li{margin-bottom:8px}
 .article-body strong{color:var(--ink)}
-.static-title{font-family:'Plus Jakarta Sans',sans-serif;font-size:26px;font-weight:700;margin-bottom:8px;color:var(--ink)}
+.static-title{font-family:var(--font-heading,sans-serif);font-size:26px;font-weight:700;margin-bottom:8px;color:var(--ink)}
 .static-date{font-size:12px;color:var(--ink3);margin-bottom:28px}
 .static-body h2{font-size:17px;font-weight:700;margin:24px 0 10px;color:var(--ink)}
 .static-body p{font-size:14px;color:var(--ink2);line-height:1.8;margin-bottom:10px}
@@ -140,7 +140,7 @@ ${themeVariables}
   .apply-big{width:100%;justify-content:center}
 }
 /* Detail and editorial surfaces use the same calm hierarchy as the supplied UI. */
-.page,.page-sm{padding-top:42px}.job-hero{border-radius:14px;box-shadow:var(--shadow-card);border-color:#efedf5}.job-hero::before{height:3px;background:linear-gradient(90deg,var(--brand),#9c80f5,#d8d0ff)}.job-title-h1,.static-title,.article-title{font-family:'Space Grotesk',sans-serif;letter-spacing:-1px}.job-title-h1{font-size:28px}.job-salary-lg{color:var(--brand);font-size:20px}.job-body{background:#fff}.apply-big{background:var(--brand);border-radius:8px;font-size:13px;padding:12px 25px;box-shadow:0 7px 18px rgba(99,57,230,.18)}.apply-big:hover{background:var(--brand2);box-shadow:0 10px 24px rgba(99,57,230,.25)}.skill-tag{background:var(--brand-soft);border-color:#e0d8ff;color:var(--brand);border-radius:13px}.related-title{font-family:'Space Grotesk',sans-serif;font-size:19px}.related-card{border-radius:11px;box-shadow:none}.related-card:hover{border-color:#bcaef3;box-shadow:var(--shadow)}.article-body h2{border-left-color:var(--brand)}
+.page,.page-sm{padding-top:42px}.job-hero{border-radius:14px;box-shadow:var(--shadow-card);border-color:#efedf5}.job-hero::before{height:3px;background:linear-gradient(90deg,var(--brand),#9c80f5,#d8d0ff)}.job-title-h1,.static-title,.article-title{font-family:var(--font-heading,sans-serif);letter-spacing:-1px}.job-title-h1{font-size:28px}.job-salary-lg{color:var(--brand);font-size:20px}.job-body{background:#fff}.apply-big{background:var(--brand);border-radius:8px;font-size:13px;padding:12px 25px;box-shadow:0 7px 18px rgba(99,57,230,.18)}.apply-big:hover{background:var(--brand2);box-shadow:0 10px 24px rgba(99,57,230,.25)}.skill-tag{background:var(--brand-soft);border-color:#e0d8ff;color:var(--brand);border-radius:13px}.related-title{font-family:var(--font-heading,sans-serif);font-size:19px}.related-card{border-radius:11px;box-shadow:none}.related-card:hover{border-color:#bcaef3;box-shadow:var(--shadow)}.article-body h2{border-left-color:var(--brand)}
 </style>
 </head>
 <body>

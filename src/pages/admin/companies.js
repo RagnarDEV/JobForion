@@ -104,9 +104,9 @@ export async function renderCompaniesListContent(env, params) {
 
     ${totalPages > 1 ? `
     <div style="display:flex;justify-content:center;gap:8px;margin-top:16px">
-      ${page > 1 ? `<a class="adm-btn" href="/admin/companies?${qs({ page: page - 1 })}">← Prev</a>` : ''}
+      ${page > 1 ? `<a class="adm-btn" href="/admin/companies?${qs({ page: page - 1 })}"> Prev</a>` : ''}
       <span class="adm-btn" style="cursor:default">Page ${page} of ${totalPages}</span>
-      ${page < totalPages ? `<a class="adm-btn" href="/admin/companies?${qs({ page: page + 1 })}">Next →</a>` : ''}
+      ${page < totalPages ? `<a class="adm-btn" href="/admin/companies?${qs({ page: page + 1 })}">Next </a>` : ''}
     </div>` : ''}
   </div>
   <style>.hidden-badge{background:var(--surface2);color:var(--ink3);font-size:10px;font-weight:700;padding:2px 7px;border-radius:20px;margin-left:6px}</style>`;

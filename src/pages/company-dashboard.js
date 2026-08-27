@@ -48,7 +48,7 @@ export async function renderNoCompanyPage(user, ctx) {
     <div style="font-size:40px;margin-bottom:10px">🏢</div>
     <div style="font-size:16px;font-weight:800;color:var(--ink);margin-bottom:8px">You're not part of a company yet</div>
     <div style="font-size:13px;color:var(--ink2);margin-bottom:18px">Create a company profile to post jobs and manage applicants on JobForion.</div>
-    <a href="/company/create" class="dash-btn dash-btn-primary">Create Company Profile →</a>
+    <a href="/company/create" class="dash-btn dash-btn-primary">Create Company Profile </a>
   </div>`;
   const html = dashboardShell({ activeId: '', navItems: [], title: 'Hire Talent', content });
   return baseLayout('Hire Talent — JobForion', 'Create a company profile on JobForion.', `${BASE_URL}/company/dashboard`, '', html, '', 'noindex, follow', ctx?.settings, ctx?.categories, null, null, null, user);
@@ -72,7 +72,7 @@ export async function renderCreateCompanyPage(user, ctx, { csrfToken, error } = 
             <select class="pj-select" name="company_size"><option value="">Select…</option><option>1-10</option><option>11-50</option><option>51-200</option><option>201-1000</option><option>1000+</option></select></div>
         </div>
         <div class="pj-group"><label class="pj-label">Description</label><textarea class="pj-textarea" name="description" placeholder="What does your company do?"></textarea></div>
-        <button class="pj-submit" type="submit">Create Company →</button>
+        <button class="pj-submit" type="submit">Create Company </button>
       </form>
       <p style="font-size:11px;color:var(--ink3);margin-top:10px">Your company will be reviewed before job postings go live. You'll be the Company Admin.</p>
     </div>`;
@@ -180,7 +180,7 @@ export async function renderCompanyProfilePage(user, company, ctx, { csrfToken, 
       ${canEdit ? `<button class="pj-submit" type="submit" style="max-width:200px">Save Changes</button>` : `<div style="font-size:12px;color:var(--ink3)">Only Company Admins can edit the profile.</div>`}
     </form>
     <div class="dash-card">
-      <div class="dash-row"><span class="dash-row-main">Public page</span><a href="/companies/${escapeHtml(company.slug)}" class="dash-btn dash-btn-sm">View Public Profile →</a></div>
+      <div class="dash-row"><span class="dash-row-main">Public page</span><a href="/companies/${escapeHtml(company.slug)}" class="dash-btn dash-btn-sm">View Public Profile </a></div>
     </div>`;
   return wrap('profile', 'Company Profile', company.name, content, user, ctx);
 }
@@ -287,9 +287,9 @@ export async function renderCompanyJobsPage(env, user, company, ctx, statusFilte
   // an AJAX SPA view) that preserve the current status tab.
   const pageQs = (n) => `/company/jobs?${statusFilter ? `status=${statusFilter}&` : ''}page=${n}`;
   const paginationHtml = jobsTotalPages > 1 ? `<div style="display:flex;justify-content:center;gap:8px;margin-top:14px">
-    ${safePage > 1 ? `<a href="${pageQs(safePage - 1)}" class="dash-btn">← Prev</a>` : `<span class="dash-btn" style="opacity:.4;pointer-events:none">← Prev</span>`}
+    ${safePage > 1 ? `<a href="${pageQs(safePage - 1)}" class="dash-btn"> Prev</a>` : `<span class="dash-btn" style="opacity:.4;pointer-events:none"> Prev</span>`}
     <span class="dash-btn" style="pointer-events:none" aria-current="page">Page ${safePage} / ${jobsTotalPages}</span>
-    ${safePage < jobsTotalPages ? `<a href="${pageQs(safePage + 1)}" class="dash-btn">Next →</a>` : `<span class="dash-btn" style="opacity:.4;pointer-events:none">Next →</span>`}
+    ${safePage < jobsTotalPages ? `<a href="${pageQs(safePage + 1)}" class="dash-btn">Next </a>` : `<span class="dash-btn" style="opacity:.4;pointer-events:none">Next </span>`}
   </div>` : '';
 
   const content = `
@@ -376,7 +376,7 @@ export async function renderCompanyPostJobPage(user, company, ctx, { csrfToken, 
         </div>
       </div>
 
-      <button class="pj-submit" type="submit">Submit for Review →</button>
+      <button class="pj-submit" type="submit">Submit for Review </button>
     </form>
     <style>
       .pj-pro-form .dash-card{margin-bottom:14px}

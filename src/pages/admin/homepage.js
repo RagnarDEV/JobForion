@@ -82,7 +82,7 @@ export async function renderHomepageBuilderContent(env) {
         <div class="adm-title">🏠 Homepage Sections</div>
         <div class="adm-sub">Enable, disable, reorder, create, and edit the blocks that make up the homepage — changes are live immediately</div>
       </div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap"><a href="/admin/homepage/new" class="adm-btn adm-btn-primary">+ New Section</a><a href="/" target="_blank" class="adm-btn">View Live Homepage →</a></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap"><a href="/admin/homepage/new" class="adm-btn adm-btn-primary">+ New Section</a><a href="/" target="_blank" class="adm-btn">View Live Homepage</a></div>
     </div>
 
     <div class="adm-card" style="margin-bottom:14px">
@@ -125,7 +125,7 @@ function customSectionForm(section, isNew) {
   const action = isNew ? '/admin/homepage/custom/create' : '/admin/homepage/custom/update';
   return `
   <div class="adm-wrap" style="max-width:980px">
-    <div class="adm-hdr"><div><div class="adm-title">${isNew ? '🧩 New Homepage Section' : `✏️ Edit — ${escapeHtml(s.title)}`}</div><div class="adm-sub">${isNew ? 'Add a custom block to the homepage' : 'Update this custom homepage block'}</div></div><a href="/admin/homepage" class="adm-btn">← Back</a></div>
+    <div class="adm-hdr"><div><div class="adm-title">${isNew ? '🧩 New Homepage Section' : `✏️ Edit — ${escapeHtml(s.title)}`}</div><div class="adm-sub">${isNew ? 'Add a custom block to the homepage' : 'Update this custom homepage block'}</div></div><a href="/admin/homepage" class="adm-btn">Back</a></div>
     <form method="POST" action="${action}" class="adm-card" style="display:flex;flex-direction:column;gap:14px">
       ${isNew ? '' : `<input type="hidden" name="id" value="${escapeHtml(s.id)}">`}
       <div class="hp-form-grid"><label style="display:block"><span class="hp-form-label">Title</span><input class="adm-input" style="width:100%" name="title" maxlength="${HOMEPAGE_CUSTOM_SECTION_LIMITS.title}" value="${escapeHtml(s.title)}" placeholder="Partner logos" required></label><label style="display:block"><span class="hp-form-label">Description</span><input class="adm-input" style="width:100%" name="description" maxlength="${HOMEPAGE_CUSTOM_SECTION_LIMITS.description}" value="${escapeHtml(s.description || '')}" placeholder="Short internal description"></label></div>
@@ -149,7 +149,7 @@ function homepageSectionCodeForm(section) {
   const key = String(section?.key || '');
   return `
   <div class="adm-wrap" style="max-width:980px">
-    <div class="adm-hdr"><div><div class="adm-title">✏️ Edit Code — ${escapeHtml(section?.label || key)}</div><div class="adm-sub">Edit this existing Homepage section directly. Empty code fields keep the original JobForion renderer for this section.</div></div><a href="/admin/homepage" class="adm-btn">← Back</a></div>
+    <div class="adm-hdr"><div><div class="adm-title">✏️ Edit Code — ${escapeHtml(section?.label || key)}</div><div class="adm-sub">Edit this existing Homepage section directly. Empty code fields keep the original JobForion renderer for this section.</div></div><a href="/admin/homepage" class="adm-btn">Back</a></div>
     <form method="POST" action="/admin/homepage/update-code" class="adm-card" style="display:flex;flex-direction:column;gap:14px">
       <input type="hidden" name="key" value="${escapeHtml(key)}">
       ${pageCodeEditorHtml({ html: section?.custom_html || '', css: section?.custom_css || '', js: section?.custom_js || '' })}

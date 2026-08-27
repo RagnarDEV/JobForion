@@ -25,7 +25,7 @@ function barChart(rows) {
 const kpi = (label, val, sub, color = 'var(--brand)') => `
   <div class="adm-card adm-kpi dashboard-kpi" style="border-top:3px solid ${color}">
     <div class="adm-kpi-label" style="font-size:10px;font-weight:800;color:var(--ink3);letter-spacing:.8px;text-transform:uppercase;margin-bottom:8px">${label}</div>
-    <div class="adm-kpi-value" style="font-family:'Plus Jakarta Sans',sans-serif;font-size:27px;font-weight:800;color:${color}">${val}</div>
+    <div class="adm-kpi-value" style="font-family:var(--font-heading,sans-serif);font-size:27px;font-weight:800;color:${color}">${val}</div>
     ${sub ? `<div class="adm-kpi-sub" style="font-size:11px;color:var(--ink3);margin-top:5px">${sub}</div>` : ''}
   </div>`;
 
@@ -44,7 +44,7 @@ const DASHBOARD_CSS = `<style>
 .dashboard-page .dashboard-pulse-strip{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:1px;margin-bottom:18px;padding:6px;background:var(--border);border:1px solid var(--border);border-radius:14px;overflow:hidden}
 .dashboard-page .dashboard-pulse{display:grid;grid-template-columns:auto 1fr;column-gap:8px;align-items:center;min-width:0;padding:10px 11px;background:var(--surface)}
 .dashboard-page .dashboard-pulse-dot{grid-row:1 / span 2;width:7px;height:7px;border-radius:50%;box-shadow:0 0 0 3px color-mix(in srgb,var(--brand) 12%,transparent)}
-.dashboard-page .dashboard-pulse strong{display:block;color:var(--ink);font:800 14px 'Plus Jakarta Sans',sans-serif;line-height:1.1}
+.dashboard-page .dashboard-pulse strong{display:block;color:var(--ink);font:800 14px var(--font-heading,sans-serif);line-height:1.1}
 .dashboard-page .dashboard-pulse span{display:block;overflow:hidden;color:var(--ink3);font-size:9.5px;text-overflow:ellipsis;white-space:nowrap}
 .dashboard-page .dashboard-pulse small{grid-column:2;display:block;margin-top:3px;overflow:hidden;color:var(--ink3);font-size:9px;text-overflow:ellipsis;white-space:nowrap}
 .dashboard-page .dashboard-overview-grid{align-items:stretch}
@@ -403,7 +403,7 @@ export async function renderDashboardContent(env) {
         <div class="dashboard-compact-list">${(recentCompaniesR || []).length ? recentCompaniesR.map(c => `<div class="adm-list-link dashboard-list-link"><span><b>${escapeHtml(c.company || 'Unknown company')}</b><small>${c.c} active listing${c.c === 1 ? '' : 's'}</small></span><em>${c.created_at ? new Date(c.created_at).toLocaleDateString() : '—'}</em></div>`).join('') : '<div class="adm-empty">No companies yet</div>'}</div>
       </div>
       <div class="adm-card dashboard-compact-card">
-        <div class="dashboard-card-heading"><div class="adm-card-title">Recent Activity <span style="font-weight:400;color:var(--ink3);font-size:12px">— <a href="/admin/security" style="color:var(--brand)">full log →</a></span></div><span class="dashboard-card-note">Latest 8</span></div>
+        <div class="dashboard-card-heading"><div class="adm-card-title">Recent Activity <span style="font-weight:400;color:var(--ink3);font-size:12px">— <a href="/admin/security" style="color:var(--brand)">full log</a></span></div><span class="dashboard-card-note">Latest 8</span></div>
         <div class="dashboard-compact-list">${recentActivity.length ? recentActivity.map(l => `<div class="adm-row">
           <span class="adm-row-label" style="max-width:65%">${escapeHtml(ACTION_LABELS[l.action] || l.action)}${l.target ? ` — <span style="color:var(--ink3);font-weight:500">${escapeHtml(l.target)}</span>` : ''}</span>
           <span class="adm-row-val" style="font-weight:500;color:var(--ink3);font-size:10.5px">${l.created_at ? new Date(l.created_at).toLocaleString() : ''}</span>
@@ -435,7 +435,7 @@ export async function renderDashboardContent(env) {
           <b style="color:var(--ink)">${(apiSources || []).length}</b> companies configured across ${Object.keys(PROVIDERS).length} providers ·
           <b style="color:var(--green)">${activeSourcesCount}</b> active
         </div>
-        <a href="/admin/sources" class="adm-btn adm-btn-primary">🔌 Manage Job Sources →</a>
+        <a href="/admin/sources" class="adm-btn adm-btn-primary">🔌 Manage Job Sources</a>
       </div>
     </div>
   </div>`;

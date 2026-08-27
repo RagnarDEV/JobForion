@@ -38,7 +38,7 @@ export async function handleAdminContentRoute(url, request, env, base) {
       if (!ok) return new Response(renderAdminLogin(false), { headers: { "Content-Type": "text/html; charset=utf-8" } });
       const slug = url.searchParams.get('slug') || '';
       const page = await getPageBySlug(env, slug, { includeUnpublished: true });
-      if (!page) return new Response(adminShell('pages', `<div class="adm-wrap"><div class="adm-card">Page not found. <a href="/admin/pages">← Back</a></div></div>`), { headers: { "Content-Type": "text/html; charset=utf-8" } });
+      if (!page) return new Response(adminShell('pages', `<div class="adm-wrap"><div class="adm-card">Page not found. <a href="/admin/pages">Back</a></div></div>`), { headers: { "Content-Type": "text/html; charset=utf-8" } });
       return new Response(adminShell('pages', renderPageEditContent(page)), { headers: { "Content-Type": "text/html; charset=utf-8" } });
     } catch (e) { return errorPage(e); }
   }
@@ -174,7 +174,7 @@ export async function handleAdminContentRoute(url, request, env, base) {
       if (!ok) return new Response(renderAdminLogin(false), { headers: { "Content-Type": "text/html; charset=utf-8" } });
       const id = parseInt(url.searchParams.get('id') || '0', 10);
       const post = await getPostById(env, id, { includeUnpublished: true });
-      if (!post) return new Response(adminShell('blog', `<div class="adm-wrap"><div class="adm-card">Article not found. <a href="/admin/blog">← Back</a></div></div>`), { headers: { "Content-Type": "text/html; charset=utf-8" } });
+      if (!post) return new Response(adminShell('blog', `<div class="adm-wrap"><div class="adm-card">Article not found. <a href="/admin/blog">Back</a></div></div>`), { headers: { "Content-Type": "text/html; charset=utf-8" } });
       return new Response(adminShell('blog', await renderBlogEditContent(env, post)), { headers: { "Content-Type": "text/html; charset=utf-8" } });
     } catch (e) { return errorPage(e); }
   }

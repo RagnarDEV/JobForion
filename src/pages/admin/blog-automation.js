@@ -33,7 +33,7 @@ function toggle(name, label, value, hint) {
 function statCard(label, value, color = 'var(--brand)', sub = '') {
   return `<div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:16px;box-shadow:var(--shadow)">
     <div style="font-size:10.5px;font-weight:700;color:var(--ink3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">${label}</div>
-    <div style="font-family:'Plus Jakarta Sans',sans-serif;font-size:24px;font-weight:800;color:${color}">${value}</div>
+    <div style="font-family:var(--font-heading,sans-serif);font-size:24px;font-weight:800;color:${color}">${value}</div>
     ${sub ? `<div style="font-size:11px;color:var(--ink3);margin-top:2px">${sub}</div>` : ''}
   </div>`;
 }

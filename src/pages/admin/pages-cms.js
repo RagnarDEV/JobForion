@@ -96,7 +96,7 @@ function pageForm(page, isNew) {
         <div class="adm-title">${isNew ? '📄 New Page' : `✏️ Edit — ${escapeHtml(p.title)}`}</div>
         <div class="adm-sub">${isNew ? 'Create a new page at any URL' : `/${escapeHtml(p.slug)}`}</div>
       </div>
-      <a href="/admin/pages" class="adm-btn">← Back</a>
+      <a href="/admin/pages" class="adm-btn">Back</a>
     </div>
     <form method="POST" action="${action}" class="adm-card" style="display:flex;flex-direction:column;gap:14px">
       ${isNew ? '' : `<input type="hidden" name="slug" value="${escapeHtml(p.slug)}">`}

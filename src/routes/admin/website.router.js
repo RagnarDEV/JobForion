@@ -43,12 +43,12 @@ export async function handleAdminWebsiteRoute(url, request, env, base) {
       const key = url.searchParams.get('key') || '';
       if (key) {
         const section = await getHomepageSectionByKey(env, key);
-        if (!section) return new Response(adminShell('homepage', `<div class="adm-wrap"><div class="adm-card">Homepage section not found. <a href="/admin/homepage">← Back</a></div></div>`, await getAdminCsrfToken(env, request.headers.get('Cookie'))), { headers: { "Content-Type": "text/html; charset=utf-8" } });
+        if (!section) return new Response(adminShell('homepage', `<div class="adm-wrap"><div class="adm-card">Homepage section not found. <a href="/admin/homepage">Back</a></div></div>`, await getAdminCsrfToken(env, request.headers.get('Cookie'))), { headers: { "Content-Type": "text/html; charset=utf-8" } });
         const content = renderHomepageSectionCodeEditContent(section);
         return new Response(adminShell('homepage', content, await getAdminCsrfToken(env, request.headers.get('Cookie'))), { headers: { "Content-Type": "text/html; charset=utf-8" } });
       }
       const section = await getHomepageCustomSectionById(env, url.searchParams.get('id') || '');
-      if (!section) return new Response(adminShell('homepage', `<div class="adm-wrap"><div class="adm-card">Homepage section not found. <a href="/admin/homepage">← Back</a></div></div>`, await getAdminCsrfToken(env, request.headers.get('Cookie'))), { headers: { "Content-Type": "text/html; charset=utf-8" } });
+      if (!section) return new Response(adminShell('homepage', `<div class="adm-wrap"><div class="adm-card">Homepage section not found. <a href="/admin/homepage">Back</a></div></div>`, await getAdminCsrfToken(env, request.headers.get('Cookie'))), { headers: { "Content-Type": "text/html; charset=utf-8" } });
       const content = renderHomepageCustomSectionEditContent(section);
       return new Response(adminShell('homepage', content, await getAdminCsrfToken(env, request.headers.get('Cookie'))), { headers: { "Content-Type": "text/html; charset=utf-8" } });
     } catch (e) { return errorPage(e); }
@@ -119,7 +119,7 @@ export async function handleAdminWebsiteRoute(url, request, env, base) {
       const id = (form.get('id') || '').toString();
       const direction = (form.get('direction') || '').toString();
       await moveHomepageCustomSection(env, id, direction);
-      await logActivity(env, 'homepage_custom_section_moved', `${id} → ${direction}`);
+      await logActivity(env, 'homepage_custom_section_moved', `${id} to ${direction}`);
       return new Response(null, { status: 302, headers: { 'Location': '/admin/homepage' } });
     } catch (e) { return errorPage(e); }
   }
@@ -146,7 +146,7 @@ export async function handleAdminWebsiteRoute(url, request, env, base) {
       const key = (form.get('key') || '').toString();
       const enabled = form.get('enabled') === '1';
       await setHomepageSectionEnabled(env, key, enabled);
-      await logActivity(env, 'homepage_section_toggled', `${key} → ${enabled ? 'enabled' : 'disabled'}`);
+      await logActivity(env, 'homepage_section_toggled', `${key} to ${enabled ? 'enabled' : 'disabled'}`);
       return new Response(null, { status: 302, headers: { 'Location': `/admin/homepage?flash=${encodeURIComponent('Homepage updated')}` } });
     } catch (e) { return errorPage(e); }
   }
@@ -161,7 +161,7 @@ export async function handleAdminWebsiteRoute(url, request, env, base) {
       const direction = (form.get('direction') || '').toString();
       if (direction === 'up' || direction === 'down') {
         await moveHomepageSection(env, key, direction);
-        await logActivity(env, 'homepage_section_moved', `${key} → ${direction}`);
+        await logActivity(env, 'homepage_section_moved', `${key} to ${direction}`);
       }
       return new Response(null, { status: 302, headers: { 'Location': '/admin/homepage' } });
     } catch (e) { return errorPage(e); }

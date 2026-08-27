@@ -80,7 +80,7 @@ export async function renderSystemContent(env) {
         <div class="adm-title">🖥️ System</div>
         <div class="adm-sub">Cron jobs, cache, database size, and full sync/cleanup history</div>
       </div>
-      <a href="/admin" class="adm-btn">← Dashboard</a>
+      <a href="/admin" class="adm-btn">Dashboard</a>
     </div>
 
     <div class="adm-grid" style="margin-bottom:16px">
@@ -133,7 +133,7 @@ export async function renderSystemContent(env) {
         <div class="adm-card-title">Data Integrity <span style="font-weight:400;color:var(--ink3);font-size:12px">— read-only diagnostic, nothing is auto-fixed</span></div>
         <div class="adm-row"><span class="adm-row-label">Saved Jobs pointing to a deleted job</span><span class="adm-row-val" style="color:${orphanSaved ? 'var(--coral)' : 'var(--green)'}">${orphanSaved.toLocaleString()}</span></div>
         <div class="adm-row"><span class="adm-row-label">Applications pointing to a deleted job</span><span class="adm-row-val" style="color:${orphanApps ? 'var(--coral)' : 'var(--green)'}">${orphanApps.toLocaleString()}</span></div>
-        <div style="font-size:10.5px;color:var(--ink3);margin-top:8px">${(orphanSaved + orphanApps) ? 'A nonzero count here is expected over time — jobs are only ever hard-deleted after passing through Expired → Archived (see Job Management), roughly 89 days of inactivity. It means a user saved/applied to a job that has since been permanently removed.' : 'No orphaned references found.'}</div>
+        <div style="font-size:10.5px;color:var(--ink3);margin-top:8px">${(orphanSaved + orphanApps) ? 'A nonzero count here is expected over time — jobs are only ever hard-deleted after passing through Expired to Archived (see Job Management), roughly 89 days of inactivity. It means a user saved/applied to a job that has since been permanently removed.' : 'No orphaned references found.'}</div>
       </div>
       <div class="adm-card" style="grid-column:span 2">
         <div class="adm-card-title">Salary Data Backfill <span style="font-weight:400;color:var(--ink3);font-size:12px">— normalizes free-text salaries (e.g. "$90k - $130k") into sortable/filterable USD numbers</span></div>

@@ -74,9 +74,9 @@ export async function renderAdminUsersContent(env, params) {
       </table>
     </div>
     ${totalPages > 1 ? `<div style="display:flex;justify-content:center;gap:8px;margin-top:16px">
-      ${page > 1 ? `<a class="adm-btn" href="/admin/accounts/users?page=${page - 1}${q ? `&q=${encodeURIComponent(q)}` : ''}">← Prev</a>` : ''}
+      ${page > 1 ? `<a class="adm-btn" href="/admin/accounts/users?page=${page - 1}${q ? `&q=${encodeURIComponent(q)}` : ''}"> Prev</a>` : ''}
       <span class="adm-btn" style="cursor:default">Page ${page} of ${totalPages}</span>
-      ${page < totalPages ? `<a class="adm-btn" href="/admin/accounts/users?page=${page + 1}${q ? `&q=${encodeURIComponent(q)}` : ''}">Next →</a>` : ''}
+      ${page < totalPages ? `<a class="adm-btn" href="/admin/accounts/users?page=${page + 1}${q ? `&q=${encodeURIComponent(q)}` : ''}">Next </a>` : ''}
     </div>` : ''}
   </div>`;
 }
@@ -156,9 +156,9 @@ export async function renderAdminCompanyAccountsContent(env, params) {
       ${rows || `<div class="adm-empty">No companies found${statusFilter ? ` with status "${escapeHtml(statusFilter)}"` : ''}${q ? ` matching "${escapeHtml(q)}"` : ''}.</div>`}
     </div>
     ${totalPages > 1 ? `<div style="display:flex;justify-content:center;gap:8px;margin-top:16px">
-      ${page > 1 ? `<a class="adm-btn" href="/admin/accounts/companies?${qs({ page: String(page - 1) })}">← Prev</a>` : ''}
+      ${page > 1 ? `<a class="adm-btn" href="/admin/accounts/companies?${qs({ page: String(page - 1) })}"> Prev</a>` : ''}
       <span class="adm-btn" style="cursor:default" aria-current="page">Page ${page} of ${totalPages}</span>
-      ${page < totalPages ? `<a class="adm-btn" href="/admin/accounts/companies?${qs({ page: String(page + 1) })}">Next →</a>` : ''}
+      ${page < totalPages ? `<a class="adm-btn" href="/admin/accounts/companies?${qs({ page: String(page + 1) })}">Next </a>` : ''}
     </div>` : ''}
   </div>`;
 }

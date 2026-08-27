@@ -239,9 +239,9 @@ export async function renderJobsListContent(env, params) {
 
     ${totalPages > 1 ? `
     <div style="display:flex;justify-content:center;gap:8px;margin-top:16px">
-      ${page > 1 ? `<a class="adm-btn" href="/admin/jobs?${qs({ page: page - 1 })}">← Prev</a>` : ''}
+      ${page > 1 ? `<a class="adm-btn" href="/admin/jobs?${qs({ page: page - 1 })}"> Prev</a>` : ''}
       <span class="adm-btn" style="cursor:default">Page ${page} of ${totalPages}</span>
-      ${page < totalPages ? `<a class="adm-btn" href="/admin/jobs?${qs({ page: page + 1 })}">Next →</a>` : ''}
+      ${page < totalPages ? `<a class="adm-btn" href="/admin/jobs?${qs({ page: page + 1 })}">Next </a>` : ''}
     </div>` : ''}
   </div>
   <script>
@@ -323,7 +323,7 @@ export async function renderJobEditContent(env, id) {
   const { results } = await env.DB.prepare('SELECT * FROM jobs WHERE id = ?').bind(id).all();
   const j = results[0];
   if (!j) {
-    return `<div class="adm-wrap"><div class="adm-card">Job not found. <a href="/admin/jobs">← Back to Job Management</a></div></div>`;
+    return `<div class="adm-wrap"><div class="adm-card">Job not found. <a href="/admin/jobs"> Back to Job Management</a></div></div>`;
   }
   let skills = [];
   try { skills = JSON.parse(j.skills || '[]'); } catch (e) {}
@@ -336,7 +336,7 @@ export async function renderJobEditContent(env, id) {
         <div class="adm-title">✏️ Edit Job</div>
         <div class="adm-sub">#${j.id} — ${escapeHtml(j.title)}</div>
       </div>
-      <a href="/admin/jobs" class="adm-btn">← Back</a>
+      <a href="/admin/jobs" class="adm-btn"> Back</a>
     </div>
     ${renderJobIntelligenceCard(j, intelligence)}
     <form method="POST" action="/admin/jobs/update" class="adm-card" style="display:flex;flex-direction:column;gap:12px">
@@ -411,7 +411,7 @@ export async function renderDuplicatesContent(env) {
 
   if (!groups || !groups.length) {
     return `<div class="adm-wrap"><div class="adm-hdr"><div class="adm-title">🔍 Possible Duplicates</div></div>
-      <div class="adm-card"><div class="adm-empty">No duplicate title+company groups found. <a href="/admin/jobs">← Back to Job Management</a></div></div></div>`;
+      <div class="adm-card"><div class="adm-empty">No duplicate title+company groups found. <a href="/admin/jobs"> Back to Job Management</a></div></div></div>`;
   }
 
   const ids = groups.flatMap(g => g.ids.split(',').map(Number));
@@ -441,7 +441,7 @@ export async function renderDuplicatesContent(env) {
   return `<div class="adm-wrap">
     <div class="adm-hdr">
       <div><div class="adm-title">🔍 Possible Duplicates</div><div class="adm-sub">${groups.length} groups found — review before deleting, nothing is removed automatically</div></div>
-      <a href="/admin/jobs" class="adm-btn">← Back</a>
+      <a href="/admin/jobs" class="adm-btn"> Back</a>
     </div>
     ${groupsHtml}
   </div>`;

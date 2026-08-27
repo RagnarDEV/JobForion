@@ -43,7 +43,7 @@ export function postJobModalHtml(categoryOrder = CATEGORY_ORDER, categoryMap = C
           </div>
         </div>
         <div class="pj-group"><label class="pj-label">Description</label><textarea class="pj-textarea" name="description" placeholder="Role responsibilities, requirements, benefits..."></textarea></div>
-        <button class="pj-submit" type="submit" id="pjSubmitBtn">Submit for Review →</button>
+        <button class="pj-submit" type="submit" id="pjSubmitBtn">Submit for Review</button>
       </form>
     </div>
   </div>
@@ -63,11 +63,11 @@ async function submitPostJob(e){
     if(d.success){
       document.getElementById('pjFormWrap').innerHTML='<div class="pj-success"><div class="ico">🎉</div><div class="pj-title">Thanks — received!</div><div class="pj-sub">Our team will review your listing and publish it within 24 hours.</div><button class="pj-submit" onclick="closePostJobModal()">Done</button></div>';
     }else{
-      btn.disabled=false;btn.textContent='Submit for Review →';
+      btn.disabled=false;btn.textContent='Submit for Review';
       alert(d.error||'Something went wrong. Please try again.');
     }
   }catch(err){
-    btn.disabled=false;btn.textContent='Submit for Review →';
+    btn.disabled=false;btn.textContent='Submit for Review';
     alert('Network error. Please try again.');
   }
   return false;

@@ -134,12 +134,12 @@ export async function renderSourcesContent(env) {
         <div class="adm-title">🔌 Job Sources</div>
         <div class="adm-sub">Every ATS integration is keyless — add a company's public career-site identifier and it starts syncing on the next cron run</div>
       </div>
-      <a href="/admin/system" class="adm-btn">Sync History →</a>
+      <a href="/admin/system" class="adm-btn">Sync History</a>
     </div>
 
     <div class="adm-card" style="margin-bottom:16px">
       <div class="adm-card-title">Add a Company</div>
-      <div class="pc-info">New sources sync gradually while the site is small — see <b>Settings → Job Sync Warm-up</b> to tune the ramp-up caps.</div>
+      <div class="pc-info">New sources sync gradually while the site is small — see <b>Settings: Job Sync Warm-up</b> to tune the ramp-up caps.</div>
       <form method="POST" action="/admin/api-sources" style="display:flex;gap:8px;flex-wrap:wrap">
         <input class="adm-input" name="label" placeholder="Label (e.g. Netflix)" required>
         <select class="adm-input" name="provider" id="providerSelect" onchange="document.getElementById('apiKeyInput').placeholder=this.options[this.selectedIndex].dataset.hint">
