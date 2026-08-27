@@ -56,6 +56,9 @@ const homeSource = fs.readFileSync(new URL('../src/pages/home.js', import.meta.u
 const apiSource = fs.readFileSync(new URL('../src/routes/api.router.js', import.meta.url), 'utf8');
 assert.match(homeSource, /id="fSalaryTier"/);
 assert.match(homeSource, /salaryTierBadgeClient\(j\.salary_tier\)/);
+assert.match(homeSource, /home-jobs-grid\{[^}]*align-items:start/);
+assert.match(homeSource, /home-sidebar\{[^}]*align-self:start[^}]*align-content:start[^}]*grid-auto-rows:max-content/);
+assert.match(homeSource, /\.side-card\{align-self:start;height:max-content/);
 assert.match(apiSource, /COALESCE\(salary_tier, 'UNKNOWN'\)/);
 assert.match(apiSource, /salaryTierRaw/);
 
