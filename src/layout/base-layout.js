@@ -13,6 +13,7 @@ import { ICON_HEAD } from '../assets/favicon.js';
 import { BASE_URL } from '../config/constants.js';
 import { escapeHtml } from '../lib/entities.js';
 import { GOOGLE_ANALYTICS_TAG, googleAnalyticsTag } from '../lib/analytics-tag.js';
+import { analyticsTrackerScript } from '../lib/analytics-tracker.js';
 import { SETTINGS_DEFAULTS, themeCssVariables } from '../lib/settings.js';
 
 // SECURITY: title/description ultimately trace back to externally-sourced
@@ -150,6 +151,7 @@ ${mobileBottomNavHtml(currentPath, user)}
 ${content}
 ${footerHtml(BASE_URL, settings, footerPages)}
 ${postJobModalHtml(categories?.order, categories?.map)}
+${analyticsTrackerScript(settings || {})}
 </body>
 </html>`;
 }

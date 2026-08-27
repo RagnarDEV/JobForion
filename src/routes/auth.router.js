@@ -13,6 +13,7 @@ import { checkRateLimit } from '../lib/rate-limit.js';
 import { logActivity } from '../lib/activity-log.js';
 import { getSettings } from '../lib/settings.js';
 import { getCategoryData } from '../lib/categories.js';
+import { recordTrustedAnalyticsEvent } from '../lib/analytics.js';
 import { getCsrfToken, verifyCsrf } from '../lib/accounts/csrf.js';
 import { createSession, destroySession, getSessionUser, destroyAllSessions } from '../lib/accounts/session.js';
 import { generateToken, sha256Hex } from '../lib/accounts/tokens.js';
@@ -104,6 +105,7 @@ export async function handleAuthRoute(url, request, env, base) {
     // only company creation is gated on email_verified (see
     // routes/company.router.js).
     const { cookie } = await createSession(env, userId, request);
+    void recordTrustedAnalyticsEvent(env, { event_type: 'signup' }, { user_id: userId, country: request.cf?.country || 'XX', userAgent: request.headers.get('User-Agent') || '' }).catch(() => {});
     return new Response(null, { status: 302, headers: { 'Location': `${base}/user/dashboard?welcome=1`, 'Set-Cookie': cookie } });
   }
 
@@ -145,6 +147,7 @@ export async function handleAuthRoute(url, request, env, base) {
 
     await logActivity(env, 'user_login_success', `user#${user.id}`, { userId: user.id });
     const { cookie } = await createSession(env, user.id, request);
+    void recordTrustedAnalyticsEvent(env, { event_type: 'login' }, { user_id: user.id, country: request.cf?.country || 'XX', userAgent: request.headers.get('User-Agent') || '' }).catch(() => {});
     return new Response(null, { status: 302, headers: { 'Location': `${base}${next || '/user/dashboard'}`, 'Set-Cookie': cookie } });
   }
 

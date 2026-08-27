@@ -8,6 +8,7 @@ import { slugify } from './entities.js';
 import { requireCompanyCapability } from './accounts/permissions.js';
 import { sendEmail } from './accounts/email.js';
 import { getSettings } from './settings.js';
+import { recordTrustedAnalyticsEvent } from './analytics.js';
 
 export const MONETIZATION_CURRENCIES = new Set(['USD', 'EUR', 'GBP']);
 export const PRODUCT_TYPES = new Set(['featured_job', 'sponsored_job', 'job_boost', 'premium_company', 'paid_job_posting', 'job_package']);
@@ -237,6 +238,7 @@ export async function activateOrderEntitlement(env, orderId, { source = 'payment
       const jobType = kind === 'featured' ? 'Featured' : kind === 'sponsored' ? 'Sponsored' : null;
       await env.DB.prepare(`INSERT INTO monetization_campaigns (kind,job_id,company_id,entitlement_id,status,starts_at,ends_at,budget_minor,currency,priority,placement,metadata,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)`).bind(kind, metadata.job_id, order.company_id || null, entitlement?.id || null, 'active', startsAt, endsAt, order.amount_minor, order.currency, kind === 'sponsored' ? 10 : 0, kind === 'sponsored' ? 'sponsored' : 'featured', JSON.stringify({ previous_job_type: previousJobType || null })).run();
       if (jobType) await env.DB.prepare('UPDATE jobs SET job_type = ? WHERE id = ? AND company_id = ?').bind(jobType, metadata.job_id, order.company_id).run();
+      await recordTrustedAnalyticsEvent(env, { event_type: kind === 'featured' ? 'featured_job_activated' : kind === 'sponsored' ? 'sponsored_job_activated' : null, job_id: metadata.job_id, company_id: order.company_id, metadata: { product_id: order.product_id } }, { settings, user_id: order.user_id });
     }
     await env.DB.prepare('INSERT INTO monetization_revenue_events (event_type,order_id,transaction_id,product_id,gross_amount_minor,currency,occurred_at,metadata) VALUES (?,?,?,?,?,?,CURRENT_TIMESTAMP,?)').bind('entitlement_activated', order.id, null, order.product_id, order.amount_minor, order.currency, JSON.stringify({ source, entitlement_id: entitlement?.id || null })).run();
     return { ok: true, entitlement };
@@ -281,11 +283,23 @@ export async function processPaymentWebhook(env, event) {
     const { results: orders } = await env.DB.prepare('SELECT * FROM monetization_orders WHERE order_ref = ? LIMIT 1').bind(orderRef).all();
     const order = orders?.[0];
     const eventType = boundedText(event.type || event.event_type, 60);
-    if (!order || !['payment.succeeded', 'payment_succeeded', 'checkout.completed'].includes(eventType)) throw new Error('Unsupported or unknown payment event.');
+    const successEvent = ['payment.succeeded', 'payment_succeeded', 'checkout.completed'].includes(eventType);
+    const failureEvent = ['payment.failed', 'payment_failed', 'checkout.failed'].includes(eventType);
+    if (!order || (!successEvent && !failureEvent)) throw new Error('Unsupported or unknown payment event.');
     const existingTransaction = await env.DB.prepare('SELECT order_id,status FROM monetization_transactions WHERE provider_reference = ? LIMIT 1').bind(providerReference).all();
     if (existingTransaction.results?.[0] && Number(existingTransaction.results[0].order_id) !== Number(order.id)) throw new Error('Provider transaction is already attached to another order.');
     const amount = nonNegativeInt(event.amount_minor);
     const currency = normalCurrency(event.currency);
+    if (failureEvent) {
+      const reason = boundedText(event.failure_reason || event.reason || event.code, 120) || 'provider_declined';
+      await env.DB.batch([
+        env.DB.prepare('INSERT OR IGNORE INTO monetization_transactions (order_id,provider,provider_reference,gross_amount_minor,currency,status,metadata,created_at,updated_at) VALUES (?,?,?,?,?,?,?,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)').bind(order.id, provider, providerReference, 0, order.currency, 'failed', JSON.stringify({ event_id: eventId, reason })),
+        env.DB.prepare("UPDATE monetization_orders SET status='failed',payment_provider=?,provider_transaction_id=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND status IN ('pending','processing')").bind(provider, providerReference, order.id),
+        env.DB.prepare('UPDATE monetization_webhook_events SET status = ?,processed_at = CURRENT_TIMESTAMP WHERE event_id = ?').bind('processed', eventId),
+      ]);
+      await recordTrustedAnalyticsEvent(env, { event_type: 'payment_failed', metadata: { order_ref: order.order_ref, reason } }, { settings: await getSettings(env), user_id: order.user_id });
+      return { ok: true, failed: true, order_id: order.id };
+    }
     if (amount === null || amount !== Number(order.amount_minor) || currency !== order.currency) throw new Error('Webhook amount or currency does not match the order.');
     if (order.status === 'paid') {
       const recovered = await activateOrderEntitlement(env, order.id, { source: 'payment_webhook_retry' });
@@ -300,6 +314,7 @@ export async function processPaymentWebhook(env, event) {
     ]);
     const activated = await activateOrderEntitlement(env, order.id, { source: 'payment_webhook' });
     if (!activated.ok) throw new Error('Payment was confirmed but entitlement activation needs retry.');
+    await recordTrustedAnalyticsEvent(env, { event_type: 'payment_success', metadata: { order_ref: order.order_ref, product_id: order.product_id } }, { settings: await getSettings(env), user_id: order.user_id });
     if (activated.ok) {
       try {
         const { results: userRows } = await env.DB.prepare('SELECT email,name FROM users WHERE id = ? LIMIT 1').bind(order.user_id).all();

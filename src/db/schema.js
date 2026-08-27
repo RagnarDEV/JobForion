@@ -1148,6 +1148,101 @@ export async function ensureAccountTables(env) {
   // simpler choice here — not every index needs to be composite.
   await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_jobs_company ON jobs(company)`).run();
 
+  // ── Analytics & Business Intelligence (Phase 14) ────────────────
+  // High-volume client events land in a bounded queue first; aggregation
+  // converts them into compact daily rows. No payment/user secrets belong
+  // in either table. Both tables are additive and safe on old D1 databases.
+  await env.DB.prepare(`
+    CREATE TABLE IF NOT EXISTS analytics_event_queue (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      event_id TEXT UNIQUE NOT NULL,
+      event_type TEXT NOT NULL,
+      session_id TEXT,
+      user_id INTEGER,
+      job_id INTEGER,
+      company_id INTEGER,
+      country TEXT,
+      device_type TEXT,
+      browser TEXT,
+      os TEXT,
+      referrer TEXT,
+      source TEXT,
+      medium TEXT,
+      campaign TEXT,
+      landing_page TEXT,
+      page TEXT,
+      metadata TEXT,
+      metric_date TEXT NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      processed_at DATETIME
+    )
+  `).run();
+  await env.DB.prepare(`
+    CREATE TABLE IF NOT EXISTS analytics_daily (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      metric_date TEXT NOT NULL,
+      event_type TEXT NOT NULL,
+      job_id INTEGER NOT NULL DEFAULT 0,
+      company_id INTEGER NOT NULL DEFAULT 0,
+      country TEXT NOT NULL DEFAULT 'XX',
+      device_type TEXT NOT NULL DEFAULT 'unknown',
+      source TEXT NOT NULL DEFAULT 'direct',
+      medium TEXT NOT NULL DEFAULT 'none',
+      event_count INTEGER DEFAULT 0,
+      unique_count INTEGER DEFAULT 0,
+      metadata TEXT,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(metric_date,event_type,job_id,company_id,country,device_type,source,medium)
+    )
+  `).run();
+  await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_analytics_queue_pending ON analytics_event_queue(processed_at, id)`).run();
+  await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_analytics_queue_created ON analytics_event_queue(created_at)`).run();
+  await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_analytics_daily_date ON analytics_daily(metric_date, event_type)`).run();
+  await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_analytics_daily_job ON analytics_daily(job_id, metric_date)`).run();
+  await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_analytics_daily_company ON analytics_daily(company_id, metric_date)`).run();
+  await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_analytics_daily_source ON analytics_daily(source, metric_date)`).run();
+  await env.DB.prepare(`
+    CREATE TABLE IF NOT EXISTS analytics_search_daily (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      metric_date TEXT NOT NULL,
+      query TEXT NOT NULL,
+      searches INTEGER DEFAULT 0,
+      zero_result_searches INTEGER DEFAULT 0,
+      result_clicks INTEGER DEFAULT 0,
+      unique_searches INTEGER DEFAULT 0,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(metric_date,query)
+    )
+  `).run();
+  await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_analytics_search_date ON analytics_search_daily(metric_date, searches DESC)`).run();
+  await env.DB.prepare(`
+    CREATE TABLE IF NOT EXISTS analytics_filter_daily (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      metric_date TEXT NOT NULL,
+      filter_name TEXT NOT NULL,
+      filter_value TEXT NOT NULL,
+      uses INTEGER DEFAULT 0,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(metric_date,filter_name,filter_value)
+    )
+  `).run();
+  await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_analytics_filter_date ON analytics_filter_daily(metric_date,filter_name,uses DESC)`).run();
+  await env.DB.prepare(`
+    CREATE TABLE IF NOT EXISTS analytics_alerts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      alert_type TEXT NOT NULL,
+      severity TEXT NOT NULL DEFAULT 'info',
+      status TEXT NOT NULL DEFAULT 'open',
+      threshold REAL,
+      actual_value REAL,
+      period TEXT,
+      message TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      resolved_at DATETIME
+    )
+  `).run();
+  await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_analytics_alerts_status ON analytics_alerts(status, created_at DESC)`).run();
+
   await ensureAiTables(env);
   accountSchemaEnsured = true;
 }

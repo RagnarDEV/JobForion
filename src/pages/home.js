@@ -13,6 +13,7 @@ import { jobCardSSR, logoImgHtml } from '../components/job-card.js';
 import { adSlot } from '../components/ad-slot.js';
 import { escapeHtml, slugify, listCompanies } from '../lib/entities.js';
 import { googleAnalyticsTag } from '../lib/analytics-tag.js';
+import { analyticsTrackerScript } from '../lib/analytics-tracker.js';
 import { getSettings, HOMEPAGE_COPY_DEFAULTS, HERO_FONT_OPTIONS, resolveTheme, themeCssVariables } from '../lib/settings.js';
 import { getCategories } from '../lib/categories.js';
 import { getCardStyles } from '../lib/job-card-styles.js';
@@ -727,6 +728,7 @@ async function loadJobs(pushHistory){
     const res=await fetch('/api/jobs?'+p);
     const data=await res.json();
     jobs=data.jobs||[];total=data.total||0;
+    if(window.jobforionAnalytics && srch) window.jobforionAnalytics.track('search',{metadata:{query:String(srch).slice(0,120),results_count:Number(total)||0}});
     updateUrlBar(!!pushHistory);
     document.getElementById('resultsCount').innerHTML=\`<strong>\${total.toLocaleString()}</strong> jobs found\${cat?' in <strong>'+(CAT_META[cat]?CAT_META[cat].label:cat)+'</strong>':''}\${adv.country?' in <strong>'+esc(adv.country)+'</strong>':''}\${adv.skill?' with <strong>'+esc(adv.skill)+'</strong>':''}\${adv.company?' at <strong>'+esc(adv.company)+'</strong>':''}\${srch?' for "<strong>'+srch+'</strong>"':''}\`;
     if(!jobs.length){
@@ -757,6 +759,7 @@ function toggleSave(id){
 window.toggleSave=toggleSave;
 function shareJob(id){
   const url=window.location.origin+'/job/'+id;
+  if(window.jobforionAnalytics) window.jobforionAnalytics.track('job_share',{job_id:Number(id)});
   navigator.clipboard.writeText(url).then(()=>showToast('Link copied!')).catch(()=>showToast('Copied!'));
 }
 window.shareJob=shareJob;
@@ -882,6 +885,7 @@ window.addEventListener('popstate',()=>{
   loadJobs(false);
 });
 </script>
+${analyticsTrackerScript(settings)}
 </body>
 </html>`;
 }

@@ -34,6 +34,7 @@ import { handleAdminMonetizationRoute } from './admin/monetization.router.js';
 import { handleAdminSystemRoute } from './admin/system.router.js';
 import { handleAdminSecurityRoute } from './admin/security.router.js';
 import { handleAdminDashboardRoute } from './admin/dashboard.router.js';
+import { handleAdminAnalyticsRoute } from './admin/analytics.router.js';
 import { handleAdminAiRoute } from './admin/ai.router.js';
 import { handleAdminJobIntelligenceRoute } from './admin/job-intelligence.router.js';
 import { handleAdminContentIntelligenceRoute } from './admin/content-intelligence.router.js';
@@ -63,6 +64,7 @@ const ADMIN_SUB_ROUTERS = [
   handleAdminSystemRoute,
   handleAdminSecurityRoute,
   handleAdminAiRoute,
+  handleAdminAnalyticsRoute,
   handleAdminDashboardRoute,
 ];
 

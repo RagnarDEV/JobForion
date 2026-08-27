@@ -117,6 +117,13 @@ export const THEME_SETTING_METADATA = Object.freeze({
   monetization_sponsored_placement: { type: 'enum', values: ['homepage', 'jobs', 'both'], category: 'monetization', description: 'Sponsored placement' },
   monetization_max_featured: { type: 'integer', min: 1, max: 100, category: 'monetization', description: 'Maximum active Featured campaigns' },
   monetization_ordering: { type: 'enum', values: ['relevance', 'priority', 'newest'], category: 'monetization', description: 'Paid placement ordering rule' },
+  analytics_enabled: { type: 'boolean', category: 'analytics', description: 'Enable first-party analytics collection' },
+  analytics_retention: { type: 'enum', values: ['30', '60', '90', '180', '365', 'unlimited'], category: 'analytics', description: 'Analytics retention period in days' },
+  analytics_timezone: { type: 'enum', values: ['UTC', 'America/New_York', 'Europe/London', 'Asia/Dubai', 'Asia/Tokyo'], category: 'analytics', description: 'Analytics reporting timezone' },
+  analytics_sample_rate: { type: 'enum', values: ['10', '25', '50', '100'], category: 'analytics', description: 'Accepted client event sample rate' },
+  analytics_alert_traffic_drop_pct: { type: 'integer', min: 1, max: 100, category: 'analytics', description: 'Traffic drop alert threshold' },
+  analytics_alert_apply_drop_pct: { type: 'integer', min: 1, max: 100, category: 'analytics', description: 'Apply-rate drop alert threshold' },
+  analytics_alert_payment_failure_pct: { type: 'integer', min: 1, max: 100, category: 'analytics', description: 'Payment failure alert threshold' },
   company_card_radius: { type: 'integer', min: 8, max: 24, category: 'company_card', description: 'Company Card radius' },
   company_card_padding: { type: 'integer', min: 10, max: 28, category: 'company_card', description: 'Company Card padding' },
   company_card_logo_size: { type: 'integer', min: 36, max: 76, category: 'company_card', description: 'Company Card logo size' },
@@ -186,6 +193,15 @@ export const SETTINGS_DEFAULTS = {
   monetization_sponsored_placement: 'homepage',
   monetization_max_featured: '10',
   monetization_ordering: 'relevance',
+
+  // ── Analytics & Business Intelligence ───────────────────────────
+  analytics_enabled: '1',
+  analytics_retention: '90',
+  analytics_timezone: 'UTC',
+  analytics_sample_rate: '100',
+  analytics_alert_traffic_drop_pct: '30',
+  analytics_alert_apply_drop_pct: '20',
+  analytics_alert_payment_failure_pct: '15',
 
   // ── AI Foundation (Phase 12.1) ───────────────────────────────────
   // The binding/model remain code/config controlled; this switch provides
@@ -361,6 +377,7 @@ export const CHECKBOX_SETTINGS_KEYS = [
   'feature_featured_jobs',
   'hot_pay_enabled',
   'salary_tier_badges_enabled',
+  'analytics_enabled',
   'ai_enabled',
   'ai_foundation_smoke_enabled',
   'ai_job_intelligence_enabled',

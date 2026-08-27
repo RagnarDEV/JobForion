@@ -24,6 +24,7 @@ import {
 const NAV_GROUPS = [
   { title: 'Overview', items: [
     { id: 'dashboard', label: 'Dashboard', icon: iconLayoutDashboard, href: '/admin' },
+    { id: 'analytics', label: 'Analytics', icon: iconLayoutDashboard, href: '/admin/analytics' },
   ]},
   { title: 'Jobs & Companies', items: [
     { id: 'jobs', label: 'Jobs', icon: iconBriefcase, href: '/admin/jobs' },

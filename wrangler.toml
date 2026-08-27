@@ -70,11 +70,14 @@ remote = true
 #                   it's actually due, so this firing daily does NOT mean every
 #                   alert is emailed every day.
 # "0 9 * * *"    -> runBlogGeneration()        once daily at 09:00 UTC — Blog
-#                   Automation's own generation function then decides, from
+#                   Generation check's own generation function then decides, from
 #                   D1-stored settings, whether today is actually a scheduled
 #                   publishing day and whether this week's article cap is
 #                   already reached (see src/lib/blog-automation/generator.js
 #                   and /admin/blog-automation). Firing daily does NOT mean an
 #                   article is published every day.
+# "15 * * * *"   -> aggregateAnalytics() + retention cleanup once per hour.
+#                   Events are compacted into analytics_daily; raw queue rows are
+#                   deleted according to analytics_retention.
 [triggers]
-crons = ["0 */6 * * *", "0 3 * * *", "0 8 * * *", "0 9 * * *"]
+crons = ["0 */6 * * *", "0 3 * * *", "0 8 * * *", "0 9 * * *", "15 * * * *"]

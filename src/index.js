@@ -24,6 +24,7 @@ import { runBlogGeneration } from './lib/blog-automation/generator.js';
 import { runBlogExpirationCleanup } from './lib/blog-automation/expiration.js';
 import { runJobAlertsDispatch } from './lib/job-alerts-dispatcher.js';
 import { expireMonetizationCampaigns } from './lib/monetization.js';
+import { aggregateAnalytics, cleanupAnalytics, evaluateAnalyticsAlerts } from './lib/analytics.js';
 
 import { handleAssetsRoute, handleR2AssetRoute, ASSET_PATHS } from './routes/assets.router.js';
 import { handleLogoProxyRoute } from './lib/logo-proxy.js';
@@ -235,7 +236,10 @@ export default {
     //                    day and whether the weekly cap is already hit,
     //                    so this cron firing daily does NOT mean an
     //                    article is generated every single day)
-    if (event.cron === '0 3 * * *') {
+    if (event.cron === '15 * * * *') {
+      ctx.waitUntil(aggregateAnalytics(env));
+      ctx.waitUntil(getSettings(env).then(settings => Promise.all([cleanupAnalytics(env, settings.analytics_retention), evaluateAnalyticsAlerts(env, settings)])).catch(() => {}));
+    } else if (event.cron === '0 3 * * *') {
       ctx.waitUntil(cleanupStaleJobs(env));
       ctx.waitUntil(runBlogExpirationCleanup(env));
       ctx.waitUntil(expireMonetizationCampaigns(env));
