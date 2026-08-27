@@ -7,7 +7,7 @@
 
 import { slugify } from './entities.js';
 import { isSafeCompanyImageUrl } from './company-logos.js';
-import { JOB_TYPE_SORT_SQL, PUBLIC_JOB_STATUS_SQL, JOB_LISTING_COLUMNS } from '../config/constants.js';
+import { JOB_MANUAL_PIN_SORT_SQL, PUBLIC_JOB_STATUS_SQL, JOB_LISTING_COLUMNS } from '../config/constants.js';
 
 // Job-matching condition shared by every "jobs that belong to this real
 // company" query below. A job belongs to a real company either because it
@@ -230,7 +230,7 @@ export async function jobsForCompanyEntity(env, company, { limit = 100, offset =
   const safeLimit = Math.max(1, Math.min(100, parseInt(limit, 10) || 100));
   const safeOffset = Math.max(0, parseInt(offset, 10) || 0);
   const { results } = await env.DB.prepare(
-    `SELECT ${JOB_LISTING_COLUMNS} FROM jobs WHERE ${where} ORDER BY ${JOB_TYPE_SORT_SQL} ASC, id DESC LIMIT ${safeLimit} OFFSET ${safeOffset}`
+    `SELECT ${JOB_LISTING_COLUMNS} FROM jobs WHERE ${where} ORDER BY ${JOB_MANUAL_PIN_SORT_SQL} LIMIT ${safeLimit} OFFSET ${safeOffset}`
   ).bind(...binds).all();
   return results || [];
 }

@@ -133,7 +133,8 @@ export function catForTitleServer(title, categoryOrder = CATEGORY_ORDER) {
 // JOB TYPE (Free / Featured / Premium / Sponsored) — shared helpers used
 // by every job-rendering surface (jobCardSSR below, home.js's client-side
 // renderJobsList(), jobRowMini, job-page.js). See config/constants.js for
-// the tier priority/labels — this file only turns that data into markup.
+// the tier labels/icons — this file only turns that data into markup. Tier
+// styling is independent from the manual `featured` pin flag.
 // ════════════════════════════════════════════════════════════════
 
 // Any stored value that isn't one of the 4 known tiers (legacy rows,
@@ -254,7 +255,7 @@ export function jobCardSSR(job, idx, categoryMap = CATEGORY_META, categoryOrder 
   try { skillsList = JSON.parse(job.skills || '[]'); } catch (e) {}
   const skillsTagsHtml = skillsList.slice(0, 3).map(s => `<span class="tag tag-type">${escapeHtml(s)}</span>`).join('');
   return `<article class="job-card${jobTypeCardClass(job.job_type)}" style="--cat-color:${meta.color};${cardStyleAttr};animation:fadeInUp .3s ease ${Math.min(idx, 6) * .04}s both">
-    <div class="card-inner" style="padding:${jtStyle.card_padding}px 16px">
+    <div class="card-inner" style="padding:${jtStyle.card_padding}px 16px;background:inherit">
       <a href="/job/${job.id}" class="card-row1" aria-label="View ${escapeHtml(job.title)} at ${escapeHtml(job.company)}">
         ${logoImgHtml(job.company, `${jtStyle.logo_size}px`, 'co-logo', logoOverride, job.company_website)}
         <div class="card-body">

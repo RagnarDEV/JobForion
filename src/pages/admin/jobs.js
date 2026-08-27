@@ -3,7 +3,7 @@
 // copy-link, preview, duplicate-detection (manual review, never auto-delete),
 // and stale-job cleanup (configurable age threshold, confirmed before running).
 
-import { BASE_URL, JOB_TYPE_META, JOB_TYPE_ORDER, JOB_TYPE_SORT_SQL, JOB_STATUS_META, JOB_STATUS_ORDER, REJECTION_REASONS, JOB_SORT_OPTIONS } from '../../config/constants.js';
+import { BASE_URL, JOB_TYPE_META, JOB_TYPE_ORDER, JOB_STATUS_META, JOB_STATUS_ORDER, REJECTION_REASONS, JOB_SORT_OPTIONS } from '../../config/constants.js';
 import { getCategories } from '../../lib/categories.js';
 import { ensureTable } from '../../db/schema.js';
 import { escapeHtml } from '../../lib/entities.js';

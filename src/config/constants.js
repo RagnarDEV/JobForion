@@ -40,9 +40,10 @@ export const ASSET_VERSION = '20260816';
 
 // ════════════════════════════════════════════════════════════════
 // JOB TYPE TIERS — Free / Featured / Premium / Sponsored
-// Single source of truth for priority order, labels, and icons. No
-// payment system yet (deliberately deferred) — this only controls
-// sort order and badge/card styling. `job_type` on the jobs table
+// Single source of truth for tier labels, icons, and the admin form order.
+// The tier is a presentation/commercial classification only: it does NOT
+// pin or prioritize a job in public listings. Manual pinning is represented
+// separately by the `featured` column below. `job_type` on the jobs table
 // defaults to 'Free' for every job (see db/schema.js).
 // ════════════════════════════════════════════════════════════════
 export const JOB_TYPE_META = {
@@ -53,11 +54,6 @@ export const JOB_TYPE_META = {
 };
 export const JOB_TYPE_ORDER = ['Sponsored', 'Premium', 'Featured', 'Free'];
 
-// Reused by every job-listing query (home page, /api/jobs, category/
-// company/skill/country pages, admin) so the tier priority only ever
-// needs to change in this one place. Falls back to the 'Free' priority
-// (3) for any unexpected/legacy value via the ELSE branch, so a bad or
-// missing job_type never breaks sorting.
 // Database & Performance (Stage 7) — every column on `jobs` EXCEPT
 // `description`, for queries that render a job as a CARD/ROW rather than
 // a full detail page. Card renderers (components/job-card.js's
@@ -73,7 +69,11 @@ export const JOB_TYPE_ORDER = ['Sponsored', 'Premium', 'Featured', 'Free'];
 // that would silently omit the new field until noticed.
 export const JOB_LISTING_COLUMNS = 'id,title,company,location,url,salary,remote_type,skills,seniority,employment_type,job_handle,created_at,featured,updated_at,expires_at,source,status,job_type,job_type_note,salary_min_usd,salary_max_usd,company_id,source_type,submitted_by_user_id';
 
-export const JOB_TYPE_SORT_SQL = "CASE job_type WHEN 'Sponsored' THEN 0 WHEN 'Premium' THEN 1 WHEN 'Featured' THEN 2 ELSE 3 END";
+// Manual pinning is independent from the commercial/display tier. Selecting
+// Featured, Premium, or Sponsored changes card presentation only; it must not
+// move a job above newer/relevant jobs. Only the explicit admin `featured`
+// flag is allowed to prioritize a job in the default relevance ordering.
+export const JOB_MANUAL_PIN_SORT_SQL = 'featured DESC, id DESC';
 
 // ════════════════════════════════════════════════════════════════
 // SORT (Advanced Search, Stage 8 — originally added for /admin/jobs in
@@ -85,7 +85,7 @@ export const JOB_TYPE_SORT_SQL = "CASE job_type WHEN 'Sponsored' THEN 0 WHEN 'Pr
 // arbitrary SQL into ORDER BY.
 // ════════════════════════════════════════════════════════════════
 export const JOB_SORT_OPTIONS = {
-  relevance: { label: 'Relevance', sql: `${JOB_TYPE_SORT_SQL} ASC, featured DESC, id DESC` },
+  relevance: { label: 'Relevance', sql: JOB_MANUAL_PIN_SORT_SQL },
   newest: { label: 'Newest', sql: 'id DESC' },
   oldest: { label: 'Oldest', sql: 'id ASC' },
   // Advanced Pagination (Stage 9): both of these were missing a
@@ -104,7 +104,7 @@ export const JOB_SORT_OPTIONS = {
 
 // ════════════════════════════════════════════════════════════════
 // JOB STATUS LIFECYCLE (Job Management, Stage 5) — single source of
-// truth, same pattern as JOB_TYPE_SORT_SQL above.
+// truth, same pattern as the manual-pin sort above.
 //
 // The underlying DB value stays 'active' for a live/published job —
 // deliberately NOT renamed to 'published', since that string is already

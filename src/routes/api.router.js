@@ -5,7 +5,7 @@
 import { syncJobs } from '../db/sync.js';
 import { PROVIDERS } from '../providers/index.js';
 import { checkRateLimit } from '../lib/rate-limit.js';
-import { JOB_TYPE_SORT_SQL, PUBLIC_JOB_STATUS_SQL, JOB_LISTING_COLUMNS, JOB_SORT_OPTIONS } from '../config/constants.js';
+import { PUBLIC_JOB_STATUS_SQL, JOB_LISTING_COLUMNS, JOB_SORT_OPTIONS } from '../config/constants.js';
 import { resolveRawNames } from '../lib/directory-overrides.js';
 import { getSettings } from '../lib/settings.js';
 import { logActivity } from '../lib/activity-log.js';

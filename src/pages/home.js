@@ -8,7 +8,7 @@ import { footerHtml } from '../components/footer.js';
 import { postJobModalHtml } from '../components/post-job-modal.js';
 import { SHARED_CSS } from '../styles/shared-css.js';
 import { ICON_HEAD } from '../assets/favicon.js';
-import { JOB_TYPE_META, JOB_TYPE_SORT_SQL, PUBLIC_JOB_STATUS_SQL, JOB_LISTING_COLUMNS } from '../config/constants.js';
+import { JOB_TYPE_META, JOB_MANUAL_PIN_SORT_SQL, PUBLIC_JOB_STATUS_SQL, JOB_LISTING_COLUMNS } from '../config/constants.js';
 import { jobCardSSR, logoImgHtml } from '../components/job-card.js';
 import { adSlot } from '../components/ad-slot.js';
 import { escapeHtml, slugify, listCompanies } from '../lib/entities.js';
@@ -109,7 +109,7 @@ export async function renderMainHTML(env, base, user = null) {
   };
   let initialJobs = [], initialTotal = 0, totalJobsCount = 0, companiesCount = 0;
   try {
-    const { results } = await env.DB.prepare(`SELECT ${JOB_LISTING_COLUMNS} FROM jobs WHERE ${PUBLIC_JOB_STATUS_SQL} ORDER BY ${JOB_TYPE_SORT_SQL} ASC, featured DESC, id DESC LIMIT 20`).all();
+    const { results } = await env.DB.prepare(`SELECT ${JOB_LISTING_COLUMNS} FROM jobs WHERE ${PUBLIC_JOB_STATUS_SQL} ORDER BY ${JOB_MANUAL_PIN_SORT_SQL} LIMIT 20`).all();
     initialJobs = await hydrateHotPay(env, await attachCompanyLogos(env, results || []), settings);
     const { results: cr } = await env.DB.prepare(`SELECT COUNT(*) as total FROM jobs WHERE ${PUBLIC_JOB_STATUS_SQL}`).all();
     initialTotal = cr[0]?.total || 0;
@@ -601,7 +601,7 @@ function renderJobsList(){
     const bg=pastelFor(j);
     const jts=jtStyleFor(j.job_type);
     return\`<article class="job-card\${jobTypeCardClass(j.job_type)}" style="--cat-color:\${meta.color};\${jtCardStyleAttr(j.job_type,bg)};animation:fadeInUp .3s ease \${Math.min(idx,6)*.04}s both">
-      <div class="card-inner" style="padding:\${jts.card_padding}px 16px">
+      <div class="card-inner" style="padding:\${jts.card_padding}px 16px;background:inherit">
         <a href="/job/\${j.id}" class="card-row1" aria-label="View \${esc(j.title)} at \${esc(j.company)}">
           \${logoHtml(j.company,jts.logo_size+'px',j.company_logo_url,j.company_website)}
           <div class="card-body">

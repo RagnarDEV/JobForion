@@ -13,7 +13,7 @@
 // pages, but flagged for a future proper geo-normalization pass.
 // ════════════════════════════════════════════════════════════════
 
-import { JOB_TYPE_SORT_SQL, PUBLIC_JOB_STATUS_SQL, JOB_LISTING_COLUMNS } from '../config/constants.js';
+import { JOB_MANUAL_PIN_SORT_SQL, PUBLIC_JOB_STATUS_SQL, JOB_LISTING_COLUMNS } from '../config/constants.js';
 import { getOverrides, applyDirectoryOverrides } from './directory-overrides.js';
 import { canonicalizeRegion } from './geo-data.js';
 
@@ -135,7 +135,7 @@ export async function findCompanyBySlug(env, slug) {
 
 export async function jobsByCompany(env, companyName, { limit = 100 } = {}) {
   const { results } = await env.DB.prepare(
-    `SELECT ${JOB_LISTING_COLUMNS} FROM jobs WHERE company = ? AND ${PUBLIC_JOB_STATUS_SQL} ORDER BY ${JOB_TYPE_SORT_SQL} ASC, id DESC LIMIT ?`
+    `SELECT ${JOB_LISTING_COLUMNS} FROM jobs WHERE company = ? AND ${PUBLIC_JOB_STATUS_SQL} ORDER BY ${JOB_MANUAL_PIN_SORT_SQL} LIMIT ?`
   ).bind(companyName, limit).all();
   return results || [];
 }
@@ -201,7 +201,7 @@ export async function jobsByRegion(env, regionNames, { limit = 100, offset = 0 }
   const conditions = names.map(() => '(location = ? OR location LIKE ?)').join(' OR ');
   const binds = names.flatMap(n => [n, `%, ${n}`]);
   const { results } = await env.DB.prepare(
-    `SELECT ${JOB_LISTING_COLUMNS} FROM jobs WHERE (${conditions}) AND ${PUBLIC_JOB_STATUS_SQL} ORDER BY ${JOB_TYPE_SORT_SQL} ASC, id DESC LIMIT ? OFFSET ?`
+    `SELECT ${JOB_LISTING_COLUMNS} FROM jobs WHERE (${conditions}) AND ${PUBLIC_JOB_STATUS_SQL} ORDER BY ${JOB_MANUAL_PIN_SORT_SQL} LIMIT ? OFFSET ?`
   ).bind(...binds, limit, offset).all();
   return results || [];
 }
@@ -249,7 +249,7 @@ export async function jobsByCity(env, cityNames, { limit = 100 } = {}) {
   const conditions = names.map(() => '(location = ? OR location LIKE ?)').join(' OR ');
   const binds = names.flatMap(n => [n, `${n},%`]);
   const { results } = await env.DB.prepare(
-    `SELECT ${JOB_LISTING_COLUMNS} FROM jobs WHERE (${conditions}) AND ${PUBLIC_JOB_STATUS_SQL} ORDER BY ${JOB_TYPE_SORT_SQL} ASC, id DESC LIMIT ?`
+    `SELECT ${JOB_LISTING_COLUMNS} FROM jobs WHERE (${conditions}) AND ${PUBLIC_JOB_STATUS_SQL} ORDER BY ${JOB_MANUAL_PIN_SORT_SQL} LIMIT ?`
   ).bind(...binds, limit).all();
   return results || [];
 }
@@ -294,7 +294,7 @@ export async function jobsBySkill(env, skillNames, { limit = 100, offset = 0 } =
     const placeholders = names.map(() => '?').join(',');
     const { results } = await env.DB.prepare(
       `SELECT ${JOB_LISTING_COLUMNS.split(',').map(column => `jobs.${column}`).join(',')} FROM jobs, json_each(jobs.skills)
-       WHERE json_each.value IN (${placeholders}) AND ${PUBLIC_JOB_STATUS_SQL} ORDER BY ${JOB_TYPE_SORT_SQL} ASC, jobs.id DESC LIMIT ? OFFSET ?` ).bind(...names, limit, offset).all();
+       WHERE json_each.value IN (${placeholders}) AND ${PUBLIC_JOB_STATUS_SQL} ORDER BY ${JOB_MANUAL_PIN_SORT_SQL.replace(/\bid\b/g, 'jobs.id')} LIMIT ? OFFSET ?` ).bind(...names, limit, offset).all();
     return results || [];
   } catch (e) {
     return [];
