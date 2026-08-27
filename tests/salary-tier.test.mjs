@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import { parseSalary } from '../src/lib/salary.js';
 import { classifySalary, classifySalaryFromParsed } from '../src/lib/salary-tier.js';
 import { isHotPayJob, annotateHotPay } from '../src/lib/hot-pay.js';
-import { salaryTierBadgeHtml } from '../src/components/job-card.js';
+import { salaryTierBadgeHtml, salaryTierCardTint, jobCardSSR } from '../src/components/job-card.js';
 
 const defaults = { salary_tier_badges_enabled: '1', salary_tier_high_min_usd: '120000', salary_tier_good_min_usd: '70000' };
 
@@ -43,6 +43,14 @@ assert.match(salaryTierBadgeHtml('HIGH', { ...defaults, salary_tier_high_label: 
 assert.match(salaryTierBadgeHtml('HIGH', { ...defaults, salary_tier_high_label: 'Top Pay' }), /Top Pay/);
 assert.equal(salaryTierBadgeHtml('UNKNOWN', defaults), '');
 assert.equal(salaryTierBadgeHtml('HIGH', { ...defaults, salary_tier_badges_enabled: '0' }), '');
+assert.equal(salaryTierCardTint({ salary_tier: 'HIGH' }), 'var(--salary-high-bg,#eafaf1)');
+assert.equal(salaryTierCardTint({ salary_tier: 'GOOD' }), 'var(--salary-good-bg,#f0ecff)');
+assert.equal(salaryTierCardTint({ salary_tier: 'STANDARD' }), 'var(--salary-standard-bg,#f5f5f7)');
+assert.equal(salaryTierCardTint({ salary_tier: 'UNKNOWN' }), '');
+const card = jobCardSSR({ id: 1, title: 'Engineer', company: 'Acme', salary: '$160k/year', salary_tier: 'HIGH', job_type: 'Free', skills: '[]' }, 0, undefined, undefined, undefined, {}, true, new Set(), { ...defaults, hot_pay_enabled: '1', hot_pay_threshold_usd: '150000' });
+assert.match(card, /background:var\(--salary-high-bg/);
+const paidCard = jobCardSSR({ id: 2, title: 'Engineer', company: 'Acme', salary: '$160k/year', salary_tier: 'HIGH', job_type: 'Premium', skills: '[]' }, 0, undefined, undefined, undefined, {}, true, new Set(), { ...defaults, hot_pay_enabled: '1', hot_pay_threshold_usd: '150000' });
+assert.doesNotMatch(paidCard, /background:var\(--salary-high-bg/);
 
 const homeSource = fs.readFileSync(new URL('../src/pages/home.js', import.meta.url), 'utf8');
 const apiSource = fs.readFileSync(new URL('../src/routes/api.router.js', import.meta.url), 'utf8');

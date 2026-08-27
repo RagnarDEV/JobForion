@@ -548,10 +548,12 @@ function catForTitle(title){
   for(const k of CAT_ORDER){if(t.includes(k))return k;}
   return CAT_ORDER[0]||'developer';
 }
+function salaryTierCardTintClient(j){
+  return ({HIGH:'var(--salary-high-bg,#eafaf1)',GOOD:'var(--salary-good-bg,#f0ecff)',STANDARD:'var(--salary-standard-bg,#f5f5f7)'})[j&&j.salary_tier]||'';
+}
 function pastelFor(j){
   if(FEATURES.featuredJobs && j.featured)return'var(--pastel-blue)';
-  if(j.isHotPay)return'var(--pastel-yellow)';
-  return'var(--surface)';
+  return salaryTierCardTintClient(j)||(j.isHotPay?'var(--pastel-yellow)':'var(--surface)');
 }
 function isNew(ts){if(!ts)return false;return Date.now()-new Date(ts).getTime()<86400000;}
 function getTimeAgo(date){

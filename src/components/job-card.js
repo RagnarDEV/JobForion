@@ -179,19 +179,22 @@ export function jobTypeCardClass(jobType) {
   return type === 'Free' ? '' : ` jt-card-${type.toLowerCase()}`;
 }
 
+export function salaryTierCardTint(job) {
+  const tints = {
+    HIGH: 'var(--salary-high-bg,#eafaf1)',
+    GOOD: 'var(--salary-good-bg,#f0ecff)',
+    STANDARD: 'var(--salary-standard-bg,#f5f5f7)',
+  };
+  return tints[job?.salary_tier] || '';
+}
+
 export function pastelForJob(job, featuredEnabled = true, hotPaySettings = {}) {
-  // Background tint is now meaningful, not decorative: only pinned and
-  // high-salary jobs get a tint. "New" already has its own badge, so it
-  // doesn't need to also recolor the whole card — that was just visual
-  // noise competing with the badges for attention.
-  // `featuredEnabled` (Admin Dashboard V2, Phase 3): when the "Featured
-  // Jobs" feature flag is off (see lib/settings.js), a job's `featured`
-  // column still exists in the DB — the flag only controls whether that
-  // status is ever surfaced visually, so it falls through to the
-  // hot/salary check below exactly as if `featured` were never set.
+  // Background tint is an independent presentation signal. Manual pinning
+  // keeps first priority; persisted salary tiers then color Free cards.
+  // HOT PAY remains independently calculated and keeps its legacy yellow tint
+  // when no displayable tier is available, so neither signal is lost.
   if (featuredEnabled && job.featured) return 'var(--pastel-blue)';
-  if (isHotJob(job, hotPaySettings)) return 'var(--pastel-yellow)';
-  return 'var(--surface)';
+  return salaryTierCardTint(job) || (isHotJob(job, hotPaySettings) ? 'var(--pastel-yellow)' : 'var(--surface)');
 }
 
 // Compatibility wrapper for the single HOT PAY rule in lib/hot-pay.js.
