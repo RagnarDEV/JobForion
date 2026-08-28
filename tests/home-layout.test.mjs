@@ -7,4 +7,11 @@ assert.match(source, /\.home-sidebar\{[^}]*align-self:start[^}]*align-content:st
 assert.match(source, /\.side-card\{align-self:start;height:max-content/);
 assert.match(source, /@media\(max-width:960px\)[\s\S]*?\.home-jobs-grid\{grid-template-columns:1fr/);
 assert.match(source, /@media\(max-width:760px\)[\s\S]*?\.home-sidebar\{grid-template-columns:1fr/);
+assert.match(source, /class="fc-strip"/);
+assert.match(source, /company-tile-arrow/);
+assert.match(source, /class="category-strip"/);
+assert.match(source, /class="cg-arrow"/);
+assert.match(source, /class="employer-cta-section"/);
+assert.match(source, /class="cta-secondary"/);
+assert.match(source, /@media\(max-width:760px\)[\s\S]*?\.cg-grid\{display:flex/);
 console.log('home-layout tests: all assertions passed');
