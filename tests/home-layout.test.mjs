@@ -19,4 +19,5 @@ assert.match(source, /IntersectionObserver/);
 assert.match(source, /prefers-reduced-motion:reduce/);
 assert.match(source, /homepage-reveal-section\.is-visible/);
 assert.match(source, /homepage-reveal-item/);
+assert.doesNotMatch(source, /jobs-section homepage-reveal-section/);
 console.log('home-layout tests: all assertions passed');

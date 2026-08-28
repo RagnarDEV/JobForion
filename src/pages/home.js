@@ -259,7 +259,7 @@ export async function renderMainHTML(env, base, user = null) {
     </div></section>` : '',
 
     job_listing: `
-    <section class="content-wrap jobs-section homepage-reveal-section"><div class="home-jobs-grid${sidebarSectionsHtml ? '' : ' no-sidebar'}"><div class="home-jobs-column">
+    <section class="content-wrap jobs-section"><div class="home-jobs-grid${sidebarSectionsHtml ? '' : ' no-sidebar'}"><div class="home-jobs-column">
       <div class="section-heading jobs-heading"><div><p class="eyebrow">${escapeHtml(homepageCopy.jobsEyebrow)}</p><h2>${escapeHtml(homepageCopy.jobsTitle)}</h2></div><a class="text-button" href="/jobs">${escapeHtml(homepageCopy.jobsCta)}</a></div>
       <div class="job-tabs" role="tablist"><button class="active" data-job-tab="all" onclick="quickJobTab('all',this)">All jobs</button><button data-job-tab="remote" onclick="quickJobTab('remote',this)">Remote</button><button data-job-tab="full_time" onclick="quickJobTab('full_time',this)">Full-time</button><button data-job-tab="part_time" onclick="quickJobTab('part_time',this)">Part-time</button><button data-job-tab="contract" onclick="quickJobTab('contract',this)">Contract</button></div>
       <div class="results-hdr"><div class="results-count" id="resultsCount" style="display:none"><strong>${initialTotal.toLocaleString()}</strong> jobs found</div></div>
