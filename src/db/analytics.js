@@ -27,16 +27,18 @@ export async function logSync(env, result) {
 // pure noise, which slows down every dashboard query that reads from it.
 // None of it is a real visitor, so none of it belongs in analytics.
 const BOT_PROBE_PATTERN = /(^\/wp-|wp-admin|wp-includes|wp-login|wp-content|wlwmanifest\.xml|xmlrpc\.php|wordpress|phpmyadmin|pma\/|\.env$|\.git\/|administrator\/|\/cgi-bin\/|\.php$|\/vendor\/|\/config\.json$|\/actuator\/|\/\.aws\/)/i;
+const BOT_UA_PATTERN = /bot|crawler|spider|slurp|headless|uptime|monitor|curl|wget/i;
 
 export function isTrackableVisit(pathname) {
   return !BOT_PROBE_PATTERN.test(pathname);
 }
 
-export async function recordVisit(env, request, url) {
-  if (!isTrackableVisit(url.pathname)) return;
+export async function recordVisit(env, request, url, settings = {}) {
+  if (settings.analytics_enabled === '0' || !isTrackableVisit(url.pathname)) return;
   try {
-    const country = request.cf?.country || 'XX';
     const ua = (request.headers.get('User-Agent') || '').slice(0, 140);
+    if (BOT_UA_PATTERN.test(ua)) return;
+    const country = request.cf?.country || 'XX';
     const ref = (request.headers.get('Referer') || '').slice(0, 200);
     await env.DB.prepare(
       `INSERT INTO visits (path, referrer, country, ua) VALUES (?,?,?,?)`

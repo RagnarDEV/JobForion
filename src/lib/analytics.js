@@ -2,6 +2,9 @@
 // Analytics is secondary: every exported function fails closed and must never
 // be allowed to break the request that produced the activity.
 
+import { sha256Hex } from './accounts/tokens.js';
+import { reportOperationalError } from './observability.js';
+
 export const ANALYTICS_EVENT_TYPES = Object.freeze([
   'page_view', 'job_impression', 'job_view', 'job_apply_click', 'job_favorite',
   'job_share', 'company_view', 'company_follow', 'search', 'search_result_click',
@@ -16,6 +19,7 @@ export const ANALYTICS_EVENT_SET = new Set(ANALYTICS_EVENT_TYPES);
 export const ANALYTICS_RETENTION_OPTIONS = Object.freeze(['30', '60', '90', '180', '365', 'unlimited']);
 export const ANALYTICS_TIMEZONES = Object.freeze(['UTC', 'America/New_York', 'Europe/London', 'Asia/Dubai', 'Asia/Tokyo']);
 const MAX_BATCH = 20;
+const D1_BATCH_SIZE = 75;
 const MAX_TEXT = 180;
 const MAX_META = 1000;
 const REDACT_KEYS = /password|token|secret|api[_-]?key|card|cvv|authorization|cookie|email|phone|address|ip/i;
@@ -24,6 +28,56 @@ const text = (value, max = MAX_TEXT) => String(value ?? '').replace(/[\u0000-\u0
 const int = value => { const n = Number.parseInt(value, 10); return Number.isInteger(n) && n > 0 ? n : null; };
 const safeEnum = (value, values) => values.includes(String(value)) ? String(value) : null;
 const isoNow = () => new Date().toISOString();
+
+async function runD1Batches(env, statements) {
+  const output = [];
+  for (let i = 0; i < statements.length; i += D1_BATCH_SIZE) {
+    const chunk = statements.slice(i, i + D1_BATCH_SIZE);
+    if (typeof env.DB.batch === 'function') output.push(...await env.DB.batch(chunk));
+    else for (const statement of chunk) output.push(await statement.run());
+  }
+  return output;
+}
+
+function analyticsHashSecret(env = {}) {
+  return String(env.ANALYTICS_HASH_SECRET || env.CSRF_SECRET || 'jobforion-analytics-pseudonymous-key');
+}
+
+function metadataObject(event) {
+  try {
+    const parsed = JSON.parse(event?.metadata || '{}');
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch (e) { return {}; }
+}
+
+function companySlugFromEvent(event) {
+  const metadata = metadataObject(event);
+  const candidate = metadata.slug || String(event?.page || '').match(/^\/companies\/([a-z0-9-]{1,120})(?:\/|$)/i)?.[1];
+  return String(candidate || '').toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 120) || null;
+}
+
+async function enrichEventAttribution(env, events) {
+  const jobIds = [...new Set(events.map(event => event.job_id).filter(Boolean))].slice(0, MAX_BATCH);
+  const companySlugs = [...new Set(events.map(companySlugFromEvent).filter(Boolean))].slice(0, MAX_BATCH);
+  const [jobRows, companyRows] = await Promise.all([
+    jobIds.length ? env.DB.prepare(`SELECT id,company_id FROM jobs WHERE id IN (${jobIds.map(() => '?').join(',')})`).bind(...jobIds).all() : { results: [] },
+    companySlugs.length ? env.DB.prepare(`SELECT id,slug FROM companies WHERE slug IN (${companySlugs.map(() => '?').join(',')})`).bind(...companySlugs).all() : { results: [] },
+  ]);
+  const jobs = new Map((jobRows?.results || []).map(row => [Number(row.id), row]));
+  const companies = new Map((companyRows?.results || []).map(row => [String(row.slug).toLowerCase(), Number(row.id)]));
+  return events.map(event => {
+    const jobId = event.job_id ? Number(event.job_id) : null;
+    const job = jobId ? jobs.get(jobId) : null;
+    const companyId = event.company_id || (job?.company_id ? Number(job.company_id) : companies.get(companySlugFromEvent(event)) || null);
+    return { ...event, job_id: job ? jobId : null, company_id: companyId || null };
+  });
+}
+
+async function visitorHash(env, event) {
+  const identity = event.session_id || (event.user_id ? `user:${event.user_id}` : '');
+  if (!identity) return null;
+  return sha256Hex(`${event.metric_date}:${analyticsHashSecret(env)}:${identity}`);
+}
 
 export function localDateKey(date = new Date(), timeZone = 'UTC') {
   try {
@@ -58,8 +112,11 @@ export function normalizeAnalyticsEvent(input = {}, trusted = {}) {
     session_id: text(input.session_id, 100) || null,
     user_id: int(trusted.user_id),
     job_id: int(input.job_id),
-    company_id: int(input.company_id),
-    country: text(input.country || trusted.country || 'XX', 2).toUpperCase().replace(/[^A-Z?]/g, '').slice(0, 2) || 'XX',
+    // Client payloads may describe behavior, but they cannot claim ownership
+    // of a company or override the request-derived country. Company IDs are
+    // attached only by trusted server context or the D1 enrichment pass.
+    company_id: int(trusted.company_id),
+    country: text(trusted.country || input.country || 'XX', 2).toUpperCase().replace(/[^A-Z?]/g, '').slice(0, 2) || 'XX',
     device_type: safeEnum(input.device_type, ['mobile', 'tablet', 'desktop']) || 'unknown',
     browser: text(input.browser, 60) || null,
     os: text(input.os, 60) || null,
@@ -89,10 +146,15 @@ export async function enqueueAnalyticsEvents(env, events, trusted = {}) {
   const normalized = events.slice(0, MAX_BATCH).map(event => normalizeAnalyticsEvent(event, trusted)).filter(Boolean);
   if (!normalized.length) return { accepted: 0 };
   try {
-    const statements = normalized.map(event => env.DB.prepare(`INSERT OR IGNORE INTO analytics_event_queue (event_id,event_type,session_id,user_id,job_id,company_id,country,device_type,browser,os,referrer,source,medium,campaign,landing_page,page,metadata,metric_date,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(event.event_id, event.event_type, event.session_id, event.user_id, event.job_id, event.company_id, event.country, event.device_type, event.browser, event.os, event.referrer, event.source, event.medium, event.campaign, event.landing_page, event.page, event.metadata, event.metric_date, event.created_at));
-    await env.DB.batch(statements);
-    return { accepted: normalized.length };
-  } catch (e) { return { accepted: 0, error: 'analytics_enqueue_failed' }; }
+    const enriched = await enrichEventAttribution(env, normalized);
+    const statements = enriched.map(event => env.DB.prepare(`INSERT OR IGNORE INTO analytics_event_queue (event_id,event_type,session_id,user_id,job_id,company_id,country,device_type,browser,os,referrer,source,medium,campaign,landing_page,page,metadata,metric_date,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(event.event_id, event.event_type, event.session_id, event.user_id, event.job_id, event.company_id, event.country, event.device_type, event.browser, event.os, event.referrer, event.source, event.medium, event.campaign, event.landing_page, event.page, event.metadata, event.metric_date, event.created_at));
+    const results = await env.DB.batch(statements);
+    const accepted = (results || []).reduce((sum, result) => sum + (Number(result?.meta?.changes || 0) > 0 ? 1 : 0), 0);
+    return { accepted };
+  } catch (e) {
+    reportOperationalError('analytics.enqueue', e);
+    return { accepted: 0, error: 'analytics_enqueue_failed' };
+  }
 }
 
 export async function recordTrustedAnalyticsEvent(env, event, trusted = {}) {
@@ -108,23 +170,34 @@ export async function aggregateAnalytics(env, limit = 300) {
     const groups = new Map();
     const searchGroups = new Map();
     const filterGroups = new Map();
-    for (const event of results) {
-      const key = [event.metric_date, event.event_type, event.job_id || 0, event.company_id || 0, event.country || 'XX', event.device_type || 'unknown', event.source || 'direct', event.medium || 'none'].join('|');
-      const current = groups.get(key) || { metric_date: event.metric_date, event_type: event.event_type, job_id: event.job_id || 0, company_id: event.company_id || 0, country: event.country || 'XX', device_type: event.device_type || 'unknown', source: event.source || 'direct', medium: event.medium || 'none', events: 0, unique_events: 0, user_ids: new Set(), session_ids: new Set(), metadata: {} };
+    const uniqueEntries = new Map();
+    const eventHashes = await Promise.all(results.map(event => visitorHash(env, event)));
+    const dimensionKey = event => [event.job_id || 0, event.company_id || 0, event.country || 'XX', event.device_type || 'unknown', event.source || 'direct', event.medium || 'none'].join('|');
+    const addUniqueEntry = (eventType, dimension, event, hash) => {
+      if (!hash) return;
+      const key = `${event.metric_date}|${eventType}|${dimension}|${hash}`;
+      uniqueEntries.set(key, { metric_date: event.metric_date, event_type: eventType, dimension_key: dimension, visitor_hash: hash });
+    };
+    for (let index = 0; index < results.length; index++) {
+      const event = results[index];
+      const hash = eventHashes[index];
+      const key = [event.metric_date, event.event_type, dimensionKey(event)].join('|');
+      const current = groups.get(key) || { metric_date: event.metric_date, event_type: event.event_type, job_id: event.job_id || 0, company_id: event.company_id || 0, country: event.country || 'XX', device_type: event.device_type || 'unknown', source: event.source || 'direct', medium: event.medium || 'none', events: 0, unique_events: 0, identity_events: 0, metadata: {}, unique_key: `${event.metric_date}|${event.event_type}|${dimensionKey(event)}` };
       current.events += 1;
-      if (event.session_id) current.session_ids.add(event.session_id);
-      if (event.user_id) current.user_ids.add(event.user_id);
-      current.unique_events = current.session_ids.size || current.events;
+      if (hash) { current.identity_events += 1; addUniqueEntry(event.event_type, dimensionKey(event), event, hash); }
       let metadata = {};
       try { metadata = JSON.parse(event.metadata || '{}'); if (metadata.query) current.metadata.query = text(metadata.query, 120); if (metadata.results_count !== undefined) current.metadata.results_count = Number(metadata.results_count) || 0; } catch (e) {}
       groups.set(key, current);
       if ((event.event_type === 'search' || event.event_type === 'search_result_click') && metadata.query) {
         const query = text(metadata.query, 120).toLowerCase();
         const searchKey = `${event.metric_date}|${query}`;
-        const search = searchGroups.get(searchKey) || { metric_date: event.metric_date, query, searches: 0, zero_result_searches: 0, result_clicks: 0, sessions: new Set() };
-        if (event.event_type === 'search') { search.searches += 1; if (Number(metadata.results_count || 0) === 0) search.zero_result_searches += 1; }
+        const search = searchGroups.get(searchKey) || { metric_date: event.metric_date, query, searches: 0, zero_result_searches: 0, result_clicks: 0, identity_events: 0, unique_key: `${event.metric_date}|search|search:${query}` };
+        if (event.event_type === 'search') {
+          search.searches += 1;
+          if (Number(metadata.results_count || 0) === 0) search.zero_result_searches += 1;
+          if (hash) { search.identity_events += 1; addUniqueEntry('search', `search:${query}`, event, hash); }
+        }
         if (event.event_type === 'search_result_click') search.result_clicks += 1;
-        if (event.session_id) search.sessions.add(event.session_id);
         searchGroups.set(searchKey, search);
       }
       if (event.event_type === 'filter_used' && metadata.filter && metadata.value) {
@@ -134,12 +207,30 @@ export async function aggregateAnalytics(env, limit = 300) {
         filterGroups.set(filterKey, filter);
       }
     }
+    // First persist only hashed visitor fingerprints. INSERT OR IGNORE makes
+    // the operation idempotent across hourly runs and prevents sum-of-batches
+    // overcounting without ever storing the source session/user identifier.
+    const uniqueStatements = [...uniqueEntries.values()].map(entry => env.DB.prepare('INSERT OR IGNORE INTO analytics_daily_uniques (metric_date,event_type,dimension_key,visitor_hash) VALUES (?,?,?,?)').bind(entry.metric_date, entry.event_type, entry.dimension_key, entry.visitor_hash));
+    const uniqueResults = uniqueStatements.length ? await runD1Batches(env, uniqueStatements) : [];
+    const insertedUniqueCounts = new Map();
+    [...uniqueEntries.values()].forEach((entry, index) => {
+      if (Number(uniqueResults[index]?.meta?.changes || 0) > 0) {
+        const key = `${entry.metric_date}|${entry.event_type}|${entry.dimension_key}`;
+        insertedUniqueCounts.set(key, (insertedUniqueCounts.get(key) || 0) + 1);
+      }
+    });
+    for (const group of groups.values()) {
+      group.unique_events = group.identity_events ? (insertedUniqueCounts.get(group.unique_key) || 0) : group.events;
+    }
+    for (const search of searchGroups.values()) {
+      search.unique_searches = search.identity_events ? (insertedUniqueCounts.get(search.unique_key) || 0) : search.searches;
+    }
     const statements = [];
     for (const group of groups.values()) statements.push(env.DB.prepare(`INSERT INTO analytics_daily (metric_date,event_type,job_id,company_id,country,device_type,source,medium,event_count,unique_count,metadata,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP) ON CONFLICT(metric_date,event_type,job_id,company_id,country,device_type,source,medium) DO UPDATE SET event_count=analytics_daily.event_count+excluded.event_count,unique_count=analytics_daily.unique_count+excluded.unique_count,metadata=excluded.metadata,updated_at=CURRENT_TIMESTAMP`).bind(group.metric_date, group.event_type, group.job_id, group.company_id, group.country, group.device_type, group.source, group.medium, group.events, group.unique_events, JSON.stringify(group.metadata)));
-    for (const search of searchGroups.values()) statements.push(env.DB.prepare(`INSERT INTO analytics_search_daily (metric_date,query,searches,zero_result_searches,result_clicks,unique_searches,updated_at) VALUES (?,?,?,?,?,?,CURRENT_TIMESTAMP) ON CONFLICT(metric_date,query) DO UPDATE SET searches=analytics_search_daily.searches+excluded.searches,zero_result_searches=analytics_search_daily.zero_result_searches+excluded.zero_result_searches,result_clicks=analytics_search_daily.result_clicks+excluded.result_clicks,unique_searches=analytics_search_daily.unique_searches+excluded.unique_searches,updated_at=CURRENT_TIMESTAMP`).bind(search.metric_date, search.query, search.searches, search.zero_result_searches, search.result_clicks, search.sessions.size || search.searches));
+    for (const search of searchGroups.values()) statements.push(env.DB.prepare(`INSERT INTO analytics_search_daily (metric_date,query,searches,zero_result_searches,result_clicks,unique_searches,updated_at) VALUES (?,?,?,?,?,?,CURRENT_TIMESTAMP) ON CONFLICT(metric_date,query) DO UPDATE SET searches=analytics_search_daily.searches+excluded.searches,zero_result_searches=analytics_search_daily.zero_result_searches+excluded.zero_result_searches,result_clicks=analytics_search_daily.result_clicks+excluded.result_clicks,unique_searches=analytics_search_daily.unique_searches+excluded.unique_searches,updated_at=CURRENT_TIMESTAMP`).bind(search.metric_date, search.query, search.searches, search.zero_result_searches, search.result_clicks, search.unique_searches));
     for (const filter of filterGroups.values()) statements.push(env.DB.prepare(`INSERT INTO analytics_filter_daily (metric_date,filter_name,filter_value,uses,updated_at) VALUES (?,?,?,?,CURRENT_TIMESTAMP) ON CONFLICT(metric_date,filter_name,filter_value) DO UPDATE SET uses=analytics_filter_daily.uses+excluded.uses,updated_at=CURRENT_TIMESTAMP`).bind(filter.metric_date, filter.filter_name, filter.filter_value, filter.uses));
     for (const event of results) statements.push(env.DB.prepare('UPDATE analytics_event_queue SET processed_at=CURRENT_TIMESTAMP WHERE id=? AND processed_at IS NULL').bind(event.id));
-    await env.DB.batch(statements);
+    await runD1Batches(env, statements);
     result.processed = results.length;
     result.aggregated = groups.size + searchGroups.size + filterGroups.size;
     return result;
@@ -151,11 +242,13 @@ export async function cleanupAnalytics(env, retention = '90') {
   const days = [30, 60, 90, 180, 365].includes(Number(retention)) ? Number(retention) : 90;
   try {
     const queue = await env.DB.prepare("DELETE FROM analytics_event_queue WHERE created_at < datetime('now', '-' || ? || ' days')").bind(days).run();
+    const visits = await env.DB.prepare("DELETE FROM visits WHERE created_at < datetime('now', '-' || ? || ' days')").bind(days).run();
     const daily = await env.DB.prepare("DELETE FROM analytics_daily WHERE metric_date < date('now', '-' || ? || ' days')").bind(days).run();
     const searches = await env.DB.prepare("DELETE FROM analytics_search_daily WHERE metric_date < date('now', '-' || ? || ' days')").bind(days).run();
     const filters = await env.DB.prepare("DELETE FROM analytics_filter_daily WHERE metric_date < date('now', '-' || ? || ' days')").bind(days).run();
+    const uniques = await env.DB.prepare("DELETE FROM analytics_daily_uniques WHERE metric_date < date('now', '-' || ? || ' days')").bind(days).run();
     const alerts = await env.DB.prepare("DELETE FROM analytics_alerts WHERE status='resolved' AND created_at < datetime('now', '-' || ? || ' days')").bind(days).run();
-    return { deleted: [queue, daily, searches, filters, alerts].reduce((sum, item) => sum + Number(item.meta?.changes || 0), 0), retention: days };
+    return { deleted: [queue, visits, daily, searches, filters, uniques, alerts].reduce((sum, item) => sum + Number(item.meta?.changes || 0), 0), retention: days };
   } catch (e) { return { deleted: 0, error: 'analytics_cleanup_failed' }; }
 }
 
@@ -180,27 +273,58 @@ export function dateRange(input = {}) {
 
 function rangeWhere(range, column = 'metric_date') { return { sql: `${column} >= ? AND ${column} <= ?`, binds: [range.from, range.to] }; }
 
+function previousDateRange(range) {
+  const fromDate = new Date(`${range.from}T12:00:00Z`);
+  const toDate = new Date(`${range.to}T12:00:00Z`);
+  if (!Number.isFinite(fromDate.getTime()) || !Number.isFinite(toDate.getTime()) || toDate < fromDate) return null;
+  const span = Math.max(1, Math.round((toDate - fromDate) / 86400000) + 1);
+  const previousTo = new Date(fromDate);
+  previousTo.setUTCDate(previousTo.getUTCDate() - 1);
+  const previousFrom = new Date(previousTo);
+  previousFrom.setUTCDate(previousFrom.getUTCDate() - span + 1);
+  return { from: previousFrom.toISOString().slice(0, 10), to: previousTo.toISOString().slice(0, 10) };
+}
+
+function percentChange(current, previous) {
+  const now = Number(current || 0);
+  const prior = Number(previous || 0);
+  if (prior === 0) return now === 0 ? 0 : null;
+  return Number(((now - prior) / prior * 100).toFixed(2));
+}
+
 export async function getAnalyticsOverview(env, input = {}) {
   const range = dateRange(input);
   const w = rangeWhere(range);
-  const fallback = { range, traffic: { visitors: 0, unique_visitors: 0, page_views: 0, sessions: 0, new_users: 0, returning_users: 0 }, jobs: { total: 0, active: 0, new_jobs: 0, views: 0, apply_clicks: 0, conversion_rate: 0 }, companies: { total: 0, active: 0, new_companies: 0, jobs_posted: 0, views: 0 }, revenue: { gross_minor: null, net_minor: null, payment_fees_minor: null, refunds_minor: null, successful_payments: 0, failed_payments: 0, average_order_minor: null, currencies: [] }, funnel: [], growth: { comparison: 'not_available' }, health: { queued: 0, processed_last_at: null, errors: 0 } };
+  const previous = previousDateRange(range);
+  const fallback = { range, traffic: { visitors: 0, unique_visitors: 0, page_views: 0, sessions: 0, new_users: 0, returning_users: 0 }, jobs: { total: 0, active: 0, new_jobs: 0, views: 0, apply_clicks: 0, conversion_rate: 0 }, companies: { total: 0, active: 0, new_companies: 0, jobs_posted: 0, views: 0 }, revenue: { gross_minor: null, net_minor: null, payment_fees_minor: null, refunds_minor: null, successful_payments: 0, failed_payments: 0, average_order_minor: null, currencies: [] }, funnel: [], growth: { comparison: 'not_available', period: previous }, health: { queued: 0, processed_last_at: null, errors: 0 } };
   try {
-    const [events, jobs, companies, revenue, refunds, health] = await Promise.all([
+    const [events, previousEvents, jobs, companies, revenue, refunds, health] = await Promise.all([
       env.DB.prepare(`SELECT event_type, SUM(event_count) events, SUM(unique_count) uniques FROM analytics_daily WHERE ${w.sql} GROUP BY event_type`).bind(...w.binds).all(),
+      previous ? env.DB.prepare(`SELECT event_type, SUM(event_count) events, SUM(unique_count) uniques FROM analytics_daily WHERE metric_date >= ? AND metric_date <= ? GROUP BY event_type`).bind(previous.from, previous.to).all() : { results: [] },
       env.DB.prepare(`SELECT COUNT(*) total, SUM(CASE WHEN status='active' THEN 1 ELSE 0 END) active, SUM(CASE WHEN created_at >= ? AND created_at <= ? THEN 1 ELSE 0 END) new_jobs FROM jobs`).bind(`${range.from} 00:00:00`, `${range.to} 23:59:59`).all(),
       env.DB.prepare(`SELECT COUNT(*) total, SUM(CASE WHEN status='active' THEN 1 ELSE 0 END) active, SUM(CASE WHEN created_at >= ? AND created_at <= ? THEN 1 ELSE 0 END) new_companies FROM companies`).bind(`${range.from} 00:00:00`, `${range.to} 23:59:59`).all(),
-      env.DB.prepare(`SELECT currency, SUM(gross_amount_minor) gross_minor, SUM(net_amount_minor) net_minor, SUM(provider_fee_minor) payment_fees_minor, COUNT(*) events, AVG(gross_amount_minor) average_order_minor FROM monetization_revenue_events WHERE occurred_at >= ? AND occurred_at <= ? GROUP BY currency`).bind(`${range.from} 00:00:00`, `${range.to} 23:59:59`).all(),
+      env.DB.prepare(`SELECT currency, SUM(CASE WHEN status='succeeded' THEN gross_amount_minor ELSE 0 END) gross_minor, SUM(CASE WHEN status='succeeded' THEN net_amount_minor ELSE 0 END) net_minor, SUM(CASE WHEN status='succeeded' THEN provider_fee_minor ELSE 0 END) payment_fees_minor, SUM(CASE WHEN status='succeeded' THEN 1 ELSE 0 END) successful_payments, SUM(CASE WHEN status='failed' THEN 1 ELSE 0 END) failed_payments, AVG(CASE WHEN status='succeeded' THEN gross_amount_minor END) average_order_minor FROM monetization_transactions WHERE created_at >= ? AND created_at <= ? GROUP BY currency`).bind(`${range.from} 00:00:00`, `${range.to} 23:59:59`).all(),
       env.DB.prepare(`SELECT currency,SUM(amount_minor) refunds_minor FROM monetization_refunds WHERE status IN ('processed','succeeded','completed') AND created_at >= ? AND created_at <= ? GROUP BY currency`).bind(`${range.from} 00:00:00`, `${range.to} 23:59:59`).all(),
       env.DB.prepare('SELECT SUM(CASE WHEN processed_at IS NULL THEN 1 ELSE 0 END) queued, MAX(processed_at) processed_last_at FROM analytics_event_queue').all(),
     ]);
     const map = Object.fromEntries((events.results || []).map(row => [row.event_type, { events: Number(row.events || 0), uniques: Number(row.uniques || 0) }]));
+    const previousMap = Object.fromEntries((previousEvents?.results || []).map(row => [row.event_type, { events: Number(row.events || 0), uniques: Number(row.uniques || 0) }]));
     const pageViews = map.page_view?.events || 0;
     const uniqueVisitors = map.page_view?.uniques || 0;
     const views = map.job_view?.events || 0;
     const applies = map.job_apply_click?.events || 0;
-    const revenueRows = (revenue.results || []).map(row => ({ currency: row.currency, gross_minor: Number(row.gross_minor || 0), net_minor: Number(row.net_minor || 0), payment_fees_minor: Number(row.payment_fees_minor || 0), average_order_minor: Number(row.average_order_minor || 0), events: Number(row.events || 0) }));
+    const revenueRows = (revenue.results || []).map(row => ({ currency: row.currency, gross_minor: Number(row.gross_minor || 0), net_minor: Number(row.net_minor || 0), payment_fees_minor: Number(row.payment_fees_minor || 0), average_order_minor: row.average_order_minor === null ? null : Number(row.average_order_minor || 0), successful_payments: Number(row.successful_payments || 0), failed_payments: Number(row.failed_payments || 0) }));
     const refundRows = refunds.results || [];
-    return { range, traffic: { visitors: uniqueVisitors, unique_visitors: uniqueVisitors, page_views: pageViews, sessions: map.page_view?.uniques || 0, new_users: map.signup?.uniques || 0, returning_users: Math.max(0, uniqueVisitors - (map.signup?.uniques || 0)) }, jobs: { total: Number(jobs.results?.[0]?.total || 0), active: Number(jobs.results?.[0]?.active || 0), new_jobs: Number(jobs.results?.[0]?.new_jobs || 0), views, apply_clicks: applies, conversion_rate: views ? Number((applies / views * 100).toFixed(2)) : 0 }, companies: { total: Number(companies.results?.[0]?.total || 0), active: Number(companies.results?.[0]?.active || 0), new_companies: Number(companies.results?.[0]?.new_companies || 0), jobs_posted: map.job_post_completed?.events || 0, views: map.company_view?.events || 0 }, revenue: { gross_minor: revenueRows.length === 1 ? revenueRows[0].gross_minor : null, net_minor: revenueRows.length === 1 ? revenueRows[0].net_minor : null, payment_fees_minor: revenueRows.length === 1 ? revenueRows[0].payment_fees_minor : null, refunds_minor: refundRows.length === 1 ? Number(refundRows[0].refunds_minor || 0) : null, successful_payments: map.payment_success?.events || 0, failed_payments: map.payment_failed?.events || 0, average_order_minor: revenueRows.length === 1 ? revenueRows[0].average_order_minor : null, currencies: revenueRows.map(row => row.currency) }, funnel: [{ key: 'visitor', label: 'Visitors', count: uniqueVisitors }, { key: 'search', label: 'Search', count: map.search?.uniques || 0 }, { key: 'impression', label: 'Job impressions', count: map.job_impression?.uniques || 0 }, { key: 'view', label: 'Job views', count: views }, { key: 'apply', label: 'Apply clicks', count: applies }], growth: { comparison: 'not_available' }, health: { queued: Number(health.results?.[0]?.queued || 0), processed_last_at: health.results?.[0]?.processed_last_at || null, errors: 0 } };
+    const growth = {
+      comparison: previous ? 'previous_equal_period' : 'not_available',
+      period: previous,
+      unique_visitors_pct: previous ? percentChange(uniqueVisitors, previousMap.page_view?.uniques) : null,
+      page_views_pct: previous ? percentChange(pageViews, previousMap.page_view?.events) : null,
+      job_views_pct: previous ? percentChange(views, previousMap.job_view?.events) : null,
+      apply_clicks_pct: previous ? percentChange(applies, previousMap.job_apply_click?.events) : null,
+      new_users_pct: previous ? percentChange(map.signup?.uniques || 0, previousMap.signup?.uniques || 0) : null,
+    };
+    return { range, traffic: { visitors: uniqueVisitors, unique_visitors: uniqueVisitors, page_views: pageViews, sessions: map.page_view?.uniques || 0, new_users: map.signup?.uniques || 0, returning_users: Math.max(0, uniqueVisitors - (map.signup?.uniques || 0)) }, jobs: { total: Number(jobs.results?.[0]?.total || 0), active: Number(jobs.results?.[0]?.active || 0), new_jobs: Number(jobs.results?.[0]?.new_jobs || 0), views, apply_clicks: applies, conversion_rate: views ? Number((applies / views * 100).toFixed(2)) : 0 }, companies: { total: Number(companies.results?.[0]?.total || 0), active: Number(companies.results?.[0]?.active || 0), new_companies: Number(companies.results?.[0]?.new_companies || 0), jobs_posted: map.job_post_completed?.events || 0, views: map.company_view?.events || 0 }, revenue: { gross_minor: revenueRows.length === 1 ? revenueRows[0].gross_minor : null, net_minor: revenueRows.length === 1 ? revenueRows[0].net_minor : null, payment_fees_minor: revenueRows.length === 1 ? revenueRows[0].payment_fees_minor : null, refunds_minor: refundRows.length === 1 ? Number(refundRows[0].refunds_minor || 0) : null, successful_payments: revenueRows.reduce((sum, row) => sum + row.successful_payments, 0), failed_payments: revenueRows.reduce((sum, row) => sum + row.failed_payments, 0), average_order_minor: revenueRows.length === 1 ? revenueRows[0].average_order_minor : null, currencies: revenueRows.map(row => row.currency) }, funnel: [{ key: 'visitor', label: 'Visitors', count: uniqueVisitors }, { key: 'search', label: 'Search', count: map.search?.uniques || 0 }, { key: 'impression', label: 'Job impressions', count: map.job_impression?.uniques || 0 }, { key: 'view', label: 'Job views', count: views }, { key: 'apply', label: 'Apply clicks', count: applies }], growth, health: { queued: Number(health.results?.[0]?.queued || 0), processed_last_at: health.results?.[0]?.processed_last_at || null, errors: 0 } };
   } catch (e) { return fallback; }
 }
 
@@ -274,6 +398,24 @@ async function createAnalyticsAlert(env, type, threshold, actual, period, messag
   if (recent.results?.length) return false;
   await env.DB.prepare(`INSERT INTO analytics_alerts (alert_type,severity,status,threshold,actual_value,period,message,created_at) VALUES (?,?,?,?,?,?,?,CURRENT_TIMESTAMP)`).bind(type, actual > threshold * 1.5 ? 'critical' : 'warning', 'open', threshold, actual, period, message).run();
   return true;
+}
+
+export async function purgeAnalytics(env, { before } = {}) {
+  if (!validDate(before) || String(before) >= new Date().toISOString().slice(0, 10)) return { ok: false, error: 'The purge date must be before today.' };
+  const cutoff = `${before} 00:00:00`;
+  try {
+    const statements = [
+      env.DB.prepare('DELETE FROM analytics_event_queue WHERE created_at < ?').bind(cutoff),
+      env.DB.prepare('DELETE FROM visits WHERE created_at < ?').bind(cutoff),
+      env.DB.prepare('DELETE FROM analytics_daily WHERE metric_date < ?').bind(before),
+      env.DB.prepare('DELETE FROM analytics_search_daily WHERE metric_date < ?').bind(before),
+      env.DB.prepare('DELETE FROM analytics_filter_daily WHERE metric_date < ?').bind(before),
+      env.DB.prepare('DELETE FROM analytics_daily_uniques WHERE metric_date < ?').bind(before),
+      env.DB.prepare('DELETE FROM analytics_alerts WHERE created_at < ?').bind(cutoff),
+    ];
+    const results = await env.DB.batch(statements);
+    return { ok: true, deleted: results.reduce((sum, item) => sum + Number(item?.meta?.changes || 0), 0), before };
+  } catch (e) { return { ok: false, error: 'Unable to purge analytics data.' }; }
 }
 
 export async function resolveAnalyticsAlert(env, alertId) {

@@ -36,8 +36,9 @@ remote = true
 # ── Secrets (set these via `wrangler secret put <name>`, do NOT put them here) ──
 # ADMIN_PASSWORD      -> password to access /admin dashboard
 # CSRF_SECRET         -> pepper for the account/company forms' CSRF tokens
-#                        (lib/accounts/csrf.js) — falls back to an insecure
-#                        dev default if unset, so set this before production traffic.
+#                        (lib/accounts/csrf.js). Production fails closed when
+#                        this secret is missing; use JOBFORION_DEV=1 only for
+#                        explicitly labelled local development.
 # BREVO_API_KEY       -> Brevo transactional email API key (lib/accounts/email.js)
 # EMAIL_FROM_ADDRESS  -> sender address, must be verified in Brevo
 # EMAIL_FROM_NAME     -> sender display name
@@ -48,6 +49,8 @@ remote = true
 #                        enabled by default; checkout remains unavailable).
 # PAYMENT_WEBHOOK_SECRET -> optional secret for the signed webhook boundary;
 #                        set via `wrangler secret put`, never commit it.
+# ANALYTICS_HASH_SECRET -> optional secret pepper for pseudonymous analytics
+#                        and rate-limit fingerprints; never commit it.
 #
 # NOTE: API_KEY is no longer used. Every job provider (Greenhouse, Lever,
 # Ashby, SmartRecruiters, Workable, Teamtailor, Recruitee, Workday, iCIMS)

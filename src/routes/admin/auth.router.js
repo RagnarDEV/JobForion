@@ -19,7 +19,7 @@ export async function handleAdminAuthRoute(url, request, env, base) {
       // /api/subscribe and /api/post-job — this was the one write
       // endpoint that had been missed. Checked BEFORE reading the form
       // body so a flood of attempts can't even spend time parsing.
-      const rl = await checkRateLimit(env, `admin-login:${ip}`, { maxRequests: 5, windowMinutes: 15 });
+      const rl = await checkRateLimit(env, `admin-login:${ip}`, { maxRequests: 5, windowMinutes: 15, failClosed: true });
       if (!rl.allowed) {
         await logActivity(env, 'login_rate_limited', ip);
         return new Response(renderAdminLogin(true), { status: 429, headers: { "Content-Type": "text/html; charset=utf-8" } });

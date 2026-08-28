@@ -728,7 +728,6 @@ async function loadJobs(pushHistory){
     const res=await fetch('/api/jobs?'+p);
     const data=await res.json();
     jobs=data.jobs||[];total=data.total||0;
-    if(window.jobforionAnalytics && srch) window.jobforionAnalytics.track('search',{metadata:{query:String(srch).slice(0,120),results_count:Number(total)||0}});
     updateUrlBar(!!pushHistory);
     document.getElementById('resultsCount').innerHTML=\`<strong>\${total.toLocaleString()}</strong> jobs found\${cat?' in <strong>'+(CAT_META[cat]?CAT_META[cat].label:cat)+'</strong>':''}\${adv.country?' in <strong>'+esc(adv.country)+'</strong>':''}\${adv.skill?' with <strong>'+esc(adv.skill)+'</strong>':''}\${adv.company?' at <strong>'+esc(adv.company)+'</strong>':''}\${srch?' for "<strong>'+srch+'</strong>"':''}\`;
     if(!jobs.length){

@@ -30,8 +30,14 @@ import { renderPricingPage } from '../pages/pricing.js';
 async function renderJobGonePage(env, base, requestedId) {
   let isGone = false;
   try {
-    const { results } = await env.DB.prepare('SELECT MAX(id) AS maxId FROM jobs').all();
-    isGone = (results?.[0]?.maxId || 0) >= parseInt(requestedId, 10);
+    const [{ results: tombstones }, { results: maxRows }] = await Promise.all([
+      env.DB.prepare('SELECT 1 FROM job_tombstones WHERE job_id = ? LIMIT 1').bind(requestedId).all(),
+      env.DB.prepare('SELECT MAX(id) AS maxId FROM jobs').all(),
+    ]);
+    // The tombstone is authoritative for deletions after Phase 15. The MAX
+    // fallback keeps older databases and jobs removed before the migration
+    // on the established 410 behavior.
+    isGone = Boolean(tombstones?.length) || (maxRows?.[0]?.maxId || 0) >= parseInt(requestedId, 10);
   } catch (e) {}
 
   const status = isGone ? 410 : 404;

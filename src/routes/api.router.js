@@ -9,7 +9,7 @@ import { PUBLIC_JOB_STATUS_SQL, JOB_LISTING_COLUMNS, JOB_SORT_OPTIONS } from '..
 import { resolveRawNames } from '../lib/directory-overrides.js';
 import { getSettings } from '../lib/settings.js';
 import { logActivity } from '../lib/activity-log.js';
-import { verifyAdminCookie } from '../auth/admin-auth.js';
+import { verifyAdminCookie, verifyAdminCsrf } from '../auth/admin-auth.js';
 import { getSessionUser } from '../lib/accounts/session.js';
 import { saveJob, unsaveJob, listSavedJobIds } from '../lib/saved-jobs.js';
 import { recordApplication } from '../lib/applications.js';
@@ -18,21 +18,66 @@ import { attachCompanyLogos } from '../lib/company-logos.js';
 import { hydrateHotPay } from '../lib/hot-pay.js';
 import { safeExternalUrl } from '../lib/entities.js';
 import { verifyCsrf } from '../lib/accounts/csrf.js';
+import { reportOperationalError } from '../lib/observability.js';
 import {
   listProducts, createPendingOrder, listUserOrders, listUserEntitlements,
   getMonetizationOverview, getRevenueAnalytics, verifyPaymentWebhook,
   processPaymentWebhook,   createAffiliateClick,
 } from '../lib/monetization.js';
-import { enqueueAnalyticsEvents, getAnalyticsOverview, getAnalyticsReport, getAnalyticsFunnel, getAnalyticsSearches, getAnalyticsFilters, getAnalyticsRealtime, getAnalyticsAlerts, getAnalyticsHealth, getAnalyticsTrends, getAnalyticsTopJobs, getAnalyticsTopCompanies, rowsToCsv } from '../lib/analytics.js';
+import { enqueueAnalyticsEvents, recordTrustedAnalyticsEvent, getAnalyticsOverview, getAnalyticsReport, getAnalyticsFunnel, getAnalyticsSearches, getAnalyticsFilters, getAnalyticsRealtime, getAnalyticsAlerts, getAnalyticsHealth, getAnalyticsTrends, getAnalyticsTopJobs, getAnalyticsTopCompanies, rowsToCsv } from '../lib/analytics.js';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const MAX_WEBHOOK_BYTES = 128 * 1024;
 
-export async function handleApiRoute(url, request, env) {
+async function readBoundedText(request, maxBytes = MAX_WEBHOOK_BYTES) {
+  const declared = Number(request.headers.get('Content-Length'));
+  if (Number.isFinite(declared) && declared > maxBytes) return null;
+  if (!request.body) return '';
+  const reader = request.body.getReader();
+  const decoder = new TextDecoder();
+  let total = 0;
+  let output = '';
+  try {
+    while (true) {
+      const chunk = await reader.read();
+      if (chunk.done) break;
+      total += chunk.value?.byteLength || 0;
+      if (total > maxBytes) {
+        await reader.cancel();
+        return null;
+      }
+      output += decoder.decode(chunk.value, { stream: true });
+    }
+    return output + decoder.decode();
+  } catch (e) {
+    try { await reader.cancel(); } catch (ignored) {}
+    return null;
+  }
+}
+
+async function readBoundedJson(request, maxBytes = 64 * 1024) {
+  const raw = await readBoundedText(request, maxBytes);
+  if (raw === null) throw new Error('payload_too_large');
+  try { return JSON.parse(raw || '{}'); } catch (e) { throw new Error('invalid_json'); }
+}
+
+function publicJobsCacheKey(url) {
+  return new Request(url.toString(), { method: 'GET' });
+}
+
+async function getPublicJobsCache(url, request) {
+  if (request.method !== 'GET' || request.headers.get('Cookie') || typeof caches === 'undefined' || !caches?.default) return null;
+  try { return await caches.default.match(publicJobsCacheKey(url)); } catch (e) { return null; }
+}
+
+export async function handleApiRoute(url, request, env, ctx) {
   const jsonResponse = (payload, status = 200, extra = {}) => new Response(JSON.stringify(payload), { status, headers: { 'Content-Type': 'application/json', ...extra } });
 
   // ── Protected Admin Analytics API ───────────────────────────────
   if (url.pathname.startsWith('/api/admin/analytics')) {
     if (!await verifyAdminCookie(env, request.headers.get('Cookie'))) return jsonResponse({ success: false, error: 'Unauthorized.' }, 401);
+    const adminAnalyticsRl = await checkRateLimit(env, `admin-analytics:${request.headers.get('CF-Connecting-IP') || 'unknown'}`, { maxRequests: 120, windowMinutes: 1, failClosed: true });
+    if (!adminAnalyticsRl.allowed) return jsonResponse({ success: false, error: 'Too many analytics requests.' }, 429, { 'Retry-After': String((adminAnalyticsRl.retryAfterMinutes || 1) * 60) });
     const input = { preset: url.searchParams.get('preset') || '30d', from: url.searchParams.get('from') || '', to: url.searchParams.get('to') || '', timeZone: (await getSettings(env)).analytics_timezone };
     if (url.pathname === '/api/admin/analytics/overview') return jsonResponse(await getAnalyticsOverview(env, input));
     if (url.pathname === '/api/admin/analytics/traffic') return jsonResponse({ ...(await getAnalyticsReport(env, 'traffic', input)), trends: await getAnalyticsTrends(env, input) });
@@ -47,7 +92,7 @@ export async function handleApiRoute(url, request, env) {
     if (url.pathname === '/api/admin/analytics/alerts') return jsonResponse({ alerts: await getAnalyticsAlerts(env), health: await getAnalyticsHealth(env) });
     if (url.pathname === '/api/admin/analytics/revenue') return jsonResponse(await getRevenueAnalytics(env, url.searchParams.get('days') || 30));
     if (url.pathname === '/api/admin/analytics/payments') { try { const { results } = await env.DB.prepare(`SELECT status,COUNT(*) count,SUM(gross_amount_minor) amount FROM monetization_transactions GROUP BY status`).all(); return jsonResponse({ rows: results || [] }); } catch (e) { return jsonResponse({ rows: [] }); } }
-    if (url.pathname === '/api/admin/analytics/affiliate') { try { const { results } = await env.DB.prepare(`SELECT program_id,COUNT(*) clicks,COUNT(DISTINCT session_hash) unique_clicks FROM affiliate_clicks GROUP BY program_id ORDER BY clicks DESC`).all(); return jsonResponse({ rows: results || [] }); } catch (e) { return jsonResponse({ rows: [] }); } }
+    if (url.pathname === '/api/admin/analytics/affiliate') { try { const { results } = await env.DB.prepare(`SELECT program_id,COUNT(*) clicks,COUNT(DISTINCT ip_hash) unique_clicks FROM affiliate_clicks GROUP BY program_id ORDER BY clicks DESC`).all(); return jsonResponse({ rows: results || [] }); } catch (e) { return jsonResponse({ rows: [] }); } }
     if (url.pathname === '/api/admin/analytics/export') {
       const type = url.searchParams.get('type') || 'traffic';
       let data;
@@ -64,7 +109,7 @@ export async function handleApiRoute(url, request, env) {
     try {
       const rl = await checkRateLimit(env, `analytics:${request.headers.get('CF-Connecting-IP') || 'unknown'}`, { maxRequests: 120, windowMinutes: 10 });
       if (!rl.allowed) return jsonResponse({ accepted: 0, error: 'Too many analytics events.' }, 429);
-      const body = await request.json();
+      const body = await readBoundedJson(request, 64 * 1024);
       const settings = await getSettings(env);
       const session = request.headers.get('Cookie') ? await getSessionUser(env, request) : null;
       const events = Array.isArray(body?.events) ? body.events : [body];
@@ -83,10 +128,10 @@ export async function handleApiRoute(url, request, env) {
     const session = await getSessionUser(env, request);
     if (!session) return jsonResponse({ success: false, error: 'Not signed in.' }, 401);
     try {
-      const body = await request.json();
+      const body = await readBoundedJson(request, 64 * 1024);
       const csrfToken = request.headers.get('X-CSRF-Token') || body._csrf || '';
       if (!await verifyCsrf(env, session.sessionId, String(csrfToken))) return jsonResponse({ success: false, error: 'Invalid CSRF token.' }, 403);
-      const rl = await checkRateLimit(env, `monetization-order:${session.user.id}`, { maxRequests: 10, windowMinutes: 10 });
+      const rl = await checkRateLimit(env, `monetization-order:${session.user.id}`, { maxRequests: 10, windowMinutes: 10, failClosed: true });
       if (!rl.allowed) return jsonResponse({ success: false, error: 'Too many checkout attempts.' }, 429);
       const result = await createPendingOrder(env, session.user, body);
       return jsonResponse(result, result.ok ? 202 : (result.status || 400));
@@ -122,12 +167,15 @@ export async function handleApiRoute(url, request, env) {
     try {
       const rl = await checkRateLimit(env, `affiliate-click:${request.headers.get('CF-Connecting-IP') || 'unknown'}`, { maxRequests: 60, windowMinutes: 10 });
       if (!rl.allowed) return jsonResponse({ success: false, error: 'Too many requests.' }, 429);
-      const result = await createAffiliateClick(env, await request.json(), request);
+      const result = await createAffiliateClick(env, await readBoundedJson(request, 16 * 1024), request);
       return jsonResponse(result, result.ok ? 200 : 400);
     } catch (e) { return jsonResponse({ success: false, error: 'Invalid affiliate click.' }, 400); }
   }
   if (url.pathname === '/api/monetization/webhook' && request.method === 'POST') {
-    const rawBody = await request.text();
+    const rl = await checkRateLimit(env, `payment-webhook:${request.headers.get('CF-Connecting-IP') || 'unknown'}`, { maxRequests: 120, windowMinutes: 5, failClosed: true });
+    if (!rl.allowed) return jsonResponse({ success: false, error: 'Too many webhook attempts.' }, 429);
+    const rawBody = await readBoundedText(request);
+    if (rawBody === null) return jsonResponse({ success: false, error: 'Webhook payload is too large.' }, 413);
     const verified = await verifyPaymentWebhook(env, rawBody, request.headers);
     if (!verified.ok) return jsonResponse({ success: false, error: verified.error }, verified.status);
     try {
@@ -156,15 +204,17 @@ export async function handleApiRoute(url, request, env) {
     const session = await getSessionUser(env, request);
     if (!session) return new Response(JSON.stringify({ success: false, error: 'Not signed in' }), { status: 401, headers: { "Content-Type": "application/json" } });
     try {
-      const rl = await checkRateLimit(env, `saved-jobs:${session.user.id}`, { maxRequests: 60, windowMinutes: 1 });
+      const rl = await checkRateLimit(env, `saved-jobs:${session.user.id}`, { maxRequests: 60, windowMinutes: 1, failClosed: true });
       if (!rl.allowed) return new Response(JSON.stringify({ success: false, error: 'Too many requests' }), { status: 429, headers: { "Content-Type": "application/json", "Retry-After": String((rl.retryAfterMinutes || 1) * 60) } });
-      const { job_id, action } = await request.json();
+      const { job_id, action } = await readBoundedJson(request, 16 * 1024);
       const jobId = parseInt(job_id, 10);
       if (!Number.isInteger(jobId) || jobId <= 0 || jobId > 2147483647) return new Response(JSON.stringify({ success: false, error: 'job_id required' }), { status: 400, headers: { "Content-Type": "application/json" } });
       if (action !== 'unsave') {
         const { results } = await env.DB.prepare(`SELECT id FROM jobs WHERE id = ? AND status = 'active' LIMIT 1`).bind(jobId).all();
         if (!results?.length) return new Response(JSON.stringify({ success: false, error: 'Job is no longer available' }), { status: 404, headers: { "Content-Type": "application/json" } });
         await saveJob(env, session.user.id, jobId);
+        const tracking = recordTrustedAnalyticsEvent(env, { event_type: 'job_favorite', job_id: jobId }, { user_id: session.user.id, country: request.cf?.country || 'XX', userAgent: request.headers.get('User-Agent') || '' }).catch(() => {});
+        if (ctx?.waitUntil) ctx.waitUntil(tracking); else void tracking;
       } else await unsaveJob(env, session.user.id, jobId);
       return new Response(JSON.stringify({ success: true, saved: action !== 'unsave' }), { headers: { "Content-Type": "application/json" } });
     } catch (e) { return new Response(JSON.stringify({ success: false, error: 'Invalid request' }), { status: 400, headers: { "Content-Type": "application/json" } }); }
@@ -174,9 +224,9 @@ export async function handleApiRoute(url, request, env) {
     const session = await getSessionUser(env, request);
     if (!session) return new Response(JSON.stringify({ success: false, error: 'Not signed in' }), { status: 401, headers: { "Content-Type": "application/json" } });
     try {
-      const rl = await checkRateLimit(env, `applications:${session.user.id}`, { maxRequests: 30, windowMinutes: 1 });
+      const rl = await checkRateLimit(env, `applications:${session.user.id}`, { maxRequests: 30, windowMinutes: 1, failClosed: true });
       if (!rl.allowed) return new Response(JSON.stringify({ success: false, error: 'Too many requests' }), { status: 429, headers: { "Content-Type": "application/json", "Retry-After": String((rl.retryAfterMinutes || 1) * 60) } });
-      const { job_id, status, application_type } = await request.json();
+      const { job_id, status, application_type } = await readBoundedJson(request, 16 * 1024);
       const jobId = parseInt(job_id, 10);
       if (!Number.isInteger(jobId) || jobId <= 0 || jobId > 2147483647) return new Response(JSON.stringify({ success: false, error: 'job_id required' }), { status: 400, headers: { "Content-Type": "application/json" } });
       const { results } = await env.DB.prepare(`SELECT id FROM jobs WHERE id = ? LIMIT 1`).bind(jobId).all();
@@ -184,6 +234,8 @@ export async function handleApiRoute(url, request, env) {
       const allowedStatuses = new Set(['saved', 'applied', 'viewed', 'interview', 'rejected', 'hired']);
       const nextStatus = allowedStatuses.has(String(status || 'applied')) ? String(status || 'applied') : 'applied';
       await recordApplication(env, session.user.id, jobId, { status: nextStatus, application_type: application_type === 'internal' ? 'internal' : 'external' });
+      const tracking = recordTrustedAnalyticsEvent(env, { event_type: 'job_apply_click', job_id: jobId, metadata: { application_type: application_type === 'internal' ? 'internal' : 'external' } }, { user_id: session.user.id, country: request.cf?.country || 'XX', userAgent: request.headers.get('User-Agent') || '' }).catch(() => {});
+      if (ctx?.waitUntil) ctx.waitUntil(tracking); else void tracking;
       return new Response(JSON.stringify({ success: true }), { headers: { "Content-Type": "application/json" } });
     } catch (e) { return new Response(JSON.stringify({ success: false, error: 'Invalid request' }), { status: 400, headers: { "Content-Type": "application/json" } }); }
   }
@@ -207,7 +259,7 @@ export async function handleApiRoute(url, request, env) {
       if (!rl.allowed) {
         return new Response(JSON.stringify({ success: false, error: "Too many attempts. Please try again later." }), { status: 429, headers: { "Content-Type": "application/json" } });
       }
-      const { email, keywords } = await request.json();
+      const { email, keywords } = await readBoundedJson(request, 16 * 1024);
       const cleanEmail = String(email || '').trim().toLowerCase().slice(0, 254);
       const cleanKeywords = Array.isArray(keywords) ? keywords.map(value => String(value || '').trim().slice(0, 80)).filter(Boolean).slice(0, 20) : [];
       if (!EMAIL_RE.test(cleanEmail) || !cleanKeywords.length) return new Response(JSON.stringify({ success: false, error: "Required" }), { status: 400, headers: { "Content-Type": "application/json" } });
@@ -219,7 +271,7 @@ export async function handleApiRoute(url, request, env) {
       // details). Log the real reason server-side only (visible in
       // Cloudflare's Observability tab) and return a generic message,
       // same pattern already used by /api/post-job below.
-      console.error('[/api/subscribe]', e && e.stack || e);
+      reportOperationalError('api.subscribe', e);
       return new Response(JSON.stringify({ success: false, error: "Something went wrong. Please try again." }), { status: 500, headers: { "Content-Type": "application/json" } });
     }
   }
@@ -231,7 +283,7 @@ export async function handleApiRoute(url, request, env) {
       if (!rl.allowed) {
         return new Response(JSON.stringify({ success: false, error: "Too many submissions. Please try again later." }), { status: 429, headers: { "Content-Type": "application/json" } });
       }
-      const b = await request.json();
+      const b = await readBoundedJson(request, 32 * 1024);
       const title = (b.title || '').toString().slice(0, 150);
       const company = (b.company || '').toString().slice(0, 100);
       const email = (b.email || '').toString().trim().toLowerCase().slice(0, 254);
@@ -272,6 +324,8 @@ export async function handleApiRoute(url, request, env) {
         headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*", "Retry-After": String((rl.retryAfterMinutes || 1) * 60) },
       });
     }
+    const cachedJobs = await getPublicJobsCache(url, request);
+    if (cachedJobs) return cachedJobs;
     // Page Size (plan §11/§26) — `limit` is a fixed constant, never read
     // from the query string at all, so a crafted `?limit=999999` has
     // nothing to attach to. `page` IS user-controlled and must be
@@ -411,6 +465,17 @@ export async function handleApiRoute(url, request, env) {
     const hotJobs = await hydrateHotPay(env, hydratedJobs, settings);
     const jobsWithVerified = hotJobs.map(j => ({ ...j, is_verified: verifiedCompanySet.has((j.company || '').toLowerCase()) }));
     const totalCount = cr[0]?.total || 0;
+    // Derive search/filter analytics from the same server-side query that
+    // produced `totalCount`. The browser must not be trusted to report its
+    // own result count, especially for zero-result opportunity analysis.
+    if (ctx?.waitUntil && (search || category || remoteType || employType || seniority || salaryMin || salaryMax || salaryTier || days || sourceType || country || skill || company)) {
+      const analyticsEvents = [];
+      if (search) analyticsEvents.push({ event_type: 'search', page: '/api/jobs', metadata: { query: search, results_count: Number(totalCount) || 0 } });
+      const filters = [['category', category], ['remote_type', remoteType], ['employment_type', employType], ['seniority', seniority], ['salary_min', salaryMin], ['salary_max', salaryMax], ['salary_tier', salaryTier], ['days', days], ['source_type', sourceType], ['country', country], ['skill', skill], ['company', company]];
+      for (const [filter, value] of filters) if (value !== '' && value !== null && value !== undefined) analyticsEvents.push({ event_type: 'filter_used', page: '/api/jobs', metadata: { filter, value: String(value).slice(0, 120) } });
+      const tracking = enqueueAnalyticsEvents(env, analyticsEvents, { country: request.cf?.country || 'XX', userAgent: request.headers.get('User-Agent') || '', timeZone: settings.analytics_timezone, settings }).catch(() => {});
+      ctx.waitUntil(tracking);
+    }
     // Additive response fields (plan §25) — `jobs`/`total`/`page`/`sort`
     // are unchanged from before Stage 9, so any existing caller of this
     // endpoint keeps working with zero changes; totalPages/hasNext/
@@ -418,13 +483,17 @@ export async function handleApiRoute(url, request, env) {
     // Math.ceil(total/limit) themselves (pages/home.js already did this
     // client-side and is left as-is rather than forced to switch).
     const totalPages = Math.max(1, Math.ceil(totalCount / limit));
-    return new Response(JSON.stringify({
+    const response = new Response(JSON.stringify({
       jobs: jobsWithVerified, total: totalCount, page, sort: sortKey,
       totalPages, hasNext: page < totalPages, hasPrev: page > 1,
-    }), { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } });
+    }), { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*", "Cache-Control": "public, max-age=15, s-maxage=30" } });
+    if (!request.headers.get('Cookie') && typeof caches !== 'undefined' && caches?.default && ctx?.waitUntil) {
+      ctx.waitUntil(caches.default.put(publicJobsCacheKey(url), response.clone()).catch(() => {}));
+    }
+    return response;
   }
 
-  if (url.pathname === '/api/sync') {
+  if (url.pathname === '/api/sync' && request.method === 'POST') {
     // SECURITY (critical): this endpoint used to be reachable by ANYONE —
     // no admin check, no rate limit — despite triggering a full,
     // subrequest-expensive multi-provider sync run (9 ATS providers) on
@@ -436,13 +505,19 @@ export async function handleApiRoute(url, request, env) {
     // authenticated same-origin admin page and sends the cookie
     // automatically. Unauthenticated requests now get exactly the same
     // 404 as /api/debug below, so as not to even confirm the route exists.
-    const ok = await verifyAdminCookie(env, request.headers.get('Cookie'));
+    const cookie = request.headers.get('Cookie');
+    const ok = await verifyAdminCookie(env, cookie);
     if (!ok) return new Response('Not found', { status: 404 });
+    let submittedCsrf = request.headers.get('X-Admin-CSRF') || '';
+    if (!submittedCsrf) {
+      try { submittedCsrf = String((await request.clone().formData()).get('_admin_csrf') || ''); } catch (e) {}
+    }
+    if (!await verifyAdminCsrf(env, cookie, submittedCsrf)) return new Response('Invalid CSRF token', { status: 403 });
 
     // Defense in depth on top of the auth gate: prevents accidental
     // double-submits or a compromised admin session from hammering every
     // provider's API repeatedly in a short window.
-    const rl = await checkRateLimit(env, 'admin-sync', { maxRequests: 6, windowMinutes: 15 });
+    const rl = await checkRateLimit(env, 'admin-sync', { maxRequests: 6, windowMinutes: 15, failClosed: true });
     if (!rl.allowed) {
       if (request.method === 'POST') {
         return new Response(null, { status: 302, headers: { 'Location': `/admin?flash=${encodeURIComponent('Sync already ran recently — please wait a few minutes.')}` } });
@@ -476,7 +551,7 @@ export async function handleApiRoute(url, request, env) {
       // e.message to the response body, even to an authenticated admin,
       // since it's still logged permanently to admin_activity_log via the
       // Location redirect path today. Log the real reason server-side.
-      console.error('[/api/sync]', e && e.stack || e);
+      reportOperationalError('api.sync', e, { provider: url.searchParams.get('provider') || 'all' });
       if (request.method === 'POST') {
         await logActivity(env, 'sync_run', 'manual trigger', 'failed — see Worker logs');
         return new Response(null, { status: 302, headers: { 'Location': `/admin?flash=${encodeURIComponent('Sync failed — check Worker logs for details.')}` } });

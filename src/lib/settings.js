@@ -445,16 +445,16 @@ function sanitizeSettingValue(key, value) {
   const raw = String(value ?? '').trim();
   const meta = THEME_SETTING_METADATA[key];
   if (!meta) return raw.slice(0, 2000);
-  if (meta.type === 'color') return HEX_PATTERN.test(raw) ? raw.toUpperCase() : THEME_DEFAULTS[key];
+  if (meta.type === 'color') return HEX_PATTERN.test(raw) ? raw.toUpperCase() : (THEME_DEFAULTS[key] ?? SETTINGS_DEFAULTS[key] ?? '');
   if (meta.type === 'integer') {
     const fallback = parseInt(THEME_DEFAULTS[key] ?? SETTINGS_DEFAULTS[key], 10);
     return String(boundedInteger(raw, Number.isFinite(fallback) ? fallback : meta.min, meta.min, meta.max));
   }
-  if (meta.type === 'enum') return meta.values.includes(raw) ? raw : THEME_DEFAULTS[key];
-  if (meta.type === 'font') return FONT_VALUES.has(raw) ? raw : THEME_DEFAULTS[key];
+  if (meta.type === 'enum') return meta.values.includes(raw) ? raw : (THEME_DEFAULTS[key] ?? SETTINGS_DEFAULTS[key] ?? meta.values[0] ?? '');
+  if (meta.type === 'font') return FONT_VALUES.has(raw) ? raw : (THEME_DEFAULTS[key] ?? SETTINGS_DEFAULTS[key] ?? '');
   if (meta.type === 'boolean') return raw === '1' ? '1' : '0';
   if (meta.type === 'text') return raw.slice(0, meta.max || 2000);
-  return THEME_DEFAULTS[key];
+  return THEME_DEFAULTS[key] ?? SETTINGS_DEFAULTS[key] ?? '';
 }
 
 // Bulk upsert. Only keys present in SETTINGS_KEYS are written — anything

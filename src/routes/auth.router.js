@@ -40,7 +40,7 @@ async function pageCtx(env) {
   return { settings, categories };
 }
 
-export async function handleAuthRoute(url, request, env, base) {
+export async function handleAuthRoute(url, request, env, base, ctx) {
   const session = await getSessionUser(env, request);
 
   // ── /register ─────────────────────────────────────────────────
@@ -58,7 +58,7 @@ export async function handleAuthRoute(url, request, env, base) {
       return new Response(await renderRegisterPage({ csrfToken, error: 'Your session expired — please try again.', ...(await pageCtx(env)) }), { status: 400, headers: HTML });
     }
 
-    const rl = await checkRateLimit(env, clientKey(request, 'register'), { maxRequests: 5, windowMinutes: 60 });
+    const rl = await checkRateLimit(env, clientKey(request, 'register'), { maxRequests: 5, windowMinutes: 60, failClosed: true });
     if (!rl.allowed) {
       return new Response(await renderRegisterPage({ csrfToken, error: 'Too many attempts. Please try again later.', ...(await pageCtx(env)) }), { status: 429, headers: HTML });
     }
@@ -105,7 +105,8 @@ export async function handleAuthRoute(url, request, env, base) {
     // only company creation is gated on email_verified (see
     // routes/company.router.js).
     const { cookie } = await createSession(env, userId, request);
-    void recordTrustedAnalyticsEvent(env, { event_type: 'signup' }, { user_id: userId, country: request.cf?.country || 'XX', userAgent: request.headers.get('User-Agent') || '' }).catch(() => {});
+    const tracking = recordTrustedAnalyticsEvent(env, { event_type: 'signup' }, { user_id: userId, country: request.cf?.country || 'XX', userAgent: request.headers.get('User-Agent') || '' }).catch(() => {});
+    if (ctx?.waitUntil) ctx.waitUntil(tracking); else void tracking;
     return new Response(null, { status: 302, headers: { 'Location': `${base}/user/dashboard?welcome=1`, 'Set-Cookie': cookie } });
   }
 
@@ -125,7 +126,7 @@ export async function handleAuthRoute(url, request, env, base) {
       return new Response(await renderLoginPage({ csrfToken, next, error: 'Your session expired — please try again.', ...(await pageCtx(env)) }), { status: 400, headers: HTML });
     }
 
-    const rl = await checkRateLimit(env, clientKey(request, 'login'), { maxRequests: 8, windowMinutes: 15 });
+    const rl = await checkRateLimit(env, clientKey(request, 'login'), { maxRequests: 8, windowMinutes: 15, failClosed: true });
     if (!rl.allowed) {
       await logActivity(env, 'user_login_rate_limited', 'auth');
       return new Response(await renderLoginPage({ csrfToken, next, error: 'Too many attempts. Please try again in a few minutes.', ...(await pageCtx(env)) }), { status: 429, headers: HTML });
@@ -147,7 +148,8 @@ export async function handleAuthRoute(url, request, env, base) {
 
     await logActivity(env, 'user_login_success', `user#${user.id}`, { userId: user.id });
     const { cookie } = await createSession(env, user.id, request);
-    void recordTrustedAnalyticsEvent(env, { event_type: 'login' }, { user_id: user.id, country: request.cf?.country || 'XX', userAgent: request.headers.get('User-Agent') || '' }).catch(() => {});
+    const tracking = recordTrustedAnalyticsEvent(env, { event_type: 'login' }, { user_id: user.id, country: request.cf?.country || 'XX', userAgent: request.headers.get('User-Agent') || '' }).catch(() => {});
+    if (ctx?.waitUntil) ctx.waitUntil(tracking); else void tracking;
     return new Response(null, { status: 302, headers: { 'Location': `${base}${next || '/user/dashboard'}`, 'Set-Cookie': cookie } });
   }
 
@@ -171,7 +173,7 @@ export async function handleAuthRoute(url, request, env, base) {
       return new Response(await renderForgotPasswordPage({ csrfToken, ...(await pageCtx(env)) }), { status: 400, headers: HTML });
     }
 
-    const rl = await checkRateLimit(env, clientKey(request, 'forgot_password'), { maxRequests: 5, windowMinutes: 60 });
+    const rl = await checkRateLimit(env, clientKey(request, 'forgot_password'), { maxRequests: 5, windowMinutes: 60, failClosed: true });
     const email = (form.get('email') || '').toString().trim().toLowerCase();
 
     // ALWAYS show the same "check your email" screen, whether the email
@@ -212,7 +214,7 @@ export async function handleAuthRoute(url, request, env, base) {
       return new Response(await renderResetPasswordPage({ csrfToken, token, error: 'Your session expired — please try again.', ...(await pageCtx(env)) }), { status: 400, headers: HTML });
     }
 
-    const rl = await checkRateLimit(env, clientKey(request, 'reset_password'), { maxRequests: 8, windowMinutes: 60 });
+    const rl = await checkRateLimit(env, clientKey(request, 'reset_password'), { maxRequests: 8, windowMinutes: 60, failClosed: true });
     if (!rl.allowed) {
       return new Response(await renderResetPasswordPage({ csrfToken, token, error: 'Too many attempts. Please try again later.', ...(await pageCtx(env)) }), { status: 429, headers: HTML });
     }

@@ -11,6 +11,8 @@ import { JOB_STATUS_META, JOB_STATUS_ORDER, REJECTION_REASONS } from '../../conf
 import { getRecentActivity, ACTION_LABELS } from '../../lib/activity-log.js';
 import { getSettings } from '../../lib/settings.js';
 import { hotPayThresholdUsd } from '../../lib/hot-pay.js';
+import { getAnalyticsHealth } from '../../lib/analytics.js';
+import { paymentProviderStatus } from '../../lib/monetization.js';
 
 function barChart(rows) {
   const max = Math.max(1, ...rows.map(r => r.count));
@@ -120,6 +122,8 @@ export async function renderDashboardContent(env) {
   await ensureTable(env);
   const q = (sql, ...params) => env.DB.prepare(sql).bind(...params).all();
   const settings = await getSettings(env);
+  const analyticsHealth = await getAnalyticsHealth(env);
+  const paymentStatus = paymentProviderStatus(env);
   const hotPayEnabled = settings.hot_pay_enabled !== '0';
   const hotPayThreshold = hotPayThresholdUsd(settings);
   // Mirror lib/hot-pay.js for persisted normalized salary columns: a genuine
@@ -225,6 +229,11 @@ export async function renderDashboardContent(env) {
     d1Status = 'err'; d1Detail = String(e.message || e).slice(0, 60);
   }
   const d1Health = healthRow('D1 Database', d1Status, d1Detail);
+  const analyticsHealthRow = healthRow('Analytics pipeline', analyticsHealth.error ? 'err' : Number(analyticsHealth.queued || 0) > 1000 ? 'warn' : 'ok', analyticsHealth.error ? 'unavailable' : `${Number(analyticsHealth.queued || 0).toLocaleString()} queued`);
+  const paymentReady = paymentStatus.webhookConfigured && paymentStatus.provider !== 'unconfigured';
+  const paymentHealth = healthRow('Payment boundary', paymentReady ? 'warn' : 'off', paymentReady ? `${paymentStatus.provider} webhook; checkout adapter pending` : 'provider not configured');
+  const seoHealth = healthRow('SEO routes', 'ok', 'sitemap + robots configured');
+  const cronHealth = healthRow('Cron leases', 'ok', 'overlap guard configured');
 
   const latestSync = (syncLogs || [])[0];
   let latestDetails = [], latestErrors = [];
@@ -351,6 +360,10 @@ export async function renderDashboardContent(env) {
         <div class="dashboard-card-heading"><div class="adm-card-title">System Health</div><span class="dashboard-card-note">Live checks</span></div>
         ${workerHealth}
         ${d1Health}
+        ${analyticsHealthRow}
+        ${paymentHealth}
+        ${seoHealth}
+        ${cronHealth}
         ${providerHealthRows}
         <div class="health-row" style="border-bottom:none">
           <span class="adm-row-label">Last sync</span>

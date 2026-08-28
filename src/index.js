@@ -117,6 +117,29 @@ function withSecurityHeaders(response, env = null) {
 // again. Add any other retired hostnames to this set as domains change.
 const RETIRED_HOSTS = new Set(['jobnova.manasa.workers.dev', 'jobnova.sryze.cc', 'jobforion.manasa.workers.dev']);
 
+const CRON_LEASE_MS = 10 * 60 * 1000;
+async function withCronLease(env, name, task) {
+  await ensureTable(env);
+  await ensureAccountTables(env);
+  const key = `_cron_lock_${String(name).replace(/[^a-z0-9_-]/gi, '_').slice(0, 40)}`;
+  const now = Date.now();
+  let acquired = false;
+  try {
+    const result = await env.DB.prepare(`
+      INSERT INTO site_settings (key,value,updated_at) VALUES (?,?,CURRENT_TIMESTAMP)
+      ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=CURRENT_TIMESTAMP
+      WHERE CAST(site_settings.value AS INTEGER) < ?
+    `).bind(key, String(now), String(now - CRON_LEASE_MS)).run();
+    acquired = Number(result?.meta?.changes || 0) === 1;
+    if (!acquired) return { skipped: true };
+    return await task();
+  } finally {
+    if (acquired) {
+      try { await env.DB.prepare('DELETE FROM site_settings WHERE key = ?').bind(key).run(); } catch (e) {}
+    }
+  }
+}
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
@@ -180,7 +203,7 @@ export default {
       !url.pathname.startsWith('/sitemap') && !url.pathname.startsWith('/r2-asset/') &&
       !url.pathname.startsWith(LOGO_PROXY_PREFIX) &&
       !NON_TRACKED_STATIC_PATHS.has(url.pathname);
-    if (trackable && ctx?.waitUntil) ctx.waitUntil(recordVisit(env, request, url));
+    if (trackable && ctx?.waitUntil) ctx.waitUntil(recordVisit(env, request, url, settingsForRequest || {}));
 
     // ── sitemap index + its child sitemaps / feed.rss ──
     // Use the canonical BASE_URL for feeds to ensure Google Search Console consistency
@@ -193,7 +216,7 @@ export default {
 
     // ── Accounts: auth (/login /register /logout /forgot-password
     // /reset-password /verify-email), /user/*, /company/* ──────────
-    const authResponse = await handleAuthRoute(url, request, env, base);
+    const authResponse = await handleAuthRoute(url, request, env, base, ctx);
     if (authResponse) return withSecurityHeaders(authResponse, env);
 
     const userResponse = await handleUserRoute(url, request, env, base);
@@ -211,7 +234,7 @@ export default {
     if (seoResponse) return withSecurityHeaders(seoResponse, env);
 
     // ── JSON API ──
-    const apiResponse = await handleApiRoute(url, request, env);
+    const apiResponse = await handleApiRoute(url, request, env, ctx);
     if (apiResponse) return withSecurityHeaders(apiResponse, env);
 
     return withSecurityHeaders(new Response(await renderNotFoundPage(base, env), { status: 404, headers: { 'Content-Type': 'text/html; charset=utf-8' } }), env);
@@ -237,18 +260,24 @@ export default {
     //                    so this cron firing daily does NOT mean an
     //                    article is generated every single day)
     if (event.cron === '15 * * * *') {
-      ctx.waitUntil(aggregateAnalytics(env));
-      ctx.waitUntil(getSettings(env).then(settings => Promise.all([cleanupAnalytics(env, settings.analytics_retention), evaluateAnalyticsAlerts(env, settings)])).catch(() => {}));
+      // Keep this sequence in one waitUntil chain. Cleanup must never race
+      // aggregation and delete queue rows before they are processed.
+      ctx.waitUntil(withCronLease(env, 'analytics', async () => {
+        await aggregateAnalytics(env);
+        const settings = await getSettings(env);
+        await cleanupAnalytics(env, settings.analytics_retention);
+        await evaluateAnalyticsAlerts(env, settings);
+      }).catch(() => {}));
     } else if (event.cron === '0 3 * * *') {
-      ctx.waitUntil(cleanupStaleJobs(env));
-      ctx.waitUntil(runBlogExpirationCleanup(env));
-      ctx.waitUntil(expireMonetizationCampaigns(env));
+      ctx.waitUntil(withCronLease(env, 'daily-maintenance', async () => {
+        await Promise.all([cleanupStaleJobs(env), runBlogExpirationCleanup(env), expireMonetizationCampaigns(env)]);
+      }).catch(() => {}));
     } else if (event.cron === '0 8 * * *') {
-      ctx.waitUntil(runJobAlertsDispatch(env));
+      ctx.waitUntil(withCronLease(env, 'job-alerts', () => runJobAlertsDispatch(env)).catch(() => {}));
     } else if (event.cron === '0 9 * * *') {
-      ctx.waitUntil(runBlogGeneration(env, { ctx }));
-    } else {
-      ctx.waitUntil(syncJobs(env));
+      ctx.waitUntil(withCronLease(env, 'blog-generation', () => runBlogGeneration(env, { ctx })).catch(() => {}));
+    } else if (event.cron === '0 */6 * * *') {
+      ctx.waitUntil(withCronLease(env, 'job-sync', () => syncJobs(env)).catch(() => {}));
     }
   }
 };

@@ -238,7 +238,8 @@ export async function activateOrderEntitlement(env, orderId, { source = 'payment
       const jobType = kind === 'featured' ? 'Featured' : kind === 'sponsored' ? 'Sponsored' : null;
       await env.DB.prepare(`INSERT INTO monetization_campaigns (kind,job_id,company_id,entitlement_id,status,starts_at,ends_at,budget_minor,currency,priority,placement,metadata,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)`).bind(kind, metadata.job_id, order.company_id || null, entitlement?.id || null, 'active', startsAt, endsAt, order.amount_minor, order.currency, kind === 'sponsored' ? 10 : 0, kind === 'sponsored' ? 'sponsored' : 'featured', JSON.stringify({ previous_job_type: previousJobType || null })).run();
       if (jobType) await env.DB.prepare('UPDATE jobs SET job_type = ? WHERE id = ? AND company_id = ?').bind(jobType, metadata.job_id, order.company_id).run();
-      await recordTrustedAnalyticsEvent(env, { event_type: kind === 'featured' ? 'featured_job_activated' : kind === 'sponsored' ? 'sponsored_job_activated' : null, job_id: metadata.job_id, company_id: order.company_id, metadata: { product_id: order.product_id } }, { settings, user_id: order.user_id });
+      const analyticsEventType = kind === 'featured' ? 'featured_job_activated' : kind === 'sponsored' ? 'sponsored_job_activated' : null;
+      if (analyticsEventType) await recordTrustedAnalyticsEvent(env, { event_type: analyticsEventType, job_id: metadata.job_id, company_id: order.company_id, metadata: { product_id: order.product_id } }, { settings, user_id: order.user_id });
     }
     await env.DB.prepare('INSERT INTO monetization_revenue_events (event_type,order_id,transaction_id,product_id,gross_amount_minor,currency,occurred_at,metadata) VALUES (?,?,?,?,?,?,CURRENT_TIMESTAMP,?)').bind('entitlement_activated', order.id, null, order.product_id, order.amount_minor, order.currency, JSON.stringify({ source, entitlement_id: entitlement?.id || null })).run();
     return { ok: true, entitlement };
@@ -380,8 +381,23 @@ export async function requestRefund(env, adminUserId, input = {}) {
   try {
     const { results } = await env.DB.prepare('SELECT * FROM monetization_orders WHERE id = ? LIMIT 1').bind(orderId).all();
     const order = results?.[0];
-    if (!order || !['paid', 'partially_refunded'].includes(order.status) || amount > Number(order.amount_minor)) return { ok: false, error: 'Refund amount or order state is invalid.' };
-    await env.DB.prepare('INSERT INTO monetization_refunds (order_id,amount_minor,currency,status,reason,admin_user_id,metadata,created_at,updated_at) VALUES (?,?,?,?,?,?,?,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)').bind(orderId, amount, order.currency, 'requested', reason, adminUserId, JSON.stringify({ provider_status: 'not_configured' })).run();
+    if (!order || !['paid', 'partially_refunded'].includes(order.status)) return { ok: false, error: 'Refund amount or order state is invalid.' };
+    // Reserve every non-terminal refund request, not only already-processed
+    // refunds. The conditional UPDATE is the concurrency guard: two admins
+    // cannot both reserve the same remaining balance between a SELECT and an
+    // INSERT. `priorAmount` also repairs compatibility with orders created
+    // before the additive reservation column existed.
+    const { results: priorRows } = await env.DB.prepare("SELECT COALESCE(SUM(amount_minor),0) refunded_minor FROM monetization_refunds WHERE order_id = ? AND status NOT IN ('rejected','cancelled','failed')").bind(orderId).all();
+    const priorAmount = Number(priorRows?.[0]?.refunded_minor || 0);
+    const reserve = await env.DB.prepare("UPDATE monetization_orders SET refund_reserved_minor = MAX(COALESCE(refund_reserved_minor,0), ?) + ? WHERE id = ? AND status IN ('paid','partially_refunded') AND MAX(COALESCE(refund_reserved_minor,0), ?) + ? <= amount_minor").bind(priorAmount, amount, orderId, priorAmount, amount).run();
+    if (Number(reserve?.meta?.changes || 0) !== 1) return { ok: false, error: 'Refund amount exceeds the remaining refundable balance.' };
+    try {
+      await env.DB.prepare('INSERT INTO monetization_refunds (order_id,amount_minor,currency,status,reason,admin_user_id,metadata,created_at,updated_at) VALUES (?,?,?,?,?,?,?,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)').bind(orderId, amount, order.currency, 'requested', reason, adminUserId, JSON.stringify({ provider_status: 'not_configured', reserved_basis_minor: priorAmount })).run();
+    } catch (insertError) {
+      // Release the reservation if the audit row itself could not be written.
+      await env.DB.prepare('UPDATE monetization_orders SET refund_reserved_minor = MAX(0, COALESCE(refund_reserved_minor,0) - ?) WHERE id = ?').bind(amount, orderId).run();
+      throw insertError;
+    }
     return { ok: true, providerConfigured: false };
   } catch (e) { return { ok: false, error: 'Unable to record refund request.' }; }
 }
@@ -410,7 +426,7 @@ export async function getMonetizationOverview(env) {
     const [products, orders, revenue, entitlements, clicks, ads] = await Promise.all([
       env.DB.prepare("SELECT COUNT(*) total, SUM(CASE WHEN status='active' THEN 1 ELSE 0 END) active FROM monetization_products").all(),
       env.DB.prepare("SELECT COUNT(*) total, SUM(CASE WHEN status='paid' THEN 1 ELSE 0 END) paid, SUM(CASE WHEN status IN ('pending','processing') THEN 1 ELSE 0 END) pending, SUM(CASE WHEN status='failed' THEN 1 ELSE 0 END) failed, SUM(CASE WHEN status IN ('refunded','partially_refunded') THEN 1 ELSE 0 END) refunded FROM monetization_orders").all(),
-      env.DB.prepare("SELECT currency, COALESCE(SUM(gross_amount_minor),0) gross_minor, COALESCE(SUM(net_amount_minor),0) net_minor, COUNT(*) events FROM monetization_revenue_events WHERE event_type IN ('payment_succeeded','entitlement_activated','refund_processed') GROUP BY currency").all(),
+      env.DB.prepare("SELECT currency, COALESCE(SUM(gross_amount_minor),0) gross_minor, COALESCE(SUM(net_amount_minor),0) net_minor, COUNT(*) events FROM monetization_transactions WHERE status='succeeded' GROUP BY currency").all(),
       env.DB.prepare("SELECT COUNT(*) active, SUM(CASE WHEN kind='featured' THEN 1 ELSE 0 END) featured, SUM(CASE WHEN kind='sponsored' THEN 1 ELSE 0 END) sponsored, SUM(CASE WHEN kind='premium_company' THEN 1 ELSE 0 END) premium_company FROM monetization_entitlements WHERE status='active' AND (ends_at IS NULL OR ends_at > CURRENT_TIMESTAMP)").all(),
       env.DB.prepare('SELECT COUNT(*) clicks FROM affiliate_clicks').all(),
       env.DB.prepare('SELECT COUNT(*) total, SUM(CASE WHEN enabled=1 THEN 1 ELSE 0 END) enabled FROM ad_slots').all(),
@@ -426,7 +442,7 @@ export async function getMonetizationOverview(env) {
       affiliate_clicks: Number(clicks.results?.[0]?.clicks || 0),
       ads: ads.results?.[0] ? { total: Number(ads.results[0].total || 0), enabled: Number(ads.results[0].enabled || 0) } : fallback.ads,
       revenueAvailable: revenueRows.length > 0,
-      revenueNote: revenueRows.length > 0 ? (currencies.length === 1 ? 'Based on recorded backend revenue events.' : `Multiple currencies reported: ${currencies.join(', ')}. Totals are intentionally not converted.`) : fallback.revenueNote,
+      revenueNote: revenueRows.length > 0 ? (currencies.length === 1 ? 'Based on confirmed backend transactions.' : `Multiple currencies reported: ${currencies.join(', ')}. Totals are intentionally not converted.`) : fallback.revenueNote,
     };
   } catch (e) { return fallback; }
 }
@@ -435,8 +451,8 @@ export async function getRevenueAnalytics(env, days = 30) {
   const safeDays = [1, 7, 30, 90, 365].includes(Number(days)) ? Number(days) : 30;
   try {
     const [daily, byProduct, byProvider] = await Promise.all([
-      env.DB.prepare("SELECT date(occurred_at) day, currency, SUM(gross_amount_minor) gross_minor, SUM(net_amount_minor) net_minor, COUNT(*) events FROM monetization_revenue_events WHERE occurred_at >= datetime('now', '-' || ? || ' days') GROUP BY day,currency ORDER BY day ASC").bind(safeDays).all(),
-      env.DB.prepare("SELECT p.name, p.slug, e.currency, SUM(e.gross_amount_minor) gross_minor, COUNT(*) events FROM monetization_revenue_events e LEFT JOIN monetization_products p ON p.id=e.product_id GROUP BY e.product_id,e.currency ORDER BY gross_minor DESC").all(),
+      env.DB.prepare("SELECT date(t.created_at) day, t.currency, SUM(t.gross_amount_minor) gross_minor, SUM(t.net_amount_minor) net_minor, COUNT(*) events FROM monetization_transactions t WHERE t.status='succeeded' AND t.created_at >= datetime('now', '-' || ? || ' days') GROUP BY day,t.currency ORDER BY day ASC").bind(safeDays).all(),
+      env.DB.prepare("SELECT p.name, p.slug, t.currency, SUM(t.gross_amount_minor) gross_minor, COUNT(*) events FROM monetization_transactions t JOIN monetization_orders o ON o.id=t.order_id LEFT JOIN monetization_products p ON p.id=o.product_id WHERE t.status='succeeded' GROUP BY o.product_id,t.currency ORDER BY gross_minor DESC").all(),
       env.DB.prepare("SELECT COALESCE(t.provider,'unconfigured') provider, t.currency, SUM(t.gross_amount_minor) gross_minor, COUNT(*) events FROM monetization_transactions t WHERE t.status='succeeded' GROUP BY provider,currency ORDER BY gross_minor DESC").all(),
     ]);
     return { days: safeDays, daily: daily.results || [], byProduct: byProduct.results || [], byProvider: byProvider.results || [] };

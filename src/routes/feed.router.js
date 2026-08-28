@@ -10,6 +10,7 @@ import { getPosts } from '../lib/blog-cms.js';
 import { getCategoryOrder } from '../lib/categories.js';
 import { getSettings, SETTINGS_DEFAULTS } from '../lib/settings.js';
 import { PUBLIC_JOB_STATUS_SQL, JOB_LISTING_COLUMNS } from '../config/constants.js';
+import { reportOperationalError } from '../lib/observability.js';
 
 // PERFORMANCE + RELIABILITY: cache every sitemap variant at Cloudflare's
 // edge for 1 hour. Without this, EVERY request (including repeated crawler
@@ -36,7 +37,7 @@ async function cachedXmlResponse(url, ctx, rootTag, generate) {
   try {
     xml = await generate();
   } catch (e) {
-    console.error(`[${url.pathname}] build failed:`, e && e.stack || e);
+    reportOperationalError('feed.build', e, { path: url.pathname });
     xml = `<?xml version="1.0" encoding="UTF-8"?><${rootTag} xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"></${rootTag}>`;
   }
   // Defensive: some SEO validators reject the XML declaration unless it is
@@ -73,7 +74,7 @@ async function cachedRssResponse(url, ctx, generate) {
   try {
     rss = await generate();
   } catch (e) {
-    console.error(`[${url.pathname}] build failed:`, e && e.stack || e);
+    reportOperationalError('feed.build', e, { path: url.pathname });
     rss = '<?xml version="1.0" encoding="UTF-8"?><rss version="2.0"><channel><title>JobForion</title></channel></rss>';
   }
   const response = new Response(rss.replace(/^\uFEFF/, '').trim(), { headers: {

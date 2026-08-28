@@ -99,23 +99,29 @@ export async function cleanupStaleJobs(env) {
 
     // ── PHASE 3: archived → permanently deleted ───────────────────
     const { results: toDelete } = await env.DB.prepare(
-      `SELECT id FROM jobs WHERE status = 'archived' AND updated_at < datetime('now','-' || ? || ' day')`
+      `SELECT id,job_handle,url FROM jobs WHERE status = 'archived' AND updated_at < datetime('now','-' || ? || ' day')`
     ).bind(DELETE_AFTER_DAYS).all();
-    const deleteIds = (toDelete || []).map(r => r.id);
-    for (let i = 0; i < deleteIds.length; i += BATCH_SIZE) {
-      const chunk = deleteIds.slice(i, i + BATCH_SIZE);
-      const placeholders = chunk.map(() => '?').join(',');
+    const deleteRows = toDelete || [];
+    for (let i = 0; i < deleteRows.length; i += BATCH_SIZE) {
+      const chunk = deleteRows.slice(i, i + BATCH_SIZE);
+      const ids = chunk.map(row => row.id);
+      const placeholders = ids.map(() => '?').join(',');
+      // Preserve only the URL identity before hard deletion so the public
+      // route can return a truthful 410 instead of guessing from MAX(id).
+      const tombstones = chunk.map(row => env.DB.prepare('INSERT OR IGNORE INTO job_tombstones (job_id,job_handle,url,deleted_at) VALUES (?,?,?,CURRENT_TIMESTAMP)').bind(row.id, row.job_handle || null, row.url || null));
+      if (typeof env.DB.batch === 'function') await env.DB.batch(tombstones);
+      else for (const statement of tombstones) await statement.run();
       // Remove dependent rows first. D1/SQLite does not automatically
       // cascade these legacy references, so deleting jobs alone would leave
       // broken Saved Jobs, Applications, and job-intelligence records.
       const dependents = [
-        env.DB.prepare(`DELETE FROM saved_jobs WHERE job_id IN (${placeholders})`).bind(...chunk),
-        env.DB.prepare(`DELETE FROM applications WHERE job_id IN (${placeholders})`).bind(...chunk),
-        env.DB.prepare(`DELETE FROM job_intelligence WHERE job_id IN (${placeholders})`).bind(...chunk),
+        env.DB.prepare(`DELETE FROM saved_jobs WHERE job_id IN (${placeholders})`).bind(...ids),
+        env.DB.prepare(`DELETE FROM applications WHERE job_id IN (${placeholders})`).bind(...ids),
+        env.DB.prepare(`DELETE FROM job_intelligence WHERE job_id IN (${placeholders})`).bind(...ids),
       ];
       if (typeof env.DB.batch === 'function') await env.DB.batch(dependents);
       else for (const statement of dependents) await statement.run();
-      const r = await env.DB.prepare(`DELETE FROM jobs WHERE id IN (${placeholders})`).bind(...chunk).run();
+      const r = await env.DB.prepare(`DELETE FROM jobs WHERE id IN (${placeholders})`).bind(...ids).run();
       totalDeleted += r.meta?.changes || 0;
     }
     breakdown.deleted = totalDeleted;
@@ -160,6 +166,7 @@ export async function cleanupStaleJobs(env) {
   // per distinct IP forever and never shrinks.
   try {
     await env.DB.prepare("DELETE FROM rate_limits WHERE window_start < datetime('now','-48 hours')").run();
+    await env.DB.prepare("DELETE FROM job_tombstones WHERE deleted_at < datetime('now','-730 days')").run();
   } catch (e) {}
 
   return { deleted: totalDeleted, breakdown };

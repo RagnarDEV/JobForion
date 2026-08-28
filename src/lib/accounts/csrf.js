@@ -19,25 +19,33 @@
 
 import { sha256Hex } from './tokens.js';
 
-// Falls back to a fixed development pepper ONLY if the secret isn't
-// configured — CSRF tokens still work end-to-end locally, but a real
-// deployment should set CSRF_SECRET via `wrangler secret put` for a
-// value that isn't checked into source control. Losing/rotating this
-// secret simply invalidates in-flight tokens (users re-submit), it does
-// not affect passwords or sessions themselves.
-function pepper(env) {
-  return env.CSRF_SECRET || 'jobforion-dev-csrf-pepper-change-in-production';
+// Production must fail closed when CSRF_SECRET is missing. An implicit,
+// source-controlled pepper makes every deployment share the same CSRF key
+// and turns a configuration mistake into a real security weakness. A fixed
+// fallback remains available only when the runtime explicitly identifies
+// itself as development, which keeps local work convenient without making
+// an unlabelled Worker environment silently insecure.
+const DEV_PEPPER = 'jobforion-dev-csrf-pepper-change-in-production';
+function isExplicitDevelopment(env = {}) {
+  return String(env.ENVIRONMENT || env.NODE_ENV || env.CF_ENV || '').toLowerCase() === 'development'
+    || String(env.JOBFORION_DEV || '') === '1';
+}
+function pepper(env = {}) {
+  const configured = String(env.CSRF_SECRET || '').trim();
+  return configured || (isExplicitDevelopment(env) ? DEV_PEPPER : null);
 }
 
 export async function getCsrfToken(env, sessionId) {
+  const secret = pepper(env);
+  if (!secret) return '';
   const basis = sessionId || 'anonymous';
-  return sha256Hex(`${basis}:${pepper(env)}`);
+  return sha256Hex(`${basis}:${secret}`);
 }
 
 export async function verifyCsrf(env, sessionId, submittedToken) {
   if (!submittedToken) return false;
   const expected = await getCsrfToken(env, sessionId);
-  if (expected.length !== submittedToken.length) return false;
+  if (!expected || expected.length !== submittedToken.length) return false;
   let diff = 0;
   for (let i = 0; i < expected.length; i++) diff |= expected.charCodeAt(i) ^ submittedToken.charCodeAt(i);
   return diff === 0;

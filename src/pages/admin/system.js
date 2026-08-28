@@ -9,6 +9,8 @@ import { ensureTable } from '../../db/schema.js';
 import { JOB_STATUS_ORDER, JOB_STATUS_META } from '../../config/constants.js';
 import { getSettings } from '../../lib/settings.js';
 import { isAiConfigured } from '../../lib/ai-service.js';
+import { getAnalyticsHealth } from '../../lib/analytics.js';
+import { paymentProviderStatus } from '../../lib/monetization.js';
 
 // Tables considered safe/useful to show a row count for. Deliberately an
 // explicit allow-list (not "every table in sqlite_master") so a future
@@ -23,6 +25,10 @@ const COUNTED_TABLES = [
   // Stages 1/3/5 — this is purely making them visible here, not a new
   // table or query pattern).
   'companies', 'users', 'saved_jobs', 'applications', 'company_members',
+  'analytics_event_queue', 'analytics_daily', 'analytics_daily_uniques',
+  'analytics_search_daily', 'analytics_filter_daily', 'analytics_alerts',
+  'job_tombstones', 'monetization_orders', 'monetization_transactions',
+  'monetization_refunds',
 ];
 
 export async function renderSystemContent(env) {
@@ -60,6 +66,13 @@ export async function renderSystemContent(env) {
   const settings = await getSettings(env);
   const aiEnabled = settings.ai_enabled !== '0';
   const aiConfigured = isAiConfigured(env);
+  const [analyticsHealth] = await Promise.all([getAnalyticsHealth(env)]);
+  const paymentStatus = paymentProviderStatus(env);
+  const analyticsState = analyticsHealth.error ? 'critical' : Number(analyticsHealth.queued || 0) > 1000 ? 'warning' : 'healthy';
+  const analyticsLabel = analyticsHealth.error ? 'Unavailable' : `${Number(analyticsHealth.queued || 0).toLocaleString()} queued`;
+  const paymentLabel = paymentStatus.webhookConfigured && paymentStatus.provider !== 'unconfigured' ? `${paymentStatus.provider} webhook ready; checkout adapter pending` : 'Provider not configured';
+  const explicitDevelopment = ['development', 'dev'].includes(String(env.ENVIRONMENT || env.NODE_ENV || env.CF_ENV || '').toLowerCase()) || String(env.JOBFORION_DEV || '') === '1';
+  const csrfReady = Boolean(String(env.CSRF_SECRET || '').trim()) || explicitDevelopment;
 
   // ── Data Integrity report (plan §29) — read-only diagnostics only.
   // Nothing here is auto-fixed or deleted; an admin decides what (if
@@ -116,7 +129,12 @@ export async function renderSystemContent(env) {
         <div class="health-row"><span class="adm-row-label"><span class="health-dot ${emailConfigured ? 'health-ok' : 'health-warn'}"></span>Transactional email</span><span class="adm-row-val">${emailConfigured ? 'Brevo ready' : 'Not configured'}</span></div>
         <div class="health-row"><span class="adm-row-label"><span class="health-dot ${storageConfigured ? 'health-ok' : 'health-warn'}"></span>Company asset storage</span><span class="adm-row-val">${storageConfigured ? 'R2 connected' : 'URL fallback'}</span></div>
         <div class="health-row"><span class="adm-row-label"><span class="health-dot ${aiEnabled && aiConfigured ? 'health-ok' : 'health-warn'}"></span>AI foundation</span><span class="adm-row-val">${!aiEnabled ? 'Disabled' : aiConfigured ? 'Binding ready' : 'Not configured'}</span></div>
-        <div style="font-size:10.5px;color:var(--ink3);margin-top:8px">Credentials and provider keys are intentionally never displayed here.</div>
+        <div class="health-row"><span class="adm-row-label"><span class="health-dot ${analyticsState === 'healthy' ? 'health-ok' : analyticsState === 'warning' ? 'health-warn' : 'health-err'}"></span>Analytics</span><span class="adm-row-val">${analyticsLabel}</span></div>
+        <div class="health-row"><span class="adm-row-label"><span class="health-dot health-warn"></span>Payments</span><span class="adm-row-val">${paymentLabel}</span></div>
+        <div class="health-row"><span class="adm-row-label"><span class="health-dot health-ok"></span>SEO routes</span><span class="adm-row-val">Sitemap and robots configured</span></div>
+        <div class="health-row"><span class="adm-row-label"><span class="health-dot health-ok"></span>Cron schedule</span><span class="adm-row-val">Configured with overlap leases</span></div>
+        <div class="health-row"><span class="adm-row-label"><span class="health-dot ${csrfReady ? 'health-ok' : 'health-err'}"></span>CSRF secret</span><span class="adm-row-val">${csrfReady ? (env.CSRF_SECRET ? 'Configured' : 'Development fallback') : 'Missing — fail closed'}</span></div>
+        <div style="font-size:10.5px;color:var(--ink3);margin-top:8px">Credentials and provider keys are intentionally never displayed here. Payment status reflects the configured boundary, not simulated checkout success.</div>
       </div>
       <div class="adm-card" style="grid-column:span 2">
         <div class="adm-card-title">Database — Row Counts</div>

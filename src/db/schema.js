@@ -596,9 +596,11 @@ export async function ensureTable(env) {
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       paid_at DATETIME,
       expired_at DATETIME,
+      refund_reserved_minor INTEGER NOT NULL DEFAULT 0,
       UNIQUE(user_id, idempotency_key)
     )
   `).run();
+  await ensureColumn(env, 'monetization_orders', 'refund_reserved_minor', 'INTEGER NOT NULL DEFAULT 0');
   await env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_monetization_orders_status_created ON monetization_orders(status, created_at DESC)').run();
   await env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_monetization_orders_company ON monetization_orders(company_id, id DESC)').run();
   await env.DB.prepare(`
@@ -1147,6 +1149,26 @@ export async function ensureAccountTables(env) {
   // filter status at all, so a plain single-column index is the correct,
   // simpler choice here — not every index needs to be composite.
   await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_jobs_company ON jobs(company)`).run();
+  // Public listings combine the active-status predicate with recency, source
+  // and salary-tier filters. These three bounded composites improve the
+  // common paths without adding an index for every free-text search column.
+  await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_jobs_status_created ON jobs(status, created_at DESC, id DESC)`).run();
+  await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_jobs_status_source_type ON jobs(status, source_type, created_at DESC)`).run();
+  await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_jobs_status_salary_tier ON jobs(status, salary_tier, created_at DESC)`).run();
+
+  // Retain only the minimum tombstone needed to return an accurate 410 for a
+  // URL that really existed and was later hard-deleted. This is additive and
+  // contains no description, applicant, employer, or payment data.
+  await env.DB.prepare(`
+    CREATE TABLE IF NOT EXISTS job_tombstones (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      job_id INTEGER NOT NULL UNIQUE,
+      job_handle TEXT,
+      url TEXT,
+      deleted_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `).run();
+  await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_job_tombstones_deleted_at ON job_tombstones(deleted_at)`).run();
 
   // ── Analytics & Business Intelligence (Phase 14) ────────────────
   // High-volume client events land in a bounded queue first; aggregation
@@ -1201,6 +1223,22 @@ export async function ensureAccountTables(env) {
   await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_analytics_daily_job ON analytics_daily(job_id, metric_date)`).run();
   await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_analytics_daily_company ON analytics_daily(company_id, metric_date)`).run();
   await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_analytics_daily_source ON analytics_daily(source, metric_date)`).run();
+  // Daily visitor fingerprints are HMACs, never raw browser session IDs. The
+  // unique key prevents the hourly aggregator from adding the same visitor
+  // repeatedly when events for one day arrive in different batches.
+  await env.DB.prepare(`
+    CREATE TABLE IF NOT EXISTS analytics_daily_uniques (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      metric_date TEXT NOT NULL,
+      event_type TEXT NOT NULL,
+      dimension_key TEXT NOT NULL,
+      visitor_hash TEXT NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(metric_date,event_type,dimension_key,visitor_hash)
+    )
+  `).run();
+  await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_analytics_uniques_date ON analytics_daily_uniques(metric_date, event_type)`).run();
+  await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_analytics_uniques_hash ON analytics_daily_uniques(visitor_hash, metric_date)`).run();
   await env.DB.prepare(`
     CREATE TABLE IF NOT EXISTS analytics_search_daily (
       id INTEGER PRIMARY KEY AUTOINCREMENT,

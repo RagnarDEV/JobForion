@@ -7,7 +7,7 @@ export function analyticsTrackerScript(settings = {}) {
 (function(){
   'use strict';
   if (Math.random()*100 > ${sampleRate}) return;
-  var allowed = new Set(${safeJson(['page_view','job_impression','job_view','job_apply_click','job_favorite','job_share','company_view','company_follow','search','search_result_click','filter_used','category_view','country_view','premium_view','checkout_started','payment_started'])});
+  var allowed = new Set(${safeJson(['page_view','job_impression','job_view','job_share','company_view','company_follow','search_result_click','filter_used','category_view','country_view','premium_view','checkout_started','payment_started'])});
   var sessionKey='jf_analytics_session';
   var sessionId='';
   try { sessionId=sessionStorage.getItem(sessionKey)||''; if(!sessionId){sessionId=(crypto.randomUUID?crypto.randomUUID():String(Date.now())+'_'+Math.random());sessionStorage.setItem(sessionKey,sessionId);}   } catch(e) { sessionId='ephemeral_'+String(Date.now())+'_'+Math.random().toString(36).slice(2); }
@@ -25,11 +25,8 @@ export function analyticsTrackerScript(settings = {}) {
     if(/^\\/countries\\//.test(location.pathname)) send('country_view',{metadata:{slug:location.pathname.slice(11,160)}});
     if(location.pathname==='/pricing') send('premium_view');
     var cards=[].slice.call(document.querySelectorAll('[data-job-id],.job-card')); if('IntersectionObserver' in window){var io=new IntersectionObserver(function(entries){entries.forEach(function(entry){if(entry.isIntersecting){var id=entry.target.getAttribute('data-job-id')||((entry.target.querySelector('a[href^="/job/"]')||{}).getAttribute&&entry.target.querySelector('a[href^="/job/"]').getAttribute('href').split('/').pop());if(id&&/^\\d+$/.test(String(id)))send('job_impression',{job_id:Number(id)});io.unobserve(entry.target);}});},{threshold:.25});cards.forEach(function(card){io.observe(card);});}
-    document.querySelectorAll('.apply-big,.apply-mobile-sticky').forEach(function(el){el.addEventListener('click',function(){if(path)send('job_apply_click',{job_id:Number(path[1])});});});
     document.querySelectorAll('a[href^="/job/"]').forEach(function(el){el.addEventListener('click',function(){var m=el.getAttribute('href').match(/^\\/job\\/(\\d+)$/);if(m&&!path)send('search_result_click',{job_id:Number(m[1])});});});
-    document.querySelectorAll('.job-save-outline,.card-save-btn').forEach(function(el){el.addEventListener('click',function(){var id=el.getAttribute('data-job-id')||el.id.replace(/[^0-9]/g,'')||(path?path[1]:'');if(id)send('job_favorite',{job_id:Number(id)});});});
-    document.querySelectorAll('form').forEach(function(form){form.addEventListener('submit',function(){var input=form.querySelector('input[name="q"],input[type="search"],input[name="search"]');if(input&&input.value.trim())send('search',{metadata:{query:input.value.trim().slice(0,120)}});if((form.getAttribute('action')||'').indexOf('/company/post-job')>=0)send('job_post_completed');if((form.getAttribute('action')||'').indexOf('/api/monetization/orders')>=0)send('checkout_started');});});
-    document.addEventListener('change',function(event){var el=event.target;if(el&&el.id&&/^f[A-Z]/.test(el.id)&&el.value)send('filter_used',{metadata:{filter:el.id.slice(1),value:String(el.value).slice(0,80)}});});
+    document.querySelectorAll('form').forEach(function(form){form.addEventListener('submit',function(){if((form.getAttribute('action')||'').indexOf('/api/monetization/orders')>=0)send('checkout_started');});});
   });
 })();
 </script>`;
