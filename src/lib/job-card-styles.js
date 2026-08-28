@@ -72,6 +72,24 @@ function clamp(n, min, max, fallback) {
   return Number.isFinite(v) ? Math.min(max, Math.max(min, v)) : fallback;
 }
 
+function sanitizeCardStyle(jobType, fields = {}) {
+  const d = DEFAULT_CARD_STYLES[jobType] || DEFAULT_CARD_STYLES.Free;
+  return {
+    bg_type: fields.bg_type === 'gradient' ? 'gradient' : 'solid',
+    bg_color1: HEX_PATTERN.test(String(fields.bg_color1 || '')) ? String(fields.bg_color1) : d.bg_color1,
+    bg_color2: HEX_PATTERN.test(String(fields.bg_color2 || '')) ? String(fields.bg_color2) : d.bg_color2,
+    gradient_angle: clamp(fields.gradient_angle, 0, 360, d.gradient_angle),
+    border_style: ['solid', 'dashed', 'none'].includes(fields.border_style) ? fields.border_style : d.border_style,
+    border_color: HEX_PATTERN.test(String(fields.border_color || '')) ? String(fields.border_color) : d.border_color,
+    border_width: clamp(fields.border_width, 0, 6, d.border_width),
+    logo_size: clamp(fields.logo_size, 28, 96, d.logo_size),
+    card_padding: clamp(fields.card_padding, 8, 28, d.card_padding),
+    shadow: ['none', 'soft', 'strong'].includes(fields.shadow) ? fields.shadow : d.shadow,
+    badge_bg_color: HEX_PATTERN.test(String(fields.badge_bg_color || '')) ? String(fields.badge_bg_color) : d.badge_bg_color,
+    badge_text_color: HEX_PATTERN.test(String(fields.badge_text_color || '')) ? String(fields.badge_text_color) : d.badge_text_color,
+  };
+}
+
 async function loadFromDb(env) {
   const styles = {};
   for (const type of CARD_STYLE_JOB_TYPES) styles[type] = { ...DEFAULT_CARD_STYLES[type] };
@@ -79,12 +97,7 @@ async function loadFromDb(env) {
     const { results } = await env.DB.prepare('SELECT * FROM job_card_styles').all();
     for (const row of results || []) {
       if (!styles[row.job_type]) continue;
-      styles[row.job_type] = {
-        bg_type: row.bg_type, bg_color1: row.bg_color1, bg_color2: row.bg_color2, gradient_angle: row.gradient_angle,
-        border_style: row.border_style, border_color: row.border_color, border_width: row.border_width,
-        logo_size: row.logo_size, card_padding: row.card_padding, shadow: row.shadow,
-        badge_bg_color: row.badge_bg_color, badge_text_color: row.badge_text_color,
-      };
+      styles[row.job_type] = sanitizeCardStyle(row.job_type, row);
     }
   } catch (e) {
     // table not created yet on a very first cold request — defaults above are enough
@@ -102,21 +115,7 @@ export async function getCardStyles(env) {
 
 export async function updateCardStyle(env, jobType, fields) {
   if (!CARD_STYLE_JOB_TYPES.includes(jobType)) throw new Error(`Unknown job type: ${jobType}`);
-  const d = DEFAULT_CARD_STYLES[jobType];
-  const clean = {
-    bg_type: fields.bg_type === 'gradient' ? 'gradient' : 'solid',
-    bg_color1: HEX_PATTERN.test(fields.bg_color1 || '') ? fields.bg_color1 : d.bg_color1,
-    bg_color2: HEX_PATTERN.test(fields.bg_color2 || '') ? fields.bg_color2 : d.bg_color2,
-    gradient_angle: clamp(fields.gradient_angle, 0, 360, d.gradient_angle),
-    border_style: ['solid', 'dashed', 'none'].includes(fields.border_style) ? fields.border_style : d.border_style,
-    border_color: HEX_PATTERN.test(fields.border_color || '') ? fields.border_color : d.border_color,
-    border_width: clamp(fields.border_width, 0, 6, d.border_width),
-    logo_size: clamp(fields.logo_size, 28, 96, d.logo_size),
-    card_padding: clamp(fields.card_padding, 8, 28, d.card_padding),
-    shadow: ['none', 'soft', 'strong'].includes(fields.shadow) ? fields.shadow : d.shadow,
-    badge_bg_color: HEX_PATTERN.test(fields.badge_bg_color || '') ? fields.badge_bg_color : d.badge_bg_color,
-    badge_text_color: HEX_PATTERN.test(fields.badge_text_color || '') ? fields.badge_text_color : d.badge_text_color,
-  };
+  const clean = sanitizeCardStyle(jobType, fields);
   await env.DB.prepare(
     `INSERT INTO job_card_styles (job_type, bg_type, bg_color1, bg_color2, gradient_angle, border_style, border_color, border_width, logo_size, card_padding, shadow, badge_bg_color, badge_text_color, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
