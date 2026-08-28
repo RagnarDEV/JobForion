@@ -47,10 +47,10 @@ export const ASSET_VERSION = '20260816';
 // defaults to 'Free' for every job (see db/schema.js).
 // ════════════════════════════════════════════════════════════════
 export const JOB_TYPE_META = {
-  Sponsored: { label: 'Sponsored', icon: '🚀', priority: 0 },
-  Premium: { label: 'Premium', icon: '👑', priority: 1 },
-  Featured: { label: 'Featured', icon: '⭐', priority: 2 },
-  Free: { label: 'Free', icon: '', priority: 3 },
+  Sponsored: { label: 'Sponsored', icon: '', iconKey: 'rocket', priority: 0 },
+  Premium: { label: 'Premium', icon: '', iconKey: 'crown', priority: 1 },
+  Featured: { label: 'Featured', icon: '', iconKey: 'star', priority: 2 },
+  Free: { label: 'Free', icon: '', iconKey: 'none', priority: 3 },
 };
 export const JOB_TYPE_ORDER = ['Sponsored', 'Premium', 'Featured', 'Free'];
 

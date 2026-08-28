@@ -4,26 +4,26 @@
 // this file improves the editing experience without changing public contracts.
 
 import { escapeHtml } from '../../lib/entities.js';
-import { getCardStyles, buildCardStyleAttr, buildBadgeStyleAttr, CARD_STYLE_JOB_TYPES, DEFAULT_CARD_STYLES } from '../../lib/job-card-styles.js';
+import { getCardStyles, buildCardStyleAttr, buildBadgeStyleAttr, jobTypeIconHtml, CARD_STYLE_JOB_TYPES, DEFAULT_CARD_STYLES } from '../../lib/job-card-styles.js';
 import { JOB_TYPE_META } from '../../config/constants.js';
 import { iconMapPin } from '../../assets/icons.js';
 
 const STYLE_PRESETS = Object.freeze({
   clean: {
     label: 'Clean white', bg_type: 'solid', bg_color1: '#FFFFFF', bg_color2: '#FFFFFF', gradient_angle: 135,
-    border_style: 'solid', border_color: '#E2E8F0', border_width: 1, logo_size: 54, card_padding: 14, shadow: 'none', badge_bg_color: '#EEF1FF', badge_text_color: '#2563EB',
+    border_style: 'solid', border_color: '#E2E8F0', border_width: 1, logo_size: 54, card_padding: 14, shadow: 'none', badge_bg_color: '#EEF1FF', badge_text_color: '#2563EB', badge_border_color: '#DDE4F0', badge_radius: 20, template: 'classic', accent_color: '#E2E8F0', accent_position: 'none', title_color: '#17132D', company_color: '#6B7280', meta_color: '#7C8192', salary_color: '#2B9D68', icon_key: 'none', hover_effect: 'none',
   },
   indigo: {
     label: 'Indigo highlight', bg_type: 'gradient', bg_color1: '#FFFFFF', bg_color2: '#F0ECFF', gradient_angle: 135,
-    border_style: 'solid', border_color: '#7664E8', border_width: 1, logo_size: 56, card_padding: 15, shadow: 'soft', badge_bg_color: '#E8E2FF', badge_text_color: '#5732C4',
+    border_style: 'solid', border_color: '#7664E8', border_width: 1, logo_size: 56, card_padding: 15, shadow: 'soft', badge_bg_color: '#E8E2FF', badge_text_color: '#5732C4', badge_border_color: '#C8B8FF', badge_radius: 18, template: 'highlight', accent_color: '#7664E8', accent_position: 'left', title_color: '#17132D', company_color: '#514A70', meta_color: '#6E6A82', salary_color: '#2475D1', icon_key: 'star', hover_effect: 'glow',
   },
   gold: {
     label: 'Premium gold', bg_type: 'gradient', bg_color1: '#FFFDF7', bg_color2: '#FBEDC7', gradient_angle: 135,
-    border_style: 'solid', border_color: '#D4A12A', border_width: 2, logo_size: 60, card_padding: 16, shadow: 'strong', badge_bg_color: '#FBEDC7', badge_text_color: '#8A6416',
+    border_style: 'solid', border_color: '#D4A12A', border_width: 2, logo_size: 60, card_padding: 16, shadow: 'strong', badge_bg_color: '#FBEDC7', badge_text_color: '#8A6416', badge_border_color: '#E7C86D', badge_radius: 18, template: 'spotlight', accent_color: '#D4A12A', accent_position: 'top', title_color: '#3E2D0B', company_color: '#735A20', meta_color: '#806F4B', salary_color: '#9A6C0A', icon_key: 'crown', hover_effect: 'glow',
   },
   emerald: {
     label: 'Emerald boost', bg_type: 'gradient', bg_color1: '#F4FDF9', bg_color2: '#D9F3E7', gradient_angle: 180,
-    border_style: 'solid', border_color: '#059669', border_width: 2, logo_size: 62, card_padding: 16, shadow: 'strong', badge_bg_color: '#D9F3E7', badge_text_color: '#0B7A50',
+    border_style: 'solid', border_color: '#059669', border_width: 2, logo_size: 62, card_padding: 16, shadow: 'strong', badge_bg_color: '#D9F3E7', badge_text_color: '#0B7A50', badge_border_color: '#A9DFC4', badge_radius: 18, template: 'promoted', accent_color: '#059669', accent_position: 'top', title_color: '#123D2E', company_color: '#28654F', meta_color: '#4E7768', salary_color: '#087A53', icon_key: 'rocket', hover_effect: 'glow',
   },
 });
 
@@ -74,13 +74,13 @@ function previewCardHtml(type, style) {
   return `<div class="jcs-preview-wrap">
     <div class="jcs-preview-head"><span>Live preview</span><span class="jcs-preview-status" data-preview-status>${SHADOW_LABELS[s.shadow] || 'Custom style'}</span></div>
     <div class="jcs-preview-stage">
-      <a class="job-card jt-card-${type.toLowerCase()}" data-preview-card style="--cat-color:#2563EB;${cardAttr};pointer-events:none;text-decoration:none;display:block">
+      <a class="job-card jt-card-${type.toLowerCase()} jct-template-${s.template} jct-accent-${s.accent_position} jct-hover-${s.hover_effect}" data-preview-card style="--cat-color:#2563EB;${cardAttr};pointer-events:none;text-decoration:none;display:block">
         <div class="card-inner" data-preview-inner style="padding:${s.card_padding}px 16px;background:inherit">
           <div class="card-row1">
             <div class="co-logo" data-preview-logo style="width:${s.logo_size}px;height:${s.logo_size}px;display:flex;align-items:center;justify-content:center;font-weight:900;color:var(--brand);background:#fff;border:1px solid var(--border);border-radius:12px;flex-shrink:0">JF</div>
             <div class="card-body">
               <div class="card-badges">
-                ${type !== 'Free' ? `<span class="jt-badge" data-preview-badge style="${badgeAttr}">${meta.icon} ${meta.label}</span>` : ''}
+                ${type !== 'Free' ? `<span class="jt-badge" data-preview-badge style="${badgeAttr}"><span data-preview-badge-icon>${jobTypeIconHtml(type, s, { size: 12, cls: 'jt-badge-icon' })}</span><span>${meta.label}</span></span>` : ''}
                 <span class="cat-dot"><span class="dot"></span>Development</span>
               </div>
               <div class="job-title-card">Senior Backend Engineer</div>
@@ -103,7 +103,7 @@ function tierSection(type, style) {
   return `<section class="jcs-tier" id="jcs-${type.toLowerCase()}" data-tier="${type}">
     <div class="jcs-tier-head">
       <div class="jcs-tier-identity">
-        <span class="jcs-tier-icon jcs-tier-${type.toLowerCase()}">${meta.icon || '○'}</span>
+        <span class="jcs-tier-icon jcs-tier-${type.toLowerCase()}">${jobTypeIconHtml(type, s, { size: 19 }) || '<span class="jcs-free-mark">○</span>'}</span>
         <div><h2>${type}</h2><p>${TYPE_DESCRIPTIONS[type]}</p></div>
       </div>
       <span class="jcs-tier-chip">${type === 'Free' ? 'Default listing' : 'Visual tier only'}</span>
@@ -144,11 +144,36 @@ function tierSection(type, style) {
           </div>
         </div>
 
+        <div class="jcs-control-section">
+          <div class="jcs-section-heading"><span class="jcs-section-number">04</span><div><h3>Template &amp; emphasis</h3><p>Choose the card composition, accent placement and hover behavior.</p></div></div>
+          <div class="jcs-grid jcs-grid-3">
+            ${selectField('Card template', 'template', s.template, [{ value: 'classic', label: 'Classic' }, { value: 'highlight', label: 'Highlight' }, { value: 'spotlight', label: 'Spotlight' }, { value: 'promoted', label: 'Promoted' }])}
+            ${selectField('Accent placement', 'accent_position', s.accent_position, [{ value: 'none', label: 'None' }, { value: 'top', label: 'Top bar' }, { value: 'left', label: 'Side rail' }, { value: 'both', label: 'Top + side' }])}
+            ${selectField('Hover effect', 'hover_effect', s.hover_effect, [{ value: 'none', label: 'None' }, { value: 'lift', label: 'Lift' }, { value: 'glow', label: 'Accent glow' }])}
+          </div>
+          <div class="jcs-grid jcs-grid-2">
+            ${colorField('Accent color', 'accent_color', s.accent_color, 'Used by bars, focus and glow effects.')}
+            ${selectField('Tier icon', 'icon_key', s.icon_key, [{ value: 'none', label: 'No icon' }, { value: 'star', label: 'Featured star' }, { value: 'crown', label: 'Premium crown' }, { value: 'rocket', label: 'Sponsored rocket' }], 'SVG icon rendered consistently across the site.')}
+          </div>
+        </div>
+
+        <div class="jcs-control-section">
+          <div class="jcs-section-heading"><span class="jcs-section-number">05</span><div><h3>Typography &amp; tone</h3><p>Control the information hierarchy and salary emphasis.</p></div></div>
+          <div class="jcs-grid jcs-grid-2">
+            ${colorField('Job title color', 'title_color', s.title_color)}
+            ${colorField('Company color', 'company_color', s.company_color)}
+            ${colorField('Metadata color', 'meta_color', s.meta_color)}
+            ${colorField('Salary color', 'salary_color', s.salary_color, 'Keep strong contrast for quick scanning.')}
+          </div>
+        </div>
+
         <div class="jcs-control-section jcs-badge-section">
-          <div class="jcs-section-heading"><span class="jcs-section-number">04</span><div><h3>Tier badge</h3><p>${type === 'Free' ? 'Free cards do not display a tier badge, but these values remain ready for future use.' : 'Tune the badge so it stays readable against the card surface.'}</p></div></div>
+          <div class="jcs-section-heading"><span class="jcs-section-number">06</span><div><h3>Tier badge</h3><p>${type === 'Free' ? 'Free cards do not display a tier badge, but these values remain ready for future use.' : 'Tune the badge so it stays readable against the card surface.'}</p></div></div>
           <div class="jcs-grid jcs-grid-2">
             ${colorField('Badge background', 'badge_bg_color', s.badge_bg_color)}
             ${colorField('Badge text', 'badge_text_color', s.badge_text_color)}
+            ${colorField('Badge border', 'badge_border_color', s.badge_border_color)}
+            ${numberField('Badge radius', 'badge_radius', s.badge_radius, 4, 30, '4px compact · 20px pill.')}
           </div>
         </div>
 
@@ -194,33 +219,37 @@ export async function renderCardStylesContent(env) {
   <script>
   (function(){
     var presets=${presetsJson};
+    var tierIcons=${JSON.stringify({ star: jobTypeIconHtml('Featured', { icon_key: 'star' }, { size: 12, cls: 'jt-badge-icon' }), crown: jobTypeIconHtml('Premium', { icon_key: 'crown' }, { size: 12, cls: 'jt-badge-icon' }), rocket: jobTypeIconHtml('Sponsored', { icon_key: 'rocket' }, { size: 12, cls: 'jt-badge-icon' }), none: '' })};
     var shadows={none:'none',soft:'0 4px 18px rgba(18,22,43,.10)',strong:'0 8px 26px rgba(18,22,43,.18)'};
     var shadowLabels={none:'Flat',soft:'Soft lift',strong:'Strong lift'};
     function validColor(v){return /^#[0-9a-fA-F]{6}$/.test(v||'');}
     function init(root){
       var form=root.querySelector('[data-style-form]'), card=root.querySelector('[data-preview-card]');
       if(!form||!card)return;
-      var inner=root.querySelector('[data-preview-inner]'), logo=root.querySelector('[data-preview-logo]'), badge=root.querySelector('[data-preview-badge]'), status=root.querySelector('[data-preview-status]');
+      var inner=root.querySelector('[data-preview-inner]'), logo=root.querySelector('[data-preview-logo]'), badge=root.querySelector('[data-preview-badge]'), badgeIcon=root.querySelector('[data-preview-badge-icon]'), status=root.querySelector('[data-preview-status]');
       var angleGuide=root.querySelector('.jcs-angle-guide span'), gradientControls=root.querySelectorAll('[data-gradient-controls]'), preset=root.querySelector('[data-preset]');
       function field(name){return form.elements[name]||null;}
       function value(name){var el=field(name);return el?el.value:'';}
       function setValue(name,val){var el=field(name);if(el){el.value=val;el.dispatchEvent(new Event('input',{bubbles:true}));el.dispatchEvent(new Event('change',{bubbles:true}));}var twin=form.querySelector('[data-color-text="'+name+'"]');if(twin) twin.value=val;}
       function draw(){
-        var mode=value('bg_type'), one=value('bg_color1'), two=value('bg_color2'), angle=Math.max(0,Math.min(360,parseInt(value('gradient_angle'),10)||135)), borderStyle=value('border_style'), borderColor=value('border_color'), width=Math.max(0,Math.min(6,parseInt(value('border_width'),10)||0)), shadow=value('shadow'), pad=Math.max(8,Math.min(28,parseInt(value('card_padding'),10)||14)), logoSize=Math.max(28,Math.min(96,parseInt(value('logo_size'),10)||54));
+        var mode=value('bg_type'), one=value('bg_color1'), two=value('bg_color2'), angle=Math.max(0,Math.min(360,parseInt(value('gradient_angle'),10)||135)), borderStyle=value('border_style'), borderColor=value('border_color'), width=Math.max(0,Math.min(6,parseInt(value('border_width'),10)||0)), shadow=value('shadow'), pad=Math.max(8,Math.min(28,parseInt(value('card_padding'),10)||14)), logoSize=Math.max(28,Math.min(96,parseInt(value('logo_size'),10)||54)), template=value('template'), accent=value('accent_position'), hover=value('hover_effect');
         if(!validColor(one))one='#FFFFFF';if(!validColor(two))two=one;if(!validColor(borderColor))borderColor='#E2E8F0';
         card.style.background=mode==='gradient'?'linear-gradient('+angle+'deg,'+one+','+two+')':one;
         card.style.border=borderStyle==='none'?'none':width+'px '+borderStyle+' '+borderColor;
         card.style.boxShadow=shadows[shadow]||'none';
+        ['classic','highlight','spotlight','promoted'].forEach(function(v){card.classList.remove('jct-template-'+v);});['none','top','left','both'].forEach(function(v){card.classList.remove('jct-accent-'+v);});['none','lift','glow'].forEach(function(v){card.classList.remove('jct-hover-'+v);});
+        card.classList.add('jct-template-'+(template||'classic'),'jct-accent-'+(accent||'none'),'jct-hover-'+(hover||'none'));
+        ['accent_color','title_color','company_color','meta_color','salary_color'].forEach(function(name){var color=value(name);if(validColor(color))card.style.setProperty('--card-'+(name==='accent_color'?'accent':name.replace('_color',''))+'-color',color);});
         if(inner)inner.style.padding=pad+'px 16px';if(logo){logo.style.width=logoSize+'px';logo.style.height=logoSize+'px';}
-        if(badge){var bb=value('badge_bg_color'),bt=value('badge_text_color');if(validColor(bb))badge.style.background=bb;if(validColor(bt))badge.style.color=bt;}
-        if(status)status.textContent=shadowLabels[shadow]||'Custom style';
+        if(badge){var bb=value('badge_bg_color'),bt=value('badge_text_color'),bc=value('badge_border_color'),br=Math.max(4,Math.min(30,parseInt(value('badge_radius'),10)||20));if(validColor(bb))badge.style.background=bb;if(validColor(bt))badge.style.color=bt;if(validColor(bc))badge.style.borderColor=bc;badge.style.borderRadius=br+'px';if(badgeIcon)badgeIcon.innerHTML=tierIcons[value('icon_key')]||'';}
+        if(status)status.textContent=(shadowLabels[shadow]||'Custom style')+' · '+(template||'classic');
         if(angleGuide)angleGuide.style.transform='rotate('+angle+'deg)';
         gradientControls.forEach(function(el){var active=mode==='gradient';el.style.opacity=active?'1':'.48';el.setAttribute('aria-disabled',active?'false':'true');el.querySelectorAll('input,select').forEach(function(input){input.disabled=false;});});
       }
       form.querySelectorAll('input,select').forEach(function(el){el.addEventListener('input',draw);el.addEventListener('change',draw);});
       form.querySelectorAll('[data-color-swatch]').forEach(function(swatch){var name=swatch.getAttribute('data-color-swatch'),twin=form.querySelector('[data-color-text="'+name+'"]');if(twin)swatch.addEventListener('input',function(){twin.value=swatch.value;draw();});});
       form.querySelectorAll('[data-color-text]').forEach(function(twin){var name=twin.getAttribute('data-color-text'),swatch=form.querySelector('[data-color-swatch="'+name+'"]');twin.addEventListener('input',function(){if(validColor(twin.value)&&swatch)swatch.value=twin.value;draw();});});
-      if(preset)preset.addEventListener('change',function(){var selected=presets[preset.value];if(!selected)return;Object.keys(selected).forEach(function(name){if(name!=='label')setValue(name,selected[name]);}draw();});
+      if(preset)preset.addEventListener('change',function(){var selected=presets[preset.value];if(!selected)return;Object.keys(selected).forEach(function(name){if(name!=='label')setValue(name,selected[name]);});draw();});
       draw();
     }
     document.querySelectorAll('[data-tier]').forEach(init);

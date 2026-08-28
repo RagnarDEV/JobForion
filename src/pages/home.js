@@ -28,7 +28,7 @@ import { getVerifiedCompanyNameSet, listPublicCompanies } from '../lib/companies
 import { getLogoOverrides, attachCompanyLogos } from '../lib/company-logos.js';
 import { hydrateHotPay, HOT_PAY_LABEL } from '../lib/hot-pay.js';
 import { getPosts } from '../lib/blog-cms.js';
-import { iconSparkle, iconFlame, iconPin, iconMapPin, iconBookmark, iconLink, iconBadgeCheck, iconClock, iconGlobe, iconBuilding, iconSearch, iconCheck, iconInfo, iconAlertTriangle, iconFilter, iconChevronDown, iconSliders, iconLayoutGrid, iconX, iconBell, iconFileText, iconPlus, iconBriefcase } from '../assets/icons.js';
+import { iconSparkle, iconFlame, iconPin, iconMapPin, iconBookmark, iconLink, iconBadgeCheck, iconClock, iconGlobe, iconBuilding, iconSearch, iconCheck, iconInfo, iconAlertTriangle, iconFilter, iconChevronDown, iconSliders, iconLayoutGrid, iconX, iconBell, iconFileText, iconPlus, iconBriefcase, iconTierStar, iconTierCrown, iconTierRocket } from '../assets/icons.js';
 
 // Same icon markup used by the server-rendered cards (job-card.js) is
 // reused for client-rendered cards (search/filter/pagination results) by
@@ -42,6 +42,7 @@ const CLIENT_ICONS = {
   globe: iconGlobe({ size: 11 }), building: iconBuilding({ size: 11 }), search: iconSearch({ size: 16 }),
   check: iconCheck({ size: 16 }), info: iconInfo({ size: 16 }), alertTriangle: iconAlertTriangle({ size: 32 }),
   searchLg: iconSearch({ size: 32 }),
+  tierStar: iconTierStar({ size: 12, cls: 'jt-badge-icon' }), tierCrown: iconTierCrown({ size: 12, cls: 'jt-badge-icon' }), tierRocket: iconTierRocket({ size: 12, cls: 'jt-badge-icon' }),
 };
 
 async function getCategoryCounts(env, categories) {
@@ -457,13 +458,14 @@ ${postJobModalHtml(categoryOrder, categoryMap)}
   <div class="toast-bar" id="toastBar"></div>
 </div>
 
-<script>window.__CATEGORY_META__=${JSON.stringify(categoryMap)};window.__CATEGORY_ORDER__=${JSON.stringify(categoryOrder)};window.__ICONS__=${JSON.stringify(CLIENT_ICONS)};window.__JOB_TYPE_META__=${JSON.stringify(JOB_TYPE_META)};window.__JOB_CARD_STYLES__=${JSON.stringify(cardStyles)};window.__FEATURES__=${JSON.stringify({ featuredJobs: featuredEnabled })};window.__HOT_PAY_LABEL__=${JSON.stringify(HOT_PAY_LABEL)};window.__SALARY_TIER_UI__=${JSON.stringify({ enabled: settings.salary_tier_badges_enabled !== '0', labels: { HIGH: settings.salary_tier_high_label || 'High Pay', GOOD: settings.salary_tier_good_label || 'Good Pay', STANDARD: settings.salary_tier_standard_label || 'Standard Pay' } }).replace(/</g,'\\u003c')};</script>
+<script>window.__CATEGORY_META__=${JSON.stringify(categoryMap)};window.__CATEGORY_ORDER__=${JSON.stringify(categoryOrder)};window.__ICONS__=${JSON.stringify(CLIENT_ICONS)};window.__JOB_TYPE_META__=${JSON.stringify(JOB_TYPE_META)};window.__JOB_TYPE_ICONS__=${JSON.stringify({ star: CLIENT_ICONS.tierStar, crown: CLIENT_ICONS.tierCrown, rocket: CLIENT_ICONS.tierRocket, none: '' })};window.__JOB_CARD_STYLES__=${JSON.stringify(cardStyles)};window.__FEATURES__=${JSON.stringify({ featuredJobs: featuredEnabled })};window.__HOT_PAY_LABEL__=${JSON.stringify(HOT_PAY_LABEL)};window.__SALARY_TIER_UI__=${JSON.stringify({ enabled: settings.salary_tier_badges_enabled !== '0', labels: { HIGH: settings.salary_tier_high_label || 'High Pay', GOOD: settings.salary_tier_good_label || 'Good Pay', STANDARD: settings.salary_tier_standard_label || 'Standard Pay' } }).replace(/</g,'\\u003c')};</script>
 <script>
 const CAT_META=window.__CATEGORY_META__;
 const CAT_ORDER=window.__CATEGORY_ORDER__;
 const ICONS=window.__ICONS__;
 const COMPANY_LOGOS=${JSON.stringify(companyLogoMap).replace(/</g,'\\u003c')};
 const JOB_TYPE_META=window.__JOB_TYPE_META__;
+const JOB_TYPE_ICONS=window.__JOB_TYPE_ICONS__||{};
 const JOB_CARD_STYLES=window.__JOB_CARD_STYLES__;
 const FEATURES=window.__FEATURES__;
   const HOT_PAY_LABEL=window.__HOT_PAY_LABEL__||'HOT PAY';
@@ -487,18 +489,22 @@ function jtCardStyleAttr(t,freeTint){
   const border=s.border_style==='none'?'none':\`\${s.border_width}px \${s.border_style} \${s.border_color}\`;
   const shadow=JT_SHADOWS[s.shadow]||JT_SHADOWS.none;
   const finalBg=(normalizeJobType(t)==='Free'&&freeTint)?freeTint:bg;
-  return \`background:\${finalBg};border:\${border};box-shadow:\${shadow}\`;
+  return \`background:\${finalBg};border:\${border};box-shadow:\${shadow};--card-title-color:\${s.title_color||'#17132D'};--card-company-color:\${s.company_color||'#6B7280'};--card-meta-color:\${s.meta_color||'#7C8192'};--card-salary-color:\${s.salary_color||'#2B9D68'};--card-accent-color:\${s.accent_color||'#E2E8F0'}\`;
 }
 function jobTypeBadge(t){
   const type=normalizeJobType(t);
   if(type==='Free')return'';
   const meta=JOB_TYPE_META[type];
   const s=jtStyleFor(type);
-  return \`<span class="jt-badge" style="background:\${s.badge_bg_color};color:\${s.badge_text_color}">\${meta.icon} \${meta.label}</span>\`;
+  const iconKey=s.icon_key||meta.iconKey||'none';
+  return \`<span class="jt-badge" style="background:\${s.badge_bg_color};color:\${s.badge_text_color};border-color:\${s.badge_border_color||s.badge_bg_color};border-radius:\${s.badge_radius||20}px"><span class="jt-badge-icon-wrap">\${JOB_TYPE_ICONS[iconKey]||''}</span><span>\${esc(meta.label)}</span></span>\`;
 }
 function jobTypeCardClass(t){
-  const type=normalizeJobType(t);
-  return type==='Free'?'':' jt-card-'+type.toLowerCase();
+  const type=normalizeJobType(t),s=jtStyleFor(type);
+  const template=['classic','highlight','spotlight','promoted'].includes(s.template)?s.template:'classic';
+  const accent=['none','top','left','both'].includes(s.accent_position)?s.accent_position:'none';
+  const hover=['none','lift','glow'].includes(s.hover_effect)?s.hover_effect:'none';
+  return \`\${type==='Free'?'':' jt-card-'+type.toLowerCase()} jct-template-\${template} jct-accent-\${accent} jct-hover-\${hover}\`;
 }
 let pg=1,cat='',srch='',advT,srchT;
 let jobs=${JSON.stringify(initialJobs)},total=${initialTotal};

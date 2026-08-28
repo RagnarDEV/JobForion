@@ -523,12 +523,29 @@ export async function ensureTable(env) {
       logo_size INTEGER DEFAULT 54,
       card_padding INTEGER DEFAULT 14,
       shadow TEXT DEFAULT 'none',
-      badge_bg_color TEXT,
+            badge_bg_color TEXT,
       badge_text_color TEXT,
+      template TEXT DEFAULT 'classic',
+      accent_color TEXT,
+      accent_position TEXT DEFAULT 'none',
+      title_color TEXT,
+      company_color TEXT,
+      meta_color TEXT,
+      salary_color TEXT,
+      badge_border_color TEXT,
+      badge_radius INTEGER DEFAULT 20,
+      icon_key TEXT DEFAULT 'none',
+      hover_effect TEXT DEFAULT 'lift',
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )
   `).run();
-
+  // Older job_card_styles tables are upgraded without touching existing rows.
+  for (const [column, definition] of [
+    ['template', "TEXT DEFAULT 'classic'"], ['accent_color', 'TEXT'], ['accent_position', "TEXT DEFAULT 'none'"],
+    ['title_color', 'TEXT'], ['company_color', 'TEXT'], ['meta_color', 'TEXT'], ['salary_color', 'TEXT'],
+    ['badge_border_color', 'TEXT'], ['badge_radius', 'INTEGER DEFAULT 20'], ['icon_key', "TEXT DEFAULT 'none'"],
+    ['hover_effect', "TEXT DEFAULT 'lift'"],
+  ]) await ensureColumn(env, 'job_card_styles', column, definition);
   // ── Ad Slot Manager ────────────────────────────────────────────
   // Backs lib/ad-slots.js. Per-slot ad embed code, enabled state, and
   // box size — /admin/ads. Deliberately NOT seeded, same reasoning as

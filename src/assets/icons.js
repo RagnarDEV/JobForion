@@ -95,3 +95,9 @@ export const iconHeadphones = (opts) => svg(`<path d="M3 14h3a2 2 0 0 1 2 2v3a2 
 export const iconPackage = (opts) => svg(`<path d="M11 21.73a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73Z"/><path d="M12 22V12"/><path d="M3.29 7 12 12l8.71-5"/><path d="m7.5 4.27 9 5.15"/>`, opts);
 export const iconUsers = (opts) => svg(`<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>`, opts);
 export const iconUser = (opts) => svg(`<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>`, opts);
+
+// Job tier icons — deliberately SVG rather than emoji so they render with the
+// same weight, size and currentColor behavior on every device and font stack.
+export const iconTierStar = (opts) => svg(`<path d="m12 3 2.78 5.63 6.22.9-4.5 4.38 1.06 6.19L12 17.18l-5.56 2.92 1.06-6.19L3 9.53l6.22-.9Z"/>`, opts);
+export const iconTierCrown = (opts) => svg(`<path d="m3 7 4.3 4.8L12 4l4.7 7.8L21 7l-2 13H5L3 7Z"/><path d="M5 20h14"/>`, opts);
+export const iconTierRocket = (opts) => svg(`<path d="M14.5 4.5c2.6-2.6 5.4-2.8 5.4-2.8s-.2 2.8-2.8 5.4l-4.2 4.2-2.8-.3-.3-2.8Z"/><path d="m10.1 8.2-3.4.5-2.4 2.4 4.3 1.1"/><path d="m15.8 13.9-.5 3.4-2.4 2.4-1.1-4.3"/><path d="M8.8 15.2c-1.6 1.6-3.9 1.8-3.9 1.8s.2-2.3 1.8-3.9"/><circle cx="15.8" cy="7.8" r="1.4"/>`, opts);

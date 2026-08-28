@@ -6,7 +6,7 @@
 import { CATEGORY_META, CATEGORY_ORDER, JOB_TYPE_META } from '../config/constants.js';
 import { slugify, escapeHtml } from '../lib/entities.js';
 import { iconSparkle, iconFlame, iconPin, iconMapPin, iconBadgeCheck, iconClock, iconGlobe, iconBuilding, iconBookmark } from '../assets/icons.js';
-import { DEFAULT_CARD_STYLES, buildCardStyleAttr, buildBadgeStyleAttr } from '../lib/job-card-styles.js';
+import { DEFAULT_CARD_STYLES, buildCardStyleAttr, buildBadgeStyleAttr, jobTypeIconHtml } from '../lib/job-card-styles.js';
 import { logoProxyPath } from '../lib/logo-proxy.js';
 import { isHotPayJob, HOT_PAY_LABEL } from '../lib/hot-pay.js';
 import { salaryTierEnabled } from '../lib/salary-tier.js';
@@ -84,26 +84,27 @@ export function salaryTierBadgeHtml(jobOrTier, settings = {}) {
   return `<span class="salary-tier-badge salary-tier-${key}" aria-label="${safeLabel}" title="${safeLabel}">${safeLabel}</span>`;
 }
 
-export function jobRowMini(job, logoOverrides = {}, settings = {}) {
+export function jobRowMini(job, logoOverrides = {}, settings = {}, cardStyles = DEFAULT_CARD_STYLES) {
   const jobType = normalizeJobType(job.job_type);
+  const jtStyle = cardStyles[jobType] || DEFAULT_CARD_STYLES[jobType];
   const tierIcon = jobType !== 'Free'
-    ? `<span title="${escapeHtml(JOB_TYPE_META[jobType].label)}" style="margin-right:4px;flex-shrink:0">${JOB_TYPE_META[jobType].icon}</span>`
+    ? `<span class="jt-mini-icon" title="${escapeHtml(JOB_TYPE_META[jobType].label)}">${jobTypeIconHtml(jobType, jtStyle, { size: 12 })}</span>`
     : '';
   const remoteBadge = job.remote_type ? remoteTagHtml(job.remote_type) : '';
   const logoOverride = job.company_logo_url || logoOverrides[(job.company || '').toLowerCase()] || null;
-  return `<a href="/job/${job.id}" class="related-card${jobTypeCardClass(job.job_type)}" style="display:flex;align-items:center;gap:14px;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:13px 16px;text-decoration:none">
+  return `<a href="/job/${job.id}" class="related-card${jobTypeCardClass(job.job_type, jtStyle)}" style="display:flex;align-items:center;gap:14px;${buildCardStyleAttr(jtStyle)};border-radius:12px;padding:13px 16px;text-decoration:none">
     <div style="flex-shrink:0;display:flex">${logoImgHtml(job.company, '40px', 'related-logo', logoOverride, job.company_website)}</div>
     <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:4px">
-      <div style="display:flex;align-items:center;font-size:13.5px;font-weight:700;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${tierIcon}${escapeHtml(job.title)}</div>
+      <div style="display:flex;align-items:center;font-size:13.5px;font-weight:700;color:var(--card-title-color,var(--ink));white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${tierIcon}${escapeHtml(job.title)}</div>
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0">
-        <span style="font-size:12px;font-weight:600;color:var(--brand);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:160px">${escapeHtml(job.company)}</span>
+        <span style="font-size:12px;font-weight:600;color:var(--card-company-color,var(--brand));white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:160px">${escapeHtml(job.company)}</span>
         ${jobLocationHtml(job, { compact: true })}
         ${remoteBadge}
         ${salaryTierBadgeHtml(job, settings)}
       </div>
     </div>
     <div style="flex-shrink:0;display:flex;align-items:center;gap:12px">
-      ${job.salary ? `<span style="font-family:var(--font-mono,inherit);font-size:12px;font-weight:700;color:var(--salary);white-space:nowrap">${escapeHtml(job.salary)}</span>` : ''}
+      ${job.salary ? `<span style="font-family:var(--font-mono,inherit);font-size:12px;font-weight:700;color:var(--card-salary-color,var(--salary));white-space:nowrap">${escapeHtml(job.salary)}</span>` : ''}
     </div>
   </a>`;
 }
@@ -165,7 +166,7 @@ export function jobTypeBadgeHtml(jobType, cardStyles = DEFAULT_CARD_STYLES) {
   if (type === 'Free') return '';
   const meta = JOB_TYPE_META[type];
   const style = cardStyles[type] || DEFAULT_CARD_STYLES[type];
-  return `<span class="jt-badge" style="${buildBadgeStyleAttr(style)}">${meta.icon} ${meta.label}</span>`;
+  return `<span class="jt-badge" style="${buildBadgeStyleAttr(style)}">${jobTypeIconHtml(type, style, { size: 12, cls: 'jt-badge-icon' })}<span>${meta.label}</span></span>`;
 }
 
 // Extra class applied to the card wrapper — kept only as a styling
@@ -174,9 +175,13 @@ export function jobTypeBadgeHtml(jobType, cardStyles = DEFAULT_CARD_STYLES) {
 // styling (background/border/shadow) is now applied inline via
 // buildCardStyleAttr() so it can be admin-controlled per tier — see
 // lib/job-card-styles.js.
-export function jobTypeCardClass(jobType) {
+export function jobTypeCardClass(jobType, style = null) {
   const type = normalizeJobType(jobType);
-  return type === 'Free' ? '' : ` jt-card-${type.toLowerCase()}`;
+  const s = style || DEFAULT_CARD_STYLES[type];
+  const template = ['classic', 'highlight', 'spotlight', 'promoted'].includes(s?.template) ? s.template : 'classic';
+  const accent = ['none', 'top', 'left', 'both'].includes(s?.accent_position) ? s.accent_position : 'none';
+  const hover = ['none', 'lift', 'glow'].includes(s?.hover_effect) ? s.hover_effect : 'none';
+  return `${type === 'Free' ? '' : ` jt-card-${type.toLowerCase()}`} jct-template-${template} jct-accent-${accent} jct-hover-${hover}`;
 }
 
 export function salaryTierCardTint(job) {
@@ -268,7 +273,7 @@ export function jobCardSSR(job, idx, categoryMap = CATEGORY_META, categoryOrder 
   let skillsList = [];
   try { skillsList = JSON.parse(job.skills || '[]'); } catch (e) {}
   const skillsTagsHtml = skillsList.slice(0, 3).map(s => `<span class="tag tag-type">${escapeHtml(s)}</span>`).join('');
-  return `<article class="job-card${jobTypeCardClass(job.job_type)}" style="--cat-color:${meta.color};${cardStyleAttr};animation:fadeInUp .3s ease ${Math.min(idx, 6) * .04}s both">
+  return `<article class="job-card${jobTypeCardClass(job.job_type, jtStyle)}" style="--cat-color:${meta.color};${cardStyleAttr};animation:fadeInUp .3s ease ${Math.min(idx, 6) * .04}s both">
     <div class="card-inner" style="padding:${jtStyle.card_padding}px 16px;background:inherit">
       <a href="/job/${job.id}" class="card-row1" aria-label="View ${escapeHtml(job.title)} at ${escapeHtml(job.company)}">
         ${logoImgHtml(job.company, `${jtStyle.logo_size}px`, 'co-logo', logoOverride, job.company_website)}

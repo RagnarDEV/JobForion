@@ -8,6 +8,7 @@ import { getCategories } from '../../lib/categories.js';
 import { ensureTable } from '../../db/schema.js';
 import { escapeHtml } from '../../lib/entities.js';
 import { getJobIntelligence } from '../../lib/job-intelligence.js';
+import { jobTypeIconHtml } from '../../lib/job-card-styles.js';
 
 const PAGE_SIZE = 30;
 // Sorting (plan §19, Stage 5): now defined once in config/constants.js
@@ -23,7 +24,7 @@ function jobRow(j, categoryOrder = [], categoryMap = {}) {
   const cat = categoryOrder.find(k => (j.title || '').toLowerCase().includes(k));
   const catMeta = cat ? categoryMap[cat] : null;
   const jt = (j.job_type && JOB_TYPE_META[j.job_type]) ? j.job_type : 'Free';
-  const jtBadge = jt !== 'Free' ? `<span class="adm-jt-badge">${JOB_TYPE_META[jt].icon} ${jt}</span> ` : '';
+  const jtBadge = jt !== 'Free' ? `<span class="adm-jt-badge">${jobTypeIconHtml(jt, null, { size: 12 })} ${jt}</span> ` : '';
   const statusMeta = JOB_STATUS_META[j.status] || { label: j.status || 'active', color: 'var(--ink3)' };
   return `<tr>
     <td style="width:32px"><input type="checkbox" class="bulk-row-check" name="ids" form="bulkForm" value="${j.id}" onchange="jnBulkSync()"></td>
@@ -190,7 +191,7 @@ export async function renderJobsListContent(env, params) {
         </select>
         <select class="adm-input" name="job_type" onchange="this.form.submit()">
           <option value="">Any job type</option>
-          ${JOB_TYPE_ORDER.map(t => `<option value="${t}" ${jobType === t ? 'selected' : ''}>${JOB_TYPE_META[t].icon} ${t}</option>`).join('')}
+          ${JOB_TYPE_ORDER.map(t => `<option value="${t}" ${jobType === t ? 'selected' : ''}>${t}</option>`).join('')}
         </select>
         <select class="adm-input" name="sort" onchange="this.form.submit()">
           ${Object.entries(SORT_OPTIONS).map(([k, o]) => `<option value="${k}" ${sortKey === k ? 'selected' : ''}>Sort: ${o.label}</option>`).join('')}
@@ -212,7 +213,7 @@ export async function renderJobsListContent(env, params) {
           <button type="button" class="adm-btn-sm" onclick="jnBulkAction('feature')" style="color:var(--brand)">📌 Pin</button>
           <button type="button" class="adm-btn-sm" onclick="jnBulkAction('unfeature')" style="color:var(--ink2)">Unpin</button>
           <select class="adm-input" id="bulkJobTypeSelect" style="padding:5px 8px;font-size:11px">
-            ${JOB_TYPE_ORDER.map(t => `<option value="${t}">${JOB_TYPE_META[t].icon} ${t}</option>`).join('')}
+            ${JOB_TYPE_ORDER.map(t => `<option value="${t}">${t}</option>`).join('')}
           </select>
           <button type="button" class="adm-btn-sm" onclick="jnBulkAction('set_job_type')" style="color:var(--brand)">Set Job Type</button>
           <button type="button" class="adm-btn-sm" onclick="jnBulkAction('pause')" style="color:var(--amber, #F5A623)">⏸ Pause</button>
@@ -378,7 +379,7 @@ export async function renderJobEditContent(env, id) {
       <div style="display:flex;gap:10px">
         <label style="flex:1;font-size:11px;font-weight:700;color:var(--ink3);text-transform:uppercase">Job Type
           <select class="adm-input" style="width:100%;margin-top:4px" name="job_type">
-            ${JOB_TYPE_ORDER.map(t => `<option value="${t}" ${(j.job_type || 'Free') === t ? 'selected' : ''}>${JOB_TYPE_META[t].icon} ${t}</option>`).join('')}
+            ${JOB_TYPE_ORDER.map(t => `<option value="${t}" ${(j.job_type || 'Free') === t ? 'selected' : ''}>${t}</option>`).join('')}
           </select></label>
         <label style="flex:2;font-size:11px;font-weight:700;color:var(--ink3);text-transform:uppercase">Note <span style="color:var(--ink3);font-weight:400;text-transform:none;letter-spacing:0;font-size:11px">(optional — shown for Sponsored)</span>
           <input class="adm-input" style="width:100%;margin-top:4px" name="job_type_note" value="${escapeHtml(j.job_type_note || '')}" maxlength="140" placeholder="One-line company blurb"></label>

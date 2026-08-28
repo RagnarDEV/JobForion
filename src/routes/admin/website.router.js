@@ -198,6 +198,17 @@ export async function handleAdminWebsiteRoute(url, request, env, base) {
         shadow: (form.get('shadow') || '').toString(),
         badge_bg_color: (form.get('badge_bg_color') || '').toString(),
         badge_text_color: (form.get('badge_text_color') || '').toString(),
+        template: (form.get('template') || '').toString(),
+        accent_color: (form.get('accent_color') || '').toString(),
+        accent_position: (form.get('accent_position') || '').toString(),
+        title_color: (form.get('title_color') || '').toString(),
+        company_color: (form.get('company_color') || '').toString(),
+        meta_color: (form.get('meta_color') || '').toString(),
+        salary_color: (form.get('salary_color') || '').toString(),
+        badge_border_color: (form.get('badge_border_color') || '').toString(),
+        badge_radius: form.get('badge_radius'),
+        icon_key: (form.get('icon_key') || '').toString(),
+        hover_effect: (form.get('hover_effect') || '').toString(),
       });
       return new Response(null, { status: 302, headers: { 'Location': `/admin/card-styles?flash=${encodeURIComponent(jobType + ' style saved')}` } });
     } catch (e) { return errorPage(e); }
