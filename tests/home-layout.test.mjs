@@ -20,4 +20,6 @@ assert.match(source, /prefers-reduced-motion:reduce/);
 assert.match(source, /homepage-reveal-section\.is-visible/);
 assert.match(source, /homepage-reveal-item/);
 assert.doesNotMatch(source, /jobs-section homepage-reveal-section/);
+assert.match(source, /\.jobs-heading\{margin-bottom:24px\}/);
+assert.match(source, /@media\(max-width:760px\)[\s\S]*?\.jobs-heading\{margin-bottom:20px\}/);
 console.log('home-layout tests: all assertions passed');
