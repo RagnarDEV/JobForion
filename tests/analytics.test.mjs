@@ -62,6 +62,7 @@ const monetization = await readFile(new URL('../src/lib/monetization.js', import
 const system = await readFile(new URL('../src/pages/admin/system.js', import.meta.url), 'utf8');
 const dashboard = await readFile(new URL('../src/pages/admin/dashboard.js', import.meta.url), 'utf8');
 const cardStylesPage = await readFile(new URL('../src/pages/admin/card-styles.js', import.meta.url), 'utf8');
+const analyticsPage = await readFile(new URL('../src/pages/admin/analytics.js', import.meta.url), 'utf8');
 const websiteRouter = await readFile(new URL('../src/routes/admin/website.router.js', import.meta.url), 'utf8');
 const cardStylesLib = await readFile(new URL('../src/lib/job-card-styles.js', import.meta.url), 'utf8');
 const cardStylesCss = await readFile(new URL('../src/styles/job-card-css.js', import.meta.url), 'utf8');
@@ -97,6 +98,7 @@ assert.match(dashboard, /Analytics pipeline/);
 assert.match(dashboard, /Payment boundary/);
 assert.match(cardStylesPage, /STYLE_PRESETS/);
 assert.match(cardStylesPage, /Live preview/);
+assert.match(analyticsPage, /getAnalyticsOverview, getAnalyticsRealtime, getAnalyticsReport, getAnalyticsSearches/);
 assert.match(cardStylesPage, /data-gradient-controls/);
 assert.match(websiteRouter, /template: \(form\.get\('template'\)/);
 assert.match(websiteRouter, /title_color: \(form\.get\('title_color'\)/);

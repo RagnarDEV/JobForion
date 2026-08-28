@@ -1,6 +1,6 @@
 import {
   getAnalyticsAlerts, getAnalyticsFunnel, getAnalyticsFilters, getAnalyticsHealth,
-  getAnalyticsOverview, getAnalyticsRealtime, getAnalyticsSearches,
+  getAnalyticsOverview, getAnalyticsRealtime, getAnalyticsReport, getAnalyticsSearches,
   getAnalyticsTopCompanies, getAnalyticsTopJobs, getAnalyticsTrends,
 } from '../../lib/analytics.js';
 import { formatMoneyMinor } from '../../lib/monetization.js';
