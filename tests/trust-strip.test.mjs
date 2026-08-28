@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 const source = fs.readFileSync(new URL('../src/pages/home.js', import.meta.url), 'utf8');
-assert.match(source, /trust_strip:\s*`<section class="trust-strip">/);
+assert.match(source, /trust_strip:\s*`<section class="trust-strip(?:\s|\")/);
 assert.match(source, /class="trust-card"/);
 assert.match(source, /class="trust-intro"/);
 assert.match(source, /class="trust-grid"/);

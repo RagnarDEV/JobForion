@@ -240,7 +240,7 @@ export async function renderMainHTML(env, base, user = null) {
     </section>`,
 
     featured_companies: topCompanies.length ? `
-    <section class="fc-strip">
+    <section class="fc-strip homepage-reveal-section">
       <div class="fc-inner">
         <div class="fc-heading section-heading compact-heading">
           <div><p class="eyebrow">CURATED EMPLOYERS</p><h2>${escapeHtml(homepageCopy.featuredTitle)}</h2><p class="fc-subtitle">Discover teams building the future of remote work.</p></div>
@@ -251,7 +251,7 @@ export async function renderMainHTML(env, base, user = null) {
     </section>` : '',
 
     categories_grid: categories.length ? `
-    <section class="category-strip"><div class="content-wrap category-inner">
+    <section class="category-strip homepage-reveal-section"><div class="content-wrap category-inner">
       <div class="cg-heading section-heading compact-heading"><div><p class="eyebrow">EXPLORE OPPORTUNITIES</p><h2>${escapeHtml(homepageCopy.categoriesTitle)}</h2><p class="cg-subtitle">Find a role that fits the way you want to work.</p></div><a class="text-button" href="/jobs">Explore all roles ${iconArrowRight({ size: 13 })}</a></div>
       <div class="cg-grid">
         ${categories.slice(0, 8).map(c => { const swatch = /^#[0-9a-fA-F]{6}$/.test(c.color || '') ? c.color : '#6339E6'; return `<a href="/categories/${c.key}" class="cg-item" style="--cat-color:${swatch}"><span class="cg-icon" style="background:${swatch}1a;color:${swatch}">${categoryIconSvg(c.key, { size: 18 })}</span><span class="cg-copy"><strong class="cg-label">${escapeHtml(c.label)}</strong><small>${categoryCounts[c.key] ? `${Number(categoryCounts[c.key]).toLocaleString()} open roles` : 'Explore roles'}</small></span><span class="cg-arrow">${iconArrowRight({ size: 13 })}</span></a>`; }).join('')}
@@ -259,7 +259,7 @@ export async function renderMainHTML(env, base, user = null) {
     </div></section>` : '',
 
     job_listing: `
-    <section class="content-wrap jobs-section"><div class="home-jobs-grid${sidebarSectionsHtml ? '' : ' no-sidebar'}"><div class="home-jobs-column">
+    <section class="content-wrap jobs-section homepage-reveal-section"><div class="home-jobs-grid${sidebarSectionsHtml ? '' : ' no-sidebar'}"><div class="home-jobs-column">
       <div class="section-heading jobs-heading"><div><p class="eyebrow">${escapeHtml(homepageCopy.jobsEyebrow)}</p><h2>${escapeHtml(homepageCopy.jobsTitle)}</h2></div><a class="text-button" href="/jobs">${escapeHtml(homepageCopy.jobsCta)}</a></div>
       <div class="job-tabs" role="tablist"><button class="active" data-job-tab="all" onclick="quickJobTab('all',this)">All jobs</button><button data-job-tab="remote" onclick="quickJobTab('remote',this)">Remote</button><button data-job-tab="full_time" onclick="quickJobTab('full_time',this)">Full-time</button><button data-job-tab="part_time" onclick="quickJobTab('part_time',this)">Part-time</button><button data-job-tab="contract" onclick="quickJobTab('contract',this)">Contract</button></div>
       <div class="results-hdr"><div class="results-count" id="resultsCount" style="display:none"><strong>${initialTotal.toLocaleString()}</strong> jobs found</div></div>
@@ -267,16 +267,16 @@ export async function renderMainHTML(env, base, user = null) {
       <div class="jobs-list" id="jobsList">${ssrJobsHtml}</div><a class="jobs-view-all" href="/jobs">${escapeHtml(homepageCopy.jobsCta)}</a>
     </div>${sidebarSectionsHtml ? `<aside class="home-sidebar">${sidebarSectionsHtml}</aside>` : ''}</div></section>`,
 
-    career_insights: blogPosts.length ? `<section class="insights-strip"><div class="content-wrap"><div class="section-heading compact-heading"><div><p class="eyebrow">CAREER GUIDANCE</p><h2>${escapeHtml(homepageCopy.blogTitle)}</h2></div><a class="text-button" href="/blog">${escapeHtml(homepageCopy.blogCta)}</a></div><div class="insights-grid">${blogPosts.map((post, i) => `<a class="insight-tile" href="/blog/${escapeHtml(post.slug)}"><div class="insight-cover" style="${post.cover_image_url ? `background-image:url('${escapeHtml(post.cover_image_url)}')` : `background:linear-gradient(135deg,${['#6a53d8','#ed9d83','#54a9b5','#d47898'][i % 4]},#29244e)`}"><span>${escapeHtml(post.category || 'Career advice')}</span></div><strong>${escapeHtml(post.title)}</strong><small>${escapeHtml(post.excerpt || 'Practical guidance for your next remote opportunity.')}</small></a>`).join('')}</div></div></section>` : '',
+    career_insights: blogPosts.length ? `<section class="insights-strip homepage-reveal-section"><div class="content-wrap"><div class="section-heading compact-heading"><div><p class="eyebrow">CAREER GUIDANCE</p><h2>${escapeHtml(homepageCopy.blogTitle)}</h2></div><a class="text-button" href="/blog">${escapeHtml(homepageCopy.blogCta)}</a></div><div class="insights-grid">${blogPosts.map((post, i) => `<a class="insight-tile" href="/blog/${escapeHtml(post.slug)}"><div class="insight-cover" style="${post.cover_image_url ? `background-image:url('${escapeHtml(post.cover_image_url)}')` : `background:linear-gradient(135deg,${['#6a53d8','#ed9d83','#54a9b5','#d47898'][i % 4]},#29244e)`}"><span>${escapeHtml(post.category || 'Career advice')}</span></div><strong>${escapeHtml(post.title)}</strong><small>${escapeHtml(post.excerpt || 'Practical guidance for your next remote opportunity.')}</small></a>`).join('')}</div></div></section>` : '',
 
-    trust_strip: `<section class="trust-strip"><div class="content-wrap trust-wrap"><div class="trust-card"><div class="trust-intro"><span class="trust-kicker">WHY JOBFORION</span><h2>Built for better remote work</h2><p>Everything you need to discover trusted opportunities with confidence.</p></div><div class="trust-grid"><div class="trust-item"><span class="trust-icon">⌁</span><p><strong>100% Remote Jobs</strong><small>Work from anywhere in the world</small></p></div><div class="trust-item"><span class="trust-icon">✓</span><p><strong>Verified companies</strong><small>Teams you can trust</small></p></div><div class="trust-item"><span class="trust-icon">✦</span><p><strong>Daily updates</strong><small>Fresh roles added every day</small></p></div><div class="trust-item"><span class="trust-icon">◌</span><p><strong>Free for job seekers</strong><small>Search and apply for free</small></p></div></div></div></div></section>`,
+    trust_strip: `<section class="trust-strip homepage-reveal-section"><div class="content-wrap trust-wrap"><div class="trust-card"><div class="trust-intro"><span class="trust-kicker">WHY JOBFORION</span><h2>Built for better remote work</h2><p>Everything you need to discover trusted opportunities with confidence.</p></div><div class="trust-grid"><div class="trust-item"><span class="trust-icon">⌁</span><p><strong>100% Remote Jobs</strong><small>Work from anywhere in the world</small></p></div><div class="trust-item"><span class="trust-icon">✓</span><p><strong>Verified companies</strong><small>Teams you can trust</small></p></div><div class="trust-item"><span class="trust-icon">✦</span><p><strong>Daily updates</strong><small>Fresh roles added every day</small></p></div><div class="trust-item"><span class="trust-icon">◌</span><p><strong>Free for job seekers</strong><small>Search and apply for free</small></p></div></div></div></div></section>`,
 
-    employer_cta: `<section class="employer-cta-section"><div class="content-wrap"><div class="cta-banner"><div class="cta-copy"><span class="cta-kicker">FOR EMPLOYERS</span><div class="cta-title">Build your next great team.</div><div class="cta-sub">Reach qualified candidates and post your job in minutes.</div><div class="cta-actions"><button class="cta-btn" onclick="openPostJobModal()">${iconPlus({ size: 13 })} Post a job</button><a class="cta-secondary" href="/companies">Explore employer resources ${iconArrowRight({ size: 13 })}</a></div></div><div class="cta-art" aria-hidden="true"><span class="cta-orbit cta-orbit-one"></span><span class="cta-orbit cta-orbit-two"></span><span class="cta-art-card cta-art-card-main">${iconBuilding({ size: 25 })}<strong>Remote-ready teams</strong><small>Made for modern hiring</small></span><span class="cta-art-card cta-art-card-mini">${iconBriefcase({ size: 17 })}<strong>Post a role</strong></span></div></div></div></section>`,
+    employer_cta: `<section class="employer-cta-section homepage-reveal-section"><div class="content-wrap"><div class="cta-banner"><div class="cta-copy"><span class="cta-kicker">FOR EMPLOYERS</span><div class="cta-title">Build your next great team.</div><div class="cta-sub">Reach qualified candidates and post your job in minutes.</div><div class="cta-actions"><button class="cta-btn" onclick="openPostJobModal()">${iconPlus({ size: 13 })} Post a job</button><a class="cta-secondary" href="/companies">Explore employer resources ${iconArrowRight({ size: 13 })}</a></div></div><div class="cta-art" aria-hidden="true"><span class="cta-orbit cta-orbit-one"></span><span class="cta-orbit cta-orbit-two"></span><span class="cta-art-card cta-art-card-main">${iconBuilding({ size: 25 })}<strong>Remote-ready teams</strong><small>Made for modern hiring</small></span><span class="cta-art-card cta-art-card-mini">${iconBriefcase({ size: 17 })}<strong>Post a role</strong></span></div></div></div></section>`,
   };
   const renderedSectionHtml = { ...sectionHtml };
   for (const key of ['hero', 'featured_companies', 'categories_grid', 'job_listing', 'career_insights', 'trust_strip', 'employer_cta']) renderedSectionHtml[key] = homepageCodeOverride(key, sectionHtml[key] || '');
   const homepageSectionsHtml = enabledSections.map(s => renderedSectionHtml[s.key] || '').join('') + enabledCustomSections.map(s => `
-    <section class="homepage-custom-section" data-homepage-custom-section="${s.id}">
+    <section class="homepage-custom-section homepage-reveal-section" data-homepage-custom-section="${s.id}">
       <div class="content-wrap homepage-custom-inner">
         <div class="section-heading compact-heading"><div><p class="eyebrow">CUSTOM SECTION</p><h2>${escapeHtml(s.title)}</h2>${s.description ? `<p class="homepage-custom-description">${escapeHtml(s.description)}</p>` : ''}</div></div>
         <div class="homepage-custom-code">${pageCodeFrameHtml({ html: s.custom_html || '', css: s.custom_css || '', js: s.custom_js || '', id: `homepage_custom_${s.id}`, title: s.title })}</div>
@@ -423,6 +423,12 @@ ${themeCssVariables(settings)}
 .job-tabs{display:flex;align-items:center;gap:21px;border-bottom:1px solid #efedf4;margin:0 0 12px;overflow-x:auto;scrollbar-width:none}.job-tabs::-webkit-scrollbar{display:none}.job-tabs button{position:relative;flex-shrink:0;border:0;background:transparent;color:#858094;padding:0 0 10px;font:800 10px var(--font-body,sans-serif);cursor:pointer;white-space:nowrap}.job-tabs button:hover{color:var(--brand)}.job-tabs button.active{color:var(--brand)}.job-tabs button.active::after{content:'';position:absolute;left:0;right:0;bottom:-1px;height:2px;border-radius:2px;background:var(--brand)}.home-sidebar{display:grid;grid-template-columns:1fr;gap:11px;align-self:start;align-content:start;grid-auto-rows:max-content}.side-card{align-self:start;height:max-content;border:1px solid #eceaf2;border-radius:11px;padding:17px;background:#fff;box-shadow:0 6px 18px rgba(38,25,99,.05);position:relative;overflow:hidden}.side-card-icon{width:34px;height:34px;border-radius:9px;background:var(--brand-soft);color:var(--brand);display:grid;place-items:center;margin-bottom:11px}.side-card h3{font:800 14px var(--font-heading,sans-serif);color:var(--ink);margin-bottom:6px}.side-card p{font-size:11px;line-height:1.65;color:#817c90;margin-bottom:13px}.side-button{display:inline-flex;align-items:center;gap:5px;color:var(--brand);font-size:10px;font-weight:800}.side-button:hover{color:var(--brand2)}.resume-card{background:linear-gradient(135deg,#6b45e6 0%,#4e2acc 100%);border-color:#6841dd;min-height:170px}.resume-card h3,.resume-card p{color:#fff}.resume-card p{color:rgba(255,255,255,.8)}.resume-card .eyebrow{color:#e2d9ff}.resume-card .side-button.light{color:#fff;background:rgba(255,255,255,.16);padding:8px 11px;border-radius:7px}.resume-orbit{position:absolute;right:-20px;bottom:-30px;width:128px;height:128px;border:1px solid rgba(255,255,255,.25);border-radius:50%;opacity:.8}.resume-orbit:before,.resume-orbit:after{content:'';position:absolute;inset:13px;border:1px solid rgba(255,255,255,.22);border-radius:50%}.resume-orbit:after{inset:32px}.resources-card h3{margin-bottom:7px}.resources-card a{display:flex;align-items:center;gap:8px;padding:9px 0;border-top:1px solid #f0eef4;color:#6f6a7f;font-size:10px;font-weight:700}.resources-card a svg:first-child{color:var(--brand)}.resources-card a svg:last-child{margin-left:auto}.resources-card a:hover{color:var(--brand)}.toast{z-index:9999}
 @media(max-width:760px){.job-tabs{gap:19px;margin-top:4px}.job-tabs button{font-size:10px}.home-sidebar{gap:10px}.side-card{padding:15px;border-radius:10px}.side-card-icon{width:32px;height:32px}.side-card h3{font-size:15px}.side-card p{font-size:11px}.resume-card{min-height:150px}.resources-card a{padding:10px 0}.toast{left:14px;right:14px;bottom:82px;max-width:none}}
 @media(max-width:400px){.hero-title{font-size:34px}.filters-grid{grid-template-columns:1fr}.cg-heading .text-button{display:none}.cg-item{min-width:190px;flex-basis:190px}.cta-banner{padding:24px 18px}.cta-title{font-size:21px}.cta-actions{flex-direction:column;align-items:stretch;gap:12px}.cta-btn{width:100%}.cta-secondary{justify-content:center}.cta-art{transform:scale(.8);transform-origin:center right;margin-top:-12px;margin-bottom:-14px}}
+/* Scroll reveal: motion is opt-in, transform/opacity only, and remains invisible to users without JS. */
+html.js-reveal-ready .homepage-reveal-section{opacity:0;transform:translateY(18px);transition:opacity 520ms cubic-bezier(.23,1,.32,1),transform 520ms cubic-bezier(.23,1,.32,1);will-change:opacity,transform}
+html.js-reveal-ready .homepage-reveal-section.is-visible{opacity:1;transform:none}
+html.js-reveal-ready .homepage-reveal-item{opacity:0;transform:translateY(10px);transition:opacity 360ms cubic-bezier(.23,1,.32,1),transform 360ms cubic-bezier(.23,1,.32,1);transition-delay:var(--reveal-delay,0ms);will-change:opacity,transform}
+html.js-reveal-ready .homepage-reveal-section.is-visible .homepage-reveal-item{opacity:1;transform:none}
+@media(prefers-reduced-motion:reduce){html.js-reveal-ready .homepage-reveal-section,html.js-reveal-ready .homepage-reveal-item{opacity:1!important;transform:none!important;transition:none!important;will-change:auto}}
 </style>
 </head>
 <body>
@@ -805,6 +811,31 @@ function debounceSearch(v){clearTimeout(srchT);srchT=setTimeout(()=>{srch=v;pg=1
 function debounceCountryChange(v){clearTimeout(srchT);srchT=setTimeout(()=>{adv.country=v.trim();pg=1;updateFiltersBadge();loadJobs();},450);}
 
 // ── Filters panel (attached to the hero search box) ──────────────
+function initHomepageReveal(){
+  const root=document.documentElement;
+  const sections=[...document.querySelectorAll('.homepage-reveal-section')];
+  if(!sections.length)return;
+  root.classList.add('js-reveal-ready');
+  const reduceMotion=window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  sections.forEach(section=>{
+    section.querySelectorAll('.company-tile,.cg-item,.insight-tile').forEach((item,index)=>{
+      item.classList.add('homepage-reveal-item');
+      item.style.setProperty('--reveal-delay',(Math.min(index,7)*45)+'ms');
+    });
+  });
+  if(reduceMotion || !('IntersectionObserver' in window)){
+    sections.forEach(section=>section.classList.add('is-visible'));
+    return;
+  }
+  const observer=new IntersectionObserver((entries,obs)=>{
+    entries.forEach(entry=>{
+      if(!entry.isIntersecting)return;
+      entry.target.classList.add('is-visible');
+      obs.unobserve(entry.target);
+    });
+  },{rootMargin:'0px 0px -10% 0px',threshold:.12});
+  sections.forEach(section=>observer.observe(section));
+}
 function toggleFiltersPanel(){
   document.getElementById('filtersPanel').classList.toggle('open');
   document.getElementById('filtersToggleBtn').classList.toggle('active');
@@ -870,6 +901,7 @@ function renderPagination(){
 // what only client JS can compute (relative time-ago is already SSR'd,
 // but pagination needs the live "total" count known only after render)
 document.addEventListener('DOMContentLoaded',()=>{
+    initHomepageReveal();
     savedIds.forEach(id=>{const b=document.getElementById('sb-'+id);if(b)b.classList.add('saved');});
     document.querySelectorAll('.card-save-btn').forEach(btn=>{const id=Number(btn.id.replace('sb-',''));if(savedIds.includes(id))btn.classList.add('saved');});
   // If the URL was opened WITH search state (shared link, refresh, or a
