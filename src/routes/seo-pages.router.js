@@ -1,4 +1,5 @@
 // src/routes/seo-pages.router.js
+// Deployment verification marker: automatic Worker redeploy requested.
 // Programmatic SEO directory + detail pages. Index pages are wrapped in the
 // Cache API (src/lib/cache.js) since they're aggregate D1 queries that don't
 // change per-request; detail pages set a shorter Cache-Control instead.
