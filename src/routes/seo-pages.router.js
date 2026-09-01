@@ -63,6 +63,7 @@ export async function handleSeoPagesRoute(url, request, env, ctx, base) {
       industry: url.searchParams.get('industry') || '',
       company_size: url.searchParams.get('company_size') || '',
       verified: url.searchParams.get('verified') || '',
+      page: url.searchParams.get('page') || '',
     };
     return await withCache(ctx, request, CACHE_PRESETS.directory, async () => renderCompaniesIndex(env, base, null, filters));
   }
