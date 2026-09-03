@@ -117,6 +117,43 @@ function withSecurityHeaders(response, env = null) {
 // again. Add any other retired hostnames to this set as domains change.
 const RETIRED_HOSTS = new Set(['jobnova.manasa.workers.dev', 'jobnova.sryze.cc', 'jobforion.manasa.workers.dev']);
 
+// ════════════════════════════════════════════════════════════════
+// LAST-RESORT SAFETY NET — see the big try/catch around the whole
+// fetch() body below. This function is the one thing standing between
+// a future uncaught bug and Cloudflare's raw, unbranded "Error 1101 —
+// Worker threw exception" screen (exactly what took the entire site
+// down site-wide: see the fix in db/schema.js's ensureAiTables() for
+// the actual root cause of that specific incident). Because this
+// renders when something has ALREADY gone wrong — possibly D1 itself —
+// it is deliberately 100% self-contained: no imports, no D1 reads, no
+// template composition from other modules. It must be structurally
+// incapable of throwing itself.
+function renderFallbackErrorPage() {
+  return new Response(
+    `<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>عذراً، حدث خطأ مؤقت — JobForion</title><meta name="robots" content="noindex, nofollow">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Tahoma,Arial,sans-serif;background:#F6F7FB;color:#12162B;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;line-height:1.7}
+.box{background:#fff;border:1px solid #E6E9F0;border-radius:18px;padding:40px 32px;max-width:460px;width:100%;text-align:center;box-shadow:0 16px 40px rgba(18,22,43,.10)}
+.mark{width:52px;height:52px;border-radius:14px;background:linear-gradient(135deg,#2563EB,#7C3AED);display:flex;align-items:center;justify-content:center;margin:0 auto 18px;font-size:22px;font-weight:800;color:#fff}
+h1{font-size:19px;font-weight:800;margin-bottom:10px}
+p{font-size:14px;color:#525A72;margin-bottom:22px}
+a{display:inline-flex;align-items:center;gap:8px;background:#2563EB;color:#fff;padding:11px 24px;border-radius:10px;font-size:14px;font-weight:700;text-decoration:none}
+a:hover{background:#1d4fd6}
+</style></head><body>
+<div class="box">
+<div class="mark">JF</div>
+<h1>عذراً، حدث خطأ مؤقت</h1>
+<p>واجه الموقع مشكلة غير متوقعة أثناء تحميل هذه الصفحة. فريقنا تم إعلامه تلقائياً. الرجاء إعادة المحاولة خلال لحظات.</p>
+<a href="/">العودة إلى الصفحة الرئيسية</a>
+</div>
+</body></html>`,
+    { status: 500, headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' } }
+  );
+}
+
 const CRON_LEASE_MS = 10 * 60 * 1000;
 async function withCronLease(env, name, task) {
   await ensureTable(env);
@@ -140,8 +177,7 @@ async function withCronLease(env, name, task) {
   }
 }
 
-export default {
-  async fetch(request, env, ctx) {
+async function handleFetch(request, env, ctx) {
     const url = new URL(request.url);
 
     // Retired domain? Redirect permanently before touching D1 or anything
@@ -237,7 +273,43 @@ export default {
     const apiResponse = await handleApiRoute(url, request, env, ctx);
     if (apiResponse) return withSecurityHeaders(apiResponse, env);
 
-    return withSecurityHeaders(new Response(await renderNotFoundPage(base, env), { status: 404, headers: { 'Content-Type': 'text/html; charset=utf-8' } }), env);
+    try {
+      return withSecurityHeaders(new Response(await renderNotFoundPage(base, env), { status: 404, headers: { 'Content-Type': 'text/html; charset=utf-8' } }), env);
+    } catch (e) {
+      console.error('[404 page] render failed:', e && e.stack || e);
+      return withSecurityHeaders(renderFallbackErrorPage(), env);
+    }
+}
+
+export default {
+  // ════════════════════════════════════════════════════════════════
+  // TOP-LEVEL SAFETY NET: this is the ONLY place in the whole request
+  // lifecycle allowed to let an exception through un-caught before this
+  // fix — meaning any bug, anywhere in any router/page/lib module, took
+  // down every single page on the site with Cloudflare's raw "Error
+  // 1101" screen (see db/schema.js's ensureAiTables() for the real bug
+  // that actually caused this in production, now fixed). This wrapper
+  // does NOT change behavior for any successful request — it only
+  // changes what a visitor sees when something goes wrong, replacing a
+  // dead-end error screen with a branded, friendly fallback. The full
+  // error and stack trace are still logged via console.error, so
+  // `wrangler tail` / the Cloudflare dashboard's Workers Logs continue
+  // to show the exact cause for debugging.
+  async fetch(request, env, ctx) {
+    try {
+      return await handleFetch(request, env, ctx);
+    } catch (e) {
+      console.error('[fetch] unhandled exception:', e && e.stack || e);
+      try {
+        return withSecurityHeaders(renderFallbackErrorPage(), env);
+      } catch (e2) {
+        // withSecurityHeaders/renderFallbackErrorPage are static and
+        // dependency-free by design, but as an absolute last resort if
+        // even this fails, return the plainest possible valid Response
+        // rather than let anything propagate to the runtime.
+        return new Response('Service temporarily unavailable. Please try again shortly.', { status: 500 });
+      }
+    }
   },
 
   async scheduled(event, env, ctx) {
