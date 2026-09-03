@@ -817,8 +817,28 @@ export async function ensureAiTables(env) {
       UNIQUE(content_type, content_id)
     )`,
   ];
-  if (typeof env.DB.batch === 'function') await env.DB.batch(statements.map(sql => env.DB.prepare(sql)));
-  else for (const sql of statements) await env.DB.prepare(sql).run();
+  // FIX (site-wide outage — Error 1101 "Worker threw exception" on every
+  // page): this used to build the whole statement list with
+  // `statements.map(sql => env.DB.prepare(sql))` and hand the array to
+  // `env.DB.batch()`. env.DB.prepare() COMPILES the SQL immediately — it
+  // does not wait for batch() to run it — so `.map()` was calling
+  // `prepare()` on the `CREATE INDEX ... ON career_assistant_messages(...)`
+  // statement before the earlier `CREATE TABLE career_assistant_messages`
+  // statement had actually been EXECUTED (only prepared, still queued).
+  // On any database where that table didn't already exist, D1/SQLite
+  // rejects preparing an index against a table it can't yet see, throwing
+  // "no such table: career_assistant_messages". Because ensureAiTables()
+  // runs on every request (via ensureAccountTables() in index.js) and
+  // never got past this line, the table was NEVER created and EVERY
+  // request kept re-throwing the same error forever — a permanent,
+  // site-wide outage, not a transient one. Fix: execute each statement
+  // sequentially and awaited (prepare AND run one at a time), so the
+  // CREATE TABLE is fully committed before the CREATE INDEX that depends
+  // on it is ever prepared. This matches the same sequential pattern
+  // already used for every other CREATE TABLE in this file.
+  for (const sql of statements) {
+    await env.DB.prepare(sql).run();
+  }
   aiSchemaEnsured = true;
 }
 
