@@ -14,6 +14,38 @@ import { STATIC_PAGES } from '../data/static-content.js';
 import { BLOG_POSTS } from '../data/blog-posts.js';
 import { slugify } from '../lib/entities.js';
 
+// ════════════════════════════════════════════════════════════════
+// SCHEMA VERSION GATE — bump SCHEMA_VERSION whenever a CREATE TABLE /
+// ensureColumn / CREATE INDEX statement is added anywhere below.
+//
+// WHY THIS EXISTS (root cause of a real site-wide outage):
+// ensureTable() + ensureAccountTables() + ensureAiTables() together now
+// issue roughly 280+ individual D1 statements (CREATE TABLE, PRAGMA
+// table_info, ALTER TABLE, CREATE INDEX, seed INSERTs) — this schema
+// started small (17 round-trips, see the comment below) and grew with
+// every new feature, but the "only run once per isolate" in-memory flags
+// (schemaEnsured / accountSchemaEnsured / aiSchemaEnsured) only help
+// while an isolate stays warm. Cloudflare recycles idle isolates
+// constantly, especially on lower-traffic sites, so in practice this
+// 280+-statement cascade was re-running on a large fraction of requests
+// — comfortably blowing past the free plan's 50-subrequest-per-invocation
+// ceiling (and even a meaningful chunk of the paid plan's 1000). Once
+// that ceiling is hit mid-request, D1 calls start throwing, which is
+// exactly what was crashing the site "constantly": not a one-time bug,
+// but a structural cost that scaled with every feature added.
+//
+// FIX: persist a single version string in a tiny, permanent table.
+// On a warm isolate we still short-circuit instantly via the in-memory
+// flags (zero D1 calls, unchanged from before). On a COLD isolate, we
+// now pay just 2 cheap D1 calls (create-if-missing + one SELECT) to
+// confirm the schema is already current, instead of 280+. The full
+// migration cascade only ever runs for real when SCHEMA_VERSION has
+// actually changed (i.e. right after a deploy that added something) —
+// exactly the "rare, self-healing, one-time" behavior the original
+// comment below intended, now actually delivered.
+const SCHEMA_VERSION = '2026-09-03.1';
+let schemaVersionConfirmed = false;
+
 async function ensureColumn(env, table, column, definition) {
   try {
     const { results } = await env.DB.prepare(`PRAGMA table_info(${table})`).all();
@@ -36,6 +68,9 @@ async function ensureColumn(env, table, column, definition) {
 // requests) instead of once per request. A fresh isolate (cold start, or
 // after a new deploy) simply re-runs the cheap idempotent checks once —
 // still fully self-healing, just no longer wastefully repeated.
+// (NOTE: this in-memory-only guarantee is now backed up by the persisted
+// SCHEMA_VERSION gate above — see ensureAllSchema() at the bottom of this
+// file, which is what index.js actually calls.)
 let schemaEnsured = false;
 
 export async function ensureTable(env) {
@@ -43,6 +78,7 @@ export async function ensureTable(env) {
   await env.DB.prepare(`
     CREATE TABLE IF NOT EXISTS jobs (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
+
       title TEXT, company TEXT, location TEXT,
       url TEXT UNIQUE, description TEXT,
       salary TEXT, remote_type TEXT, skills TEXT,
@@ -1320,4 +1356,59 @@ export async function ensureAccountTables(env) {
 
   await ensureAiTables(env);
   accountSchemaEnsured = true;
+}
+
+// ════════════════════════════════════════════════════════════════
+// ensureAllSchema() — THIS is what index.js calls on every request.
+// See the SCHEMA_VERSION comment at the top of this file for why it
+// exists. It is a strict superset of calling ensureTable() +
+// ensureAccountTables() directly — same end result, same tables, same
+// columns — just gated behind a cheap persisted version check first.
+// ════════════════════════════════════════════════════════════════
+export async function ensureAllSchema(env) {
+  if (schemaVersionConfirmed) return; // warm isolate — zero D1 calls
+
+  try {
+    // Single tiny permanent table, never touched by the rest of the app.
+    // Two cheap calls (create-if-missing + read) replace 280+ when the
+    // schema is already current, which is true for the overwhelming
+    // majority of requests.
+    await env.DB.prepare(`CREATE TABLE IF NOT EXISTS _schema_meta (k TEXT PRIMARY KEY, v TEXT)`).run();
+    const row = await env.DB.prepare(`SELECT v FROM _schema_meta WHERE k = 'version'`).first();
+    if (row && row.v === SCHEMA_VERSION) {
+      // Schema already current — also flip the individual flags so the
+      // ~20 other call sites across the codebase (sync.js, cleanup.js,
+      // admin pages, home.js, ai lib modules, ...) that call
+      // ensureTable()/ensureAccountTables()/ensureAiTables() directly
+      // short-circuit instantly too, instead of re-checking on their own.
+      schemaEnsured = true;
+      accountSchemaEnsured = true;
+      aiSchemaEnsured = true;
+      schemaVersionConfirmed = true;
+      return;
+    }
+  } catch (e) {
+    // If even this lightweight check fails (e.g. transient D1 error),
+    // fall through to the full migration below rather than silently
+    // skipping schema setup — self-healing takes priority over speed.
+    console.error('[ensureAllSchema] version check failed, running full migration:', e && e.message || e);
+  }
+
+  // Schema is missing or out of date (fresh database, or first request
+  // after a deploy that changed the schema) — run the real migration.
+  // This is the ONLY code path that still pays the full 280+-call cost,
+  // and it now only runs when something has actually changed.
+  await ensureTable(env);
+  await ensureAccountTables(env); // also calls ensureAiTables() internally
+
+  try {
+    await env.DB.prepare(
+      `INSERT INTO _schema_meta (k, v) VALUES ('version', ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v`
+    ).bind(SCHEMA_VERSION).run();
+  } catch (e) {
+    // Non-fatal: worst case, the next cold isolate re-runs the full
+    // (idempotent, safe) migration once more instead of taking the fast
+    // path. Never worth failing the request over.
+  }
+  schemaVersionConfirmed = true;
 }
