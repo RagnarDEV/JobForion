@@ -12,7 +12,7 @@
 // this composes safely — see src/routes/*.router.js for details.
 // ════════════════════════════════════════════════════════════════
 
-import { ensureTable, ensureAccountTables } from './db/schema.js';
+import { ensureTable, ensureAccountTables, ensureAllSchema } from './db/schema.js';
 import { recordVisit } from './db/analytics.js';
 import { syncJobs } from './db/sync.js';
 import { cleanupStaleJobs } from './db/cleanup.js';
@@ -156,8 +156,7 @@ a:hover{background:#1d4fd6}
 
 const CRON_LEASE_MS = 10 * 60 * 1000;
 async function withCronLease(env, name, task) {
-  await ensureTable(env);
-  await ensureAccountTables(env);
+  await ensureAllSchema(env);
   const key = `_cron_lock_${String(name).replace(/[^a-z0-9_-]/gi, '_').slice(0, 40)}`;
   const now = Date.now();
   let acquired = false;
@@ -205,8 +204,10 @@ async function handleFetch(request, env, ctx) {
 
     // D1 schema bootstrap is needed by settings, feeds, admin, accounts and
     // content routes, but not by static/R2/logo requests handled above.
-    await ensureTable(env);
-    await ensureAccountTables(env);
+    // ensureAllSchema() replaces two direct calls here — see db/schema.js
+    // for why (persisted version gate avoids 280+ D1 calls on every cold
+    // isolate, which is what was crashing the site under real traffic).
+    await ensureAllSchema(env);
 
     // ── maintenance mode (toggled from /admin/settings, no redeploy) ──
     // /admin/* is always exempt — otherwise a site owner who enables
