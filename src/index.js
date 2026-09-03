@@ -128,7 +128,10 @@ const RETIRED_HOSTS = new Set(['jobnova.manasa.workers.dev', 'jobnova.sryze.cc',
 // it is deliberately 100% self-contained: no imports, no D1 reads, no
 // template composition from other modules. It must be structurally
 // incapable of throwing itself.
-function renderFallbackErrorPage() {
+function renderFallbackErrorPage(diagnostic) {
+  const diagBlock = diagnostic
+    ? `<pre dir="ltr" style="text-align:left;background:#0B1220;color:#9AA6C4;font-size:11px;line-height:1.6;padding:14px;border-radius:10px;margin-top:18px;overflow:auto;max-height:340px;white-space:pre-wrap;word-break:break-word">${diagnostic.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</pre>`
+    : '';
   return new Response(
     `<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -136,7 +139,7 @@ function renderFallbackErrorPage() {
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Tahoma,Arial,sans-serif;background:#F6F7FB;color:#12162B;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;line-height:1.7}
-.box{background:#fff;border:1px solid #E6E9F0;border-radius:18px;padding:40px 32px;max-width:460px;width:100%;text-align:center;box-shadow:0 16px 40px rgba(18,22,43,.10)}
+.box{background:#fff;border:1px solid #E6E9F0;border-radius:18px;padding:40px 32px;max-width:${diagnostic ? '640' : '460'}px;width:100%;text-align:center;box-shadow:0 16px 40px rgba(18,22,43,.10)}
 .mark{width:52px;height:52px;border-radius:14px;background:linear-gradient(135deg,#2563EB,#7C3AED);display:flex;align-items:center;justify-content:center;margin:0 auto 18px;font-size:22px;font-weight:800;color:#fff}
 h1{font-size:19px;font-weight:800;margin-bottom:10px}
 p{font-size:14px;color:#525A72;margin-bottom:22px}
@@ -148,6 +151,7 @@ a:hover{background:#1d4fd6}
 <h1>عذراً، حدث خطأ مؤقت</h1>
 <p>واجه الموقع مشكلة غير متوقعة أثناء تحميل هذه الصفحة. فريقنا تم إعلامه تلقائياً. الرجاء إعادة المحاولة خلال لحظات.</p>
 <a href="/">العودة إلى الصفحة الرئيسية</a>
+${diagBlock}
 </div>
 </body></html>`,
     { status: 500, headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' } }
@@ -302,7 +306,22 @@ export default {
     } catch (e) {
       console.error('[fetch] unhandled exception:', e && e.stack || e);
       try {
-        return withSecurityHeaders(renderFallbackErrorPage(), env);
+        // Temporary, safe diagnostic reveal: append ?jf_debug=<ADMIN_PASSWORD>
+        // to the exact URL that failed to see the real error + stack trace
+        // right in the browser — no terminal/wrangler access needed. Gated
+        // strictly behind an exact match of the real admin password (never
+        // shown otherwise), and the page itself is already noindex +
+        // no-store. Safe to remove this block once the site is stable
+        // again; it changes nothing for ordinary visitors either way.
+        let diagnostic = null;
+        try {
+          const dbgUrl = new URL(request.url);
+          const dbgKey = dbgUrl.searchParams.get('jf_debug');
+          if (dbgKey && env.ADMIN_PASSWORD && dbgKey === env.ADMIN_PASSWORD) {
+            diagnostic = String((e && e.stack) || e || 'Unknown error').slice(0, 4000);
+          }
+        } catch (e3) {}
+        return withSecurityHeaders(renderFallbackErrorPage(diagnostic), env);
       } catch (e2) {
         // withSecurityHeaders/renderFallbackErrorPage are static and
         // dependency-free by design, but as an absolute last resort if
