@@ -27,11 +27,18 @@ function validateTitle(value) {
   return title;
 }
 
+// RESILIENCE: try/catch with an empty-array fallback — same rationale as
+// pages-cms.js's public read functions (see the comment there). This is
+// the ONLY function on the public homepage render path in this file
+// (getEnabledHomepageCustomSections calls it, admin CRUD functions below
+// are reached only via /admin, which already has its own error page).
 export async function getAllHomepageCustomSections(env) {
-  const { results } = await env.DB.prepare(
-    'SELECT * FROM homepage_custom_sections ORDER BY sort_order ASC, id ASC'
-  ).all();
-  return results || [];
+  try {
+    const { results } = await env.DB.prepare(
+      'SELECT * FROM homepage_custom_sections ORDER BY sort_order ASC, id ASC'
+    ).all();
+    return results || [];
+  } catch (e) { return []; }
 }
 
 export async function getEnabledHomepageCustomSections(env) {
