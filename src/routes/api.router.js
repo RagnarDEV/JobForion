@@ -308,6 +308,17 @@ export async function handleApiRoute(url, request, env, ctx) {
   }
 
   if (url.pathname === '/api/jobs') {
+    // RESILIENCE: the whole handler is wrapped in try/catch. This is the
+    // busiest read endpoint on the site (backs live search-as-you-type)
+    // and queries several columns/tables that are part of the newer
+    // schema additions — during the first few requests after a schema
+    // change, while db/schema.js's resumable migration is still catching
+    // up (see SCHEMA_MIGRATION_BUDGET there), a column might not exist
+    // yet. Returning an empty, well-formed result instead of a raw
+    // uncaught error keeps the homepage's live search from breaking
+    // during that (short, self-resolving) window.
+    try {
+    return await (async () => {
     // SECURITY / STABILITY: this is the single most D1-expensive public
     // route (multiple LIKE conditions + a COUNT(*) run twice per
     // request) and, until now, the one public data endpoint with no
@@ -491,6 +502,13 @@ export async function handleApiRoute(url, request, env, ctx) {
       ctx.waitUntil(caches.default.put(publicJobsCacheKey(url), response.clone()).catch(() => {}));
     }
     return response;
+    })();
+    } catch (e) {
+      return new Response(JSON.stringify({ jobs: [], total: 0, page: 1, totalPages: 1, hasNext: false, hasPrev: false }), {
+        status: 200,
+        headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*", "Cache-Control": "no-store" },
+      });
+    }
   }
 
   if (url.pathname === '/api/sync' && request.method === 'POST') {
