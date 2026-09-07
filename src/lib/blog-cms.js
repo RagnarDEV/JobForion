@@ -20,24 +20,34 @@ function slugify(str) {
     .replace(/^-|-$/g, '').slice(0, 80) || 'post';
 }
 
+// RESILIENCE: try/catch with safe fallback — same rationale as
+// pages-cms.js's public read functions. These three are on the public
+// /blog render path; admin CRUD functions further down this file are
+// reached only via /admin, which already has its own error page.
 export async function getPosts(env, { includeUnpublished = false, limit = 100 } = {}) {
-  const where = includeUnpublished ? '' : `WHERE ${EFFECTIVE_STATUS_SQL}`;
-  const { results } = await env.DB.prepare(
-    `SELECT * FROM blog_posts ${where} ORDER BY published_at DESC, id DESC LIMIT ?`
-  ).bind(limit).all();
-  return (results || []).map(parseTags);
+  try {
+    const where = includeUnpublished ? '' : `WHERE ${EFFECTIVE_STATUS_SQL}`;
+    const { results } = await env.DB.prepare(
+      `SELECT * FROM blog_posts ${where} ORDER BY published_at DESC, id DESC LIMIT ?`
+    ).bind(limit).all();
+    return (results || []).map(parseTags);
+  } catch (e) { return []; }
 }
 
 export async function getPostById(env, id, { includeUnpublished = false } = {}) {
-  const where = includeUnpublished ? 'id = ?' : `id = ? AND ${EFFECTIVE_STATUS_SQL}`;
-  const { results } = await env.DB.prepare(`SELECT * FROM blog_posts WHERE ${where}`).bind(id).all();
-  return results?.[0] ? parseTags(results[0]) : null;
+  try {
+    const where = includeUnpublished ? 'id = ?' : `id = ? AND ${EFFECTIVE_STATUS_SQL}`;
+    const { results } = await env.DB.prepare(`SELECT * FROM blog_posts WHERE ${where}`).bind(id).all();
+    return results?.[0] ? parseTags(results[0]) : null;
+  } catch (e) { return null; }
 }
 
 export async function getPostBySlug(env, slug, { includeUnpublished = false } = {}) {
-  const where = includeUnpublished ? 'slug = ?' : `slug = ? AND ${EFFECTIVE_STATUS_SQL}`;
-  const { results } = await env.DB.prepare(`SELECT * FROM blog_posts WHERE ${where}`).bind(slug).all();
-  return results?.[0] ? parseTags(results[0]) : null;
+  try {
+    const where = includeUnpublished ? 'slug = ?' : `slug = ? AND ${EFFECTIVE_STATUS_SQL}`;
+    const { results } = await env.DB.prepare(`SELECT * FROM blog_posts WHERE ${where}`).bind(slug).all();
+    return results?.[0] ? parseTags(results[0]) : null;
+  } catch (e) { return null; }
 }
 
 function parseTags(row) {

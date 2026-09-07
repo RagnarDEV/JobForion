@@ -46,35 +46,55 @@ const cleanCode = (value, limit) => typeof value === 'string' ? value.slice(0, l
 
 // Public-facing: only effectively-published pages, footer-eligible ones
 // first in sort_order. `includeUnpublished` is for the admin list view.
+//
+// RESILIENCE: wrapped in try/catch returning a safe empty default. These
+// four read functions are called from the homepage/footer/nav render path
+// on every request; the `pages` table is one of the newer additions to
+// the schema (see db/schema.js), so on a fresh database — or during the
+// first few requests while ensureAllSchema()'s resumable migration is
+// still catching up (see the SCHEMA_MIGRATION_BUDGET comment there) — it
+// may briefly not exist yet. An empty footer/menu for a moment is a
+// harmless, self-correcting degradation; an uncaught "no such table"
+// crashing the entire homepage is not. This matches the same
+// try/catch-with-safe-default convention already used throughout
+// lib/entities.js, lib/sitemap.js, and db/analytics.js.
 export async function getPages(env, { includeUnpublished = false } = {}) {
-  const where = includeUnpublished ? '' : `WHERE ${EFFECTIVE_STATUS_SQL}`;
-  const { results } = await env.DB.prepare(
-    `SELECT * FROM pages ${where} ORDER BY sort_order ASC, title ASC`
-  ).all();
-  return results || [];
+  try {
+    const where = includeUnpublished ? '' : `WHERE ${EFFECTIVE_STATUS_SQL}`;
+    const { results } = await env.DB.prepare(
+      `SELECT * FROM pages ${where} ORDER BY sort_order ASC, title ASC`
+    ).all();
+    return results || [];
+  } catch (e) { return []; }
 }
 
 export async function getFooterPages(env) {
-  const { results } = await env.DB.prepare(
-    `SELECT slug, title FROM pages WHERE ${EFFECTIVE_STATUS_SQL} AND show_in_footer = 1 ORDER BY sort_order ASC, title ASC`
-  ).all();
-  return results || [];
+  try {
+    const { results } = await env.DB.prepare(
+      `SELECT slug, title FROM pages WHERE ${EFFECTIVE_STATUS_SQL} AND show_in_footer = 1 ORDER BY sort_order ASC, title ASC`
+    ).all();
+    return results || [];
+  } catch (e) { return []; }
 }
 
 // Same idea as getFooterPages(), for the site's mobile/nav menu instead —
 // see the show_in_menu column added in db/schema.js. A page can appear in
 // the footer, the menu, both, or neither, independently.
 export async function getMenuPages(env) {
-  const { results } = await env.DB.prepare(
-    `SELECT slug, title FROM pages WHERE ${EFFECTIVE_STATUS_SQL} AND show_in_menu = 1 ORDER BY sort_order ASC, title ASC`
-  ).all();
-  return results || [];
+  try {
+    const { results } = await env.DB.prepare(
+      `SELECT slug, title FROM pages WHERE ${EFFECTIVE_STATUS_SQL} AND show_in_menu = 1 ORDER BY sort_order ASC, title ASC`
+    ).all();
+    return results || [];
+  } catch (e) { return []; }
 }
 
 export async function getPageBySlug(env, slug, { includeUnpublished = false } = {}) {
-  const where = includeUnpublished ? 'slug = ?' : `slug = ? AND ${EFFECTIVE_STATUS_SQL}`;
-  const { results } = await env.DB.prepare(`SELECT * FROM pages WHERE ${where}`).bind(slug).all();
-  return results?.[0] || null;
+  try {
+    const where = includeUnpublished ? 'slug = ?' : `slug = ? AND ${EFFECTIVE_STATUS_SQL}`;
+    const { results } = await env.DB.prepare(`SELECT * FROM pages WHERE ${where}`).bind(slug).all();
+    return results?.[0] || null;
+  } catch (e) { return null; }
 }
 
 export async function createPage(env, { slug, title, meta_description, body, custom_html, custom_css, custom_js, status, scheduled_at, show_in_footer, show_in_menu }) {
