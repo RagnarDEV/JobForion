@@ -46,16 +46,116 @@ import { slugify } from '../lib/entities.js';
 const SCHEMA_VERSION = '2026-09-03.1';
 let schemaVersionConfirmed = false;
 
+// ════════════════════════════════════════════════════════════════
+// MIGRATION BUDGET — the missing piece: on Cloudflare's Workers Free
+// plan, a single invocation gets a hard ceiling of 50 subrequests
+// TOTAL (D1 calls count against this). The full first-time migration
+// below issues 280+ D1 calls by itself — meaning it is STRUCTURALLY
+// IMPOSSIBLE for it to finish inside one request on that plan, no
+// matter how the SCHEMA_VERSION gate is arranged. Every attempt would
+// run partway, hit the platform's real ceiling, throw, get caught by
+// index.js's top-level safety net (so the visitor sees the friendly
+// fallback page, not Cloudflare's raw error) — but the request never
+// succeeds, forever.
+//
+// FIX: wrap env.DB in a small counting proxy for the duration of the
+// migration only. Once a safe number of calls has been spent this
+// invocation, it stops CLEANLY (throws a private sentinel BEFORE
+// starting the next statement — never mid-statement) instead of
+// letting the platform cut it off mid-flight. Every statement in
+// ensureTable()/ensureAccountTables()/ensureAiTables() is already
+// idempotent (CREATE TABLE IF NOT EXISTS, ensureColumn()'s own
+// existence check, INSERT OR IGNORE seeds) — none of that code needed
+// to change. The NEXT request (any visitor, any fresh isolate) simply
+// re-runs the same sequence from the top: everything already applied
+// is now a fast no-op (and, for ensureColumn(), one cheaper PRAGMA-only
+// check instead of PRAGMA+ALTER), so each successive request makes
+// real forward progress until the whole migration is done — typically
+// within a handful of ordinary page loads, fully automatically, with
+// zero manual steps and zero site-wide downtime for any single
+// request (each one still renders normally with whatever schema
+// exists at that moment).
+const SCHEMA_MIGRATION_BUDGET_DEFAULT = 35;
+class SchemaBudgetExceeded extends Error {}
+
+// makeSkippableDB() is the mechanism that makes the migration genuinely
+// resumable (not just "safe to retry"): every raw CREATE TABLE / CREATE
+// INDEX / seed-batch statement in ensureTable()/ensureAccountTables()/
+// ensureAiTables() gets a sequential position. Positions at or below the
+// persisted `migration_cursor` are SKIPPED ENTIRELY (0 real D1 calls) —
+// not just "cheap to re-verify", genuinely not executed — because we
+// already know, from having recorded that cursor, that they succeeded in
+// an earlier request. This is what guarantees forward progress every
+// single invocation regardless of how large the total migration grows,
+// instead of every retry wastefully re-paying the cost of everything
+// already done (which, once that replay cost alone exceeds the budget,
+// would stall forever — a real failure mode this project hit and fixed).
+function makeSkippableDB(realDB, migCtx, budgetGuard) {
+  function shouldSkip() {
+    migCtx.position++;
+    return migCtx.position <= migCtx.cursor;
+  }
+  function wrap(realStmt) {
+    const w = {
+      _real: realStmt,
+      bind(...args) { w._real = w._real.bind(...args); return w; },
+      async run() {
+        if (shouldSkip()) return { success: true, meta: { changes: 0, last_row_id: 0 } };
+        budgetGuard();
+        return w._real.run();
+      },
+      async all() { budgetGuard(); return w._real.all(); },
+      async first(col) { budgetGuard(); return w._real.first(col); },
+      async raw() { budgetGuard(); return w._real.raw(); },
+    };
+    return w;
+  }
+  return {
+    prepare(sql) { return wrap(realDB.prepare(sql)); },
+    async batch(wrappedStmts) {
+      if (shouldSkip()) return wrappedStmts.map(() => ({ success: true, meta: { changes: 0 } }));
+      budgetGuard();
+      return realDB.batch(wrappedStmts.map(s => s._real || s));
+    },
+    async exec(sql) { budgetGuard(); return realDB.exec(sql); },
+  };
+}
+
+// ensureColumn() is called ~60 times across the tables below. Each call is
+// treated as ONE atomic resumable unit sharing the same position counter
+// as makeSkippableDB() above (env.__migCtx, when present — during a normal
+// non-migration call from elsewhere, __migCtx is absent and this simply
+// behaves exactly as before: unconditional PRAGMA-checked ALTER). This is
+// what avoids the earlier stall where 60+ un-skippable PRAGMA reads alone
+// (even with every CREATE TABLE already done) permanently exceeded any
+// reasonably-sized per-invocation budget: skipping the ENTIRE PRAGMA+ALTER
+// pair atomically for already-confirmed-complete columns means a request
+// resuming past the CREATE TABLE section reaches genuinely new work
+// immediately, instead of re-paying 60 read-only round-trips first.
 async function ensureColumn(env, table, column, definition) {
+  const migCtx = env.__migCtx;
+  if (migCtx) {
+    migCtx.position++;
+    if (migCtx.position <= migCtx.cursor) return; // confirmed done in an earlier request
+  }
+  const realDB = env.__realDB || env.DB;
+  const budgetGuard = env.__budgetGuard || (() => {});
   try {
-    const { results } = await env.DB.prepare(`PRAGMA table_info(${table})`).all();
+    budgetGuard();
+    const { results } = await realDB.prepare(`PRAGMA table_info(${table})`).all();
     const exists = (results || []).some(r => r.name === column);
     if (!exists) {
-      await env.DB.prepare(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`).run();
+      budgetGuard();
+      await realDB.prepare(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`).run();
     }
   } catch (e) {
-    // If the table itself doesn't exist yet, CREATE TABLE IF NOT EXISTS
-    // below handles it — safe to ignore here.
+    // IMPORTANT: budgetGuard() throws a private SchemaBudgetExceeded
+    // sentinel when the per-invocation D1-call budget runs out — that
+    // must propagate up to ensureAllSchema()'s handler (which persists
+    // the resume point), not be swallowed here. Only genuine DB errors
+    // (e.g. the table itself doesn't exist yet — CREATE TABLE IF NOT
+    // EXISTS elsewhere handles that) are safe to ignore.
+    if (e instanceof SchemaBudgetExceeded) throw e;
   }
 }
 
@@ -1368,6 +1468,21 @@ export async function ensureAccountTables(env) {
 export async function ensureAllSchema(env) {
   if (schemaVersionConfirmed) return; // warm isolate — zero D1 calls
 
+  // Same-request guard: index.js's own top-level call is only ONE of
+  // several call sites across the codebase that (correctly, per the fix
+  // above) now all route through ensureAllSchema() instead of calling
+  // ensureTable()/ensureAccountTables() directly. If a single request
+  // reaches more than one of them (e.g. index.js's call, then home.js's
+  // own call while rendering the homepage), each would otherwise spend
+  // its own FULL migration budget — stacking multiple ~35-call rounds
+  // into one request and risking the exact subrequest-ceiling crash this
+  // whole mechanism exists to prevent. `env` is the same object
+  // reference threaded through one request's entire call chain, so
+  // stamping it here safely limits the ENTIRE request to at most one
+  // migration attempt, regardless of how many places call this.
+  if (env.__schemaMigrationAttemptedThisRequest) return;
+  env.__schemaMigrationAttemptedThisRequest = true;
+
   try {
     // Single tiny permanent table, never touched by the rest of the app.
     // Two cheap calls (create-if-missing + read) replace 280+ when the
@@ -1395,20 +1510,79 @@ export async function ensureAllSchema(env) {
   }
 
   // Schema is missing or out of date (fresh database, or first request
-  // after a deploy that changed the schema) — run the real migration.
-  // This is the ONLY code path that still pays the full 280+-call cost,
-  // and it now only runs when something has actually changed.
-  await ensureTable(env);
-  await ensureAccountTables(env); // also calls ensureAiTables() internally
+  // after a deploy that changed the schema) — run the real migration,
+  // capped by the budget above so this can NEVER throw due to hitting
+  // Cloudflare's real per-invocation subrequest ceiling, AND resumable
+  // via a persisted cursor so it makes GUARANTEED forward progress every
+  // single invocation (see makeSkippableDB()/ensureColumn() above) —
+  // not just "safe to retry", but structurally guaranteed to finish
+  // within a bounded number of requests regardless of plan tier.
+  let startCursor = 0;
+  try {
+    const cursorRow = await env.DB.prepare(`SELECT v FROM _schema_meta WHERE k = 'migration_cursor'`).first();
+    startCursor = cursorRow ? (parseInt(cursorRow.v, 10) || 0) : 0;
+  } catch (e) { /* table was just created above; a missing cursor row just means "start from 0" */ }
 
+  const budget = (env.SCHEMA_MIGRATION_BUDGET && Number(env.SCHEMA_MIGRATION_BUDGET) > 0)
+    ? Number(env.SCHEMA_MIGRATION_BUDGET)
+    : SCHEMA_MIGRATION_BUDGET_DEFAULT;
+  let callsUsed = 0;
+  function budgetGuard() {
+    callsUsed++;
+    if (callsUsed > budget) throw new SchemaBudgetExceeded(`Schema migration paused after ${budget} D1 calls this request (resuming from unit #${startCursor}) — will continue on the next request.`);
+  }
+  const migCtx = { position: 0, cursor: startCursor };
+  const budgetedEnv = {
+    ...env,
+    DB: makeSkippableDB(env.DB, migCtx, budgetGuard),
+    __realDB: env.DB,
+    __migCtx: migCtx,
+    __budgetGuard: budgetGuard,
+  };
+
+  try {
+    await ensureTable(budgetedEnv);
+    await ensureAccountTables(budgetedEnv); // also calls ensureAiTables() internally
+  } catch (e) {
+    if (e instanceof SchemaBudgetExceeded) {
+      // Real progress was made and already durably committed to D1 (every
+      // unit up to migCtx.position - 1 either ran for real or was
+      // confirmed already-done). Persist that as the new resume point —
+      // never move the cursor backward even if something raced — and
+      // stop cleanly. Do NOT write SCHEMA_VERSION yet, do NOT set the
+      // in-memory flags, do NOT let this propagate: the current request
+      // continues rendering normally with whatever schema exists right
+      // now, exactly like any other request.
+      const newCursor = Math.max(startCursor, migCtx.position - 1);
+      console.error(`[ensureAllSchema] ${e.message} (progress: unit ${newCursor})`);
+      try {
+        await env.DB.prepare(
+          `INSERT INTO _schema_meta (k, v) VALUES ('migration_cursor', ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v`
+        ).bind(String(newCursor)).run();
+      } catch (e2) { /* worst case the next request re-derives progress from scratch — still safe, just slower */ }
+      return;
+    }
+    // A genuinely different error (bad SQL, real D1 outage, etc.) —
+    // this is NOT the budget guard, so surface it exactly as before:
+    // let index.js's top-level safety net catch it, log the full
+    // stack, and show the branded fallback page (with ?jf_debug=
+    // revealing the real cause if the admin password is supplied).
+    throw e;
+  }
+
+  // Fully completed in this invocation (or already had enough of a
+  // cursor head start to finish within budget) — record the version and
+  // clean up the now-irrelevant cursor.
   try {
     await env.DB.prepare(
       `INSERT INTO _schema_meta (k, v) VALUES ('version', ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v`
     ).bind(SCHEMA_VERSION).run();
+    await env.DB.prepare(`DELETE FROM _schema_meta WHERE k = 'migration_cursor'`).run();
   } catch (e) {
     // Non-fatal: worst case, the next cold isolate re-runs the full
-    // (idempotent, safe) migration once more instead of taking the fast
-    // path. Never worth failing the request over.
+    // (idempotent, safe, now-instant-since-already-done) migration once
+    // more instead of taking the fast path. Never worth failing the
+    // request over.
   }
   schemaVersionConfirmed = true;
 }
