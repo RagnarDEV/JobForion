@@ -174,15 +174,17 @@ export async function listPublicCompanies(env, { q = '', country = '', industry 
   if (featuredOnly) { where.push(`c.featured = 1`); }
   const whereSql = where.join(' AND ');
 
-  const { results } = await env.DB.prepare(
-    `SELECT c.*,
-       (SELECT COUNT(*) FROM jobs WHERE (jobs.company_id = c.id OR (jobs.company_id IS NULL AND LOWER(jobs.company) = LOWER(c.name))) AND ${PUBLIC_JOB_STATUS_SQL}) as job_count,
-       (SELECT COUNT(*) FROM jobs WHERE (jobs.company_id = c.id OR (jobs.company_id IS NULL AND LOWER(jobs.company) = LOWER(c.name))) AND jobs.remote_type IN ('fully_remote', 'hybrid') AND ${PUBLIC_JOB_STATUS_SQL}) as remote_job_count
-     FROM companies c WHERE ${whereSql}
-     ORDER BY c.featured DESC, c.verified DESC, job_count DESC, c.name ASC
-     LIMIT ? OFFSET ?`
-  ).bind(...binds, limit, offset).all();
-  return results || [];
+  try {
+    const { results } = await env.DB.prepare(
+      `SELECT c.*,
+         (SELECT COUNT(*) FROM jobs WHERE (jobs.company_id = c.id OR (jobs.company_id IS NULL AND LOWER(jobs.company) = LOWER(c.name))) AND ${PUBLIC_JOB_STATUS_SQL}) as job_count,
+         (SELECT COUNT(*) FROM jobs WHERE (jobs.company_id = c.id OR (jobs.company_id IS NULL AND LOWER(jobs.company) = LOWER(c.name))) AND jobs.remote_type IN ('fully_remote', 'hybrid') AND ${PUBLIC_JOB_STATUS_SQL}) as remote_job_count
+       FROM companies c WHERE ${whereSql}
+       ORDER BY c.featured DESC, c.verified DESC, job_count DESC, c.name ASC
+       LIMIT ? OFFSET ?`
+    ).bind(...binds, limit, offset).all();
+    return results || [];
+  } catch (e) { return []; }
 }
 
 export async function countPublicCompanies(env, { q = '', country = '', industry = '', company_size = '', verifiedOnly = false } = {}) {
@@ -193,8 +195,10 @@ export async function countPublicCompanies(env, { q = '', country = '', industry
   if (industry) { where.push(`industry = ?`); binds.push(industry.slice(0, 100)); }
   if (company_size) { where.push(`company_size = ?`); binds.push(company_size.slice(0, 40)); }
   if (verifiedOnly) { where.push(`verified = 1`); }
-  const { results } = await env.DB.prepare(`SELECT COUNT(*) c FROM companies WHERE ${where.join(' AND ')}`).bind(...binds).all();
-  return results?.[0]?.c || 0;
+  try {
+    const { results } = await env.DB.prepare(`SELECT COUNT(*) c FROM companies WHERE ${where.join(' AND ')}`).bind(...binds).all();
+    return results?.[0]?.c || 0;
+  } catch (e) { return 0; }
 }
 
 // A real company's public profile is only reachable at its slug once it's
@@ -203,8 +207,10 @@ export async function countPublicCompanies(env, { q = '', country = '', industry
 // then falls back to the legacy text-directory page for that slug (if
 // any), so no URL ever 404s just because a company is mid-review.
 export async function getPublicCompanyBySlug(env, slug) {
-  const { results } = await env.DB.prepare(`SELECT * FROM companies WHERE slug = ? AND status = 'active' LIMIT 1`).bind(slug).all();
-  return results?.[0] || null;
+  try {
+    const { results } = await env.DB.prepare(`SELECT * FROM companies WHERE slug = ? AND status = 'active' LIMIT 1`).bind(slug).all();
+    return results?.[0] || null;
+  } catch (e) { return null; }
 }
 
 function companyJobsQuery(company, { remote_type = '', employment_type = '', category = '', seniority = '', country = '', q = '' } = {}) {
@@ -221,18 +227,22 @@ function companyJobsQuery(company, { remote_type = '', employment_type = '', cat
 
 export async function countJobsForCompanyEntity(env, company, filters = {}) {
   const { where, binds } = companyJobsQuery(company, filters);
-  const { results } = await env.DB.prepare(`SELECT COUNT(*) AS c FROM jobs WHERE ${where}`).bind(...binds).all();
-  return Number(results?.[0]?.c || 0);
+  try {
+    const { results } = await env.DB.prepare(`SELECT COUNT(*) AS c FROM jobs WHERE ${where}`).bind(...binds).all();
+    return Number(results?.[0]?.c || 0);
+  } catch (e) { return 0; }
 }
 
 export async function jobsForCompanyEntity(env, company, { limit = 100, offset = 0, ...filters } = {}) {
   const { where, binds } = companyJobsQuery(company, filters);
   const safeLimit = Math.max(1, Math.min(100, parseInt(limit, 10) || 100));
   const safeOffset = Math.max(0, parseInt(offset, 10) || 0);
-  const { results } = await env.DB.prepare(
-    `SELECT ${JOB_LISTING_COLUMNS} FROM jobs WHERE ${where} ORDER BY ${JOB_MANUAL_PIN_SORT_SQL} LIMIT ${safeLimit} OFFSET ${safeOffset}`
-  ).bind(...binds).all();
-  return results || [];
+  try {
+    const { results } = await env.DB.prepare(
+      `SELECT ${JOB_LISTING_COLUMNS} FROM jobs WHERE ${where} ORDER BY ${JOB_MANUAL_PIN_SORT_SQL} LIMIT ${safeLimit} OFFSET ${safeOffset}`
+    ).bind(...binds).all();
+    return results || [];
+  } catch (e) { return []; }
 }
 
 // ── Verified-company name lookup (for the "✓ Verified" badge on job
@@ -265,10 +275,14 @@ export async function getVerifiedCompanyNameSet(env) {
 }
 
 export async function listDistinctIndustries(env) {
-  const { results } = await env.DB.prepare(`SELECT DISTINCT industry FROM companies WHERE status = 'active' AND industry IS NOT NULL AND industry != '' ORDER BY industry ASC LIMIT 100`).all();
-  return (results || []).map(r => r.industry);
+  try {
+    const { results } = await env.DB.prepare(`SELECT DISTINCT industry FROM companies WHERE status = 'active' AND industry IS NOT NULL AND industry != '' ORDER BY industry ASC LIMIT 100`).all();
+    return (results || []).map(r => r.industry);
+  } catch (e) { return []; }
 }
 export async function listDistinctCompanyCountries(env) {
-  const { results } = await env.DB.prepare(`SELECT DISTINCT country FROM companies WHERE status = 'active' AND country IS NOT NULL AND country != '' ORDER BY country ASC LIMIT 200`).all();
-  return (results || []).map(r => r.country);
+  try {
+    const { results } = await env.DB.prepare(`SELECT DISTINCT country FROM companies WHERE status = 'active' AND country IS NOT NULL AND country != '' ORDER BY country ASC LIMIT 200`).all();
+    return (results || []).map(r => r.country);
+  } catch (e) { return []; }
 }
