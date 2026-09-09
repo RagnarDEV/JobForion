@@ -145,12 +145,17 @@ export async function renderJobsIndex(env, base, user = null, filters = {}) {
     orderBySql = `CASE WHEN LOWER(title) LIKE ? THEN 0 WHEN EXISTS (SELECT 1 FROM json_each(jobs.skills) je2 WHERE LOWER(je2.value) LIKE ?) THEN 1 WHEN LOWER(company) LIKE ? THEN 2 ELSE 3 END ASC, ${orderBySql}`;
     orderParams.push(like, like, like);
   }
-  const { results: countRows } = await env.DB.prepare(`SELECT COUNT(*) AS c FROM jobs${where}`).bind(...binds).all();
+  let countRows, jobs;
+  try {
+    ({ results: countRows } = await env.DB.prepare(`SELECT COUNT(*) AS c FROM jobs${where}`).bind(...binds).all());
+  } catch (e) { countRows = [{ c: 0 }]; }
   const total = Number(countRows?.[0]?.c || 0);
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const page = Math.min(requestedPage, totalPages);
   const offset = (page - 1) * pageSize;
-  const { results: jobs } = await env.DB.prepare(`SELECT ${JOB_LISTING_COLUMNS} FROM jobs${where} ORDER BY ${orderBySql} LIMIT ${pageSize} OFFSET ${offset}`).bind(...binds, ...orderParams).all();
+  try {
+    ({ results: jobs } = await env.DB.prepare(`SELECT ${JOB_LISTING_COLUMNS} FROM jobs${where} ORDER BY ${orderBySql} LIMIT ${pageSize} OFFSET ${offset}`).bind(...binds, ...orderParams).all());
+  } catch (e) { jobs = []; }
   const safe = value => escapeHtml(String(value || ''));
   const paramNames = ['q','category','remote_type','employment_type','seniority','country','skill','company','salary_min','salary_max','days','source_type','sort'];
   const canonicalFilters = { q, category, remote_type: remoteType, employment_type: employmentType, seniority, country, skill, company, salary_min: salaryMin ? String(salaryMin) : '', salary_max: salaryMax ? String(salaryMax) : '', days: days ? String(days) : '', source_type: sourceType, sort: sortKey !== 'relevance' ? sortKey : '' };
@@ -220,14 +225,19 @@ export async function renderRemoteJobsLanding(env, base, user = null, filters = 
   const remoteWhere = `${PUBLIC_JOB_STATUS_SQL} AND remote_type = ?`;
   const pageSize = 12;
   const requestedPage = Math.max(1, Math.min(500, parseInt(filters.page || '1', 10) || 1));
-  const [{ results: countRows }, { results: companyRows }] = await Promise.all([
-    env.DB.prepare(`SELECT COUNT(*) AS c FROM jobs WHERE ${remoteWhere}`).bind('fully_remote').all(),
-    env.DB.prepare(`SELECT company, COUNT(*) AS c FROM jobs WHERE ${remoteWhere} AND company IS NOT NULL AND company != '' GROUP BY company ORDER BY c DESC, company ASC LIMIT 6`).bind('fully_remote').all(),
-  ]);
+  let countRows, companyRows, jobs;
+  try {
+    ({ results: countRows } = await env.DB.prepare(`SELECT COUNT(*) AS c FROM jobs WHERE ${remoteWhere}`).bind('fully_remote').all());
+  } catch (e) { countRows = [{ c: 0 }]; }
+  try {
+    ({ results: companyRows } = await env.DB.prepare(`SELECT company, COUNT(*) AS c FROM jobs WHERE ${remoteWhere} AND company IS NOT NULL AND company != '' GROUP BY company ORDER BY c DESC, company ASC LIMIT 6`).bind('fully_remote').all());
+  } catch (e) { companyRows = []; }
   const total = Number(countRows?.[0]?.c || 0);
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const page = Math.min(requestedPage, totalPages);
-  const { results: jobs } = await env.DB.prepare(`SELECT ${JOB_LISTING_COLUMNS} FROM jobs WHERE ${remoteWhere} ORDER BY ${JOB_MANUAL_PIN_SORT_SQL} LIMIT ? OFFSET ?`).bind('fully_remote', pageSize, (page - 1) * pageSize).all();
+  try {
+    ({ results: jobs } = await env.DB.prepare(`SELECT ${JOB_LISTING_COLUMNS} FROM jobs WHERE ${remoteWhere} ORDER BY ${JOB_MANUAL_PIN_SORT_SQL} LIMIT ? OFFSET ?`).bind('fully_remote', pageSize, (page - 1) * pageSize).all());
+  } catch (e) { jobs = []; }
   const jobsHtml = await jobsListHtml(env, jobs || [], categoryMap, categoryOrder, cardStyles, `<div class="empty"><div class="e-icon">📭</div><h3>No fully remote jobs available</h3><p>Try the full Jobs directory to explore hybrid and on-site roles as well.</p><a class="public-primary-link" href="/jobs">Browse all jobs </a></div>`);
   const pageLink = n => `/remote-jobs${n > 1 ? `?page=${n}` : ''}`;
   const pagination = totalPages > 1 ? `<nav class="jobs-directory-pagination" aria-label="Remote jobs pagination">${page > 1 ? `<a class="page-btn" href="${pageLink(page - 1)}"> Previous</a>` : '<span class="page-btn disabled"> Previous</span>'}<span class="page-number-list">${Array.from({ length: totalPages }, (_, i) => i + 1).slice(Math.max(0, page - 3), Math.min(totalPages, page + 2)).map(n => `<a class="page-number${n === page ? ' active' : ''}"${n === page ? ' aria-current="page"' : ''} href="${pageLink(n)}">${n}</a>`).join('')}</span>${page < totalPages ? `<a class="page-btn" href="${pageLink(page + 1)}">Next </a>` : '<span class="page-btn disabled">Next </span>'}</nav>` : '';
@@ -268,11 +278,16 @@ export async function renderCategoryDetail(env, base, key, user = null, filters 
   const pageSize = 20;
   const requestedPage = Math.max(1, Math.min(500, parseInt(filters.page || '1', 10) || 1));
   const categoryLike = `%${key.toLowerCase()}%`;
-  const { results: countRows } = await env.DB.prepare(`SELECT COUNT(*) AS c FROM jobs WHERE LOWER(title) LIKE ? AND ${PUBLIC_JOB_STATUS_SQL}`).bind(categoryLike).all();
+  let countRows, jobs;
+  try {
+    ({ results: countRows } = await env.DB.prepare(`SELECT COUNT(*) AS c FROM jobs WHERE LOWER(title) LIKE ? AND ${PUBLIC_JOB_STATUS_SQL}`).bind(categoryLike).all());
+  } catch (e) { countRows = [{ c: 0 }]; }
   const total = Number(countRows?.[0]?.c || 0);
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const page = Math.min(requestedPage, totalPages);
-  const { results: jobs } = await env.DB.prepare(`SELECT ${JOB_LISTING_COLUMNS} FROM jobs WHERE LOWER(title) LIKE ? AND ${PUBLIC_JOB_STATUS_SQL} ORDER BY ${JOB_MANUAL_PIN_SORT_SQL} LIMIT ${pageSize} OFFSET ${(page - 1) * pageSize}`).bind(categoryLike).all();
+  try {
+    ({ results: jobs } = await env.DB.prepare(`SELECT ${JOB_LISTING_COLUMNS} FROM jobs WHERE LOWER(title) LIKE ? AND ${PUBLIC_JOB_STATUS_SQL} ORDER BY ${JOB_MANUAL_PIN_SORT_SQL} LIMIT ${pageSize} OFFSET ${(page - 1) * pageSize}`).bind(categoryLike).all());
+  } catch (e) { jobs = []; }
   const { html: bc, jsonLd: bcSchema } = buildBreadcrumb(base, [{ name: 'Categories', path: '/categories' }, { name: meta.label, path: `/categories/${key}` }]);
   const jobsHtml = await jobsListHtml(env, jobs, categoryMap, categoryOrder, cardStyles, `<div class="empty"><div class="e-icon">📭</div><h3>No jobs in this category yet</h3><p>Browse the full Jobs directory to explore other active roles.</p><a class="public-primary-link" href="/jobs?category=${encodeURIComponent(key)}">Browse all jobs </a></div>`);
   const pageLink = n => `/categories/${encodeURIComponent(key)}${n > 1 ? `?page=${n}` : ''}`;
@@ -576,9 +591,12 @@ export async function renderSearchPage(env, base, query, user = null) {
   // search term that only appears in a job's skills list or description
   // (not literally in the title/company/location) used to return zero
   // results here even though a genuinely relevant job existed.
-  const { results } = await env.DB.prepare(
-    `SELECT ${JOB_LISTING_COLUMNS} FROM jobs WHERE (LOWER(title) LIKE ? OR LOWER(company) LIKE ? OR LOWER(location) LIKE ? OR LOWER(description) LIKE ? OR EXISTS (SELECT 1 FROM json_each(jobs.skills) je WHERE LOWER(je.value) LIKE ?)) AND ${PUBLIC_JOB_STATUS_SQL} ORDER BY ${JOB_MANUAL_PIN_SORT_SQL} LIMIT 50`
-  ).bind(`%${qLower}%`, `%${qLower}%`, `%${qLower}%`, `%${qLower}%`, `%${qLower}%`).all();
+  let results;
+  try {
+    ({ results } = await env.DB.prepare(
+      `SELECT ${JOB_LISTING_COLUMNS} FROM jobs WHERE (LOWER(title) LIKE ? OR LOWER(company) LIKE ? OR LOWER(location) LIKE ? OR LOWER(description) LIKE ? OR EXISTS (SELECT 1 FROM json_each(jobs.skills) je WHERE LOWER(je.value) LIKE ?)) AND ${PUBLIC_JOB_STATUS_SQL} ORDER BY ${JOB_MANUAL_PIN_SORT_SQL} LIMIT 50`
+    ).bind(`%${qLower}%`, `%${qLower}%`, `%${qLower}%`, `%${qLower}%`, `%${qLower}%`).all());
+  } catch (e) { results = []; }
   const hasResults = (results || []).length > 0;
   const { html: bc, jsonLd: bcSchema } = buildBreadcrumb(base, [{ name: `Search: ${q}`, path: `/search/${query}` }]);
   // SECURITY: q comes directly from the URL path (decodeURIComponent), so
