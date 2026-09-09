@@ -118,14 +118,16 @@ export function safeExternalUrl(value) {
 // more than sufficient for a "top companies" listing — a company with no
 // jobs in the last 8000 postings isn't meaningfully "active" anyway.
 export async function listCompanies(env, { limit = 200 } = {}) {
-  const { results } = await env.DB.prepare(
-    `SELECT company, COUNT(*) c FROM (
-       SELECT company FROM jobs WHERE company IS NOT NULL AND company != '' AND ${PUBLIC_JOB_STATUS_SQL} ORDER BY id DESC LIMIT 8000
-     )
-     WHERE LOWER(TRIM(company)) NOT IN (SELECT LOWER(TRIM(company_lower)) FROM hidden_companies)
-     GROUP BY company ORDER BY c DESC LIMIT ?`
-  ).bind(limit).all();
-  return (results || []).map(r => ({ name: r.company, slug: slugify(r.company), count: r.c }));
+  try {
+    const { results } = await env.DB.prepare(
+      `SELECT company, COUNT(*) c FROM (
+         SELECT company FROM jobs WHERE company IS NOT NULL AND company != '' AND ${PUBLIC_JOB_STATUS_SQL} ORDER BY id DESC LIMIT 8000
+       )
+       WHERE LOWER(TRIM(company)) NOT IN (SELECT LOWER(TRIM(company_lower)) FROM hidden_companies)
+       GROUP BY company ORDER BY c DESC LIMIT ?`
+    ).bind(limit).all();
+    return (results || []).map(r => ({ name: r.company, slug: slugify(r.company), count: r.c }));
+  } catch (e) { return []; }
 }
 
 export async function findCompanyBySlug(env, slug) {
@@ -134,10 +136,12 @@ export async function findCompanyBySlug(env, slug) {
 }
 
 export async function jobsByCompany(env, companyName, { limit = 100 } = {}) {
-  const { results } = await env.DB.prepare(
-    `SELECT ${JOB_LISTING_COLUMNS} FROM jobs WHERE company = ? AND ${PUBLIC_JOB_STATUS_SQL} ORDER BY ${JOB_MANUAL_PIN_SORT_SQL} LIMIT ?`
-  ).bind(companyName, limit).all();
-  return results || [];
+  try {
+    const { results } = await env.DB.prepare(
+      `SELECT ${JOB_LISTING_COLUMNS} FROM jobs WHERE company = ? AND ${PUBLIC_JOB_STATUS_SQL} ORDER BY ${JOB_MANUAL_PIN_SORT_SQL} LIMIT ?`
+    ).bind(companyName, limit).all();
+    return results || [];
+  } catch (e) { return []; }
 }
 
 // ── Countries / Cities (heuristic split on `location`) ──────────
@@ -163,20 +167,29 @@ function splitLocation(location) {
 // /admin/directory can show hidden entries too (with a badge, so they
 // can be un-hidden), which listCountries()/listCities() below
 // deliberately can't do since they're the public-facing view.
+// RESILIENCE: try/catch with a safe empty-array default — see the same
+// pattern already used by listSkillsRaw() a little further down this
+// file (and pages-cms.js / blog-cms.js). These public directory reads
+// run on every /countries, /cities, /jobs and /remote-jobs page load
+// (plus the sitemap builders), so a transient or migration-in-progress
+// missing column/table must degrade to an empty directory, never an
+// uncaught crash.
 export async function listCountriesRaw(env) {
-  const { results } = await env.DB.prepare(
-    `SELECT location, COUNT(*) c FROM jobs WHERE location IS NOT NULL AND location != '' AND ${PUBLIC_JOB_STATUS_SQL} GROUP BY location`
-  ).all();
-  const map = new Map();
-  for (const row of results || []) {
-    const { region } = splitLocation(row.location);
-    if (!region) continue;
-    const slug = slugify(region);
-    const prev = map.get(slug) || { name: region, slug, count: 0 };
-    prev.count += row.c;
-    map.set(slug, prev);
-  }
-  return [...map.values()].sort((a, b) => b.count - a.count);
+  try {
+    const { results } = await env.DB.prepare(
+      `SELECT location, COUNT(*) c FROM jobs WHERE location IS NOT NULL AND location != '' AND ${PUBLIC_JOB_STATUS_SQL} GROUP BY location`
+    ).all();
+    const map = new Map();
+    for (const row of results || []) {
+      const { region } = splitLocation(row.location);
+      if (!region) continue;
+      const slug = slugify(region);
+      const prev = map.get(slug) || { name: region, slug, count: 0 };
+      prev.count += row.c;
+      map.set(slug, prev);
+    }
+    return [...map.values()].sort((a, b) => b.count - a.count);
+  } catch (e) { return []; }
 }
 
 export async function listCountries(env, { limit = 300 } = {}) {
@@ -198,37 +211,43 @@ export async function jobsByRegion(env, regionNames, { limit = 100, offset = 0 }
   // still matches the original, un-renamed text stored in jobs.location).
   const names = (Array.isArray(regionNames) ? regionNames : [regionNames]).filter(Boolean);
   if (!names.length) return [];
-  const conditions = names.map(() => '(location = ? OR location LIKE ?)').join(' OR ');
-  const binds = names.flatMap(n => [n, `%, ${n}`]);
-  const { results } = await env.DB.prepare(
-    `SELECT ${JOB_LISTING_COLUMNS} FROM jobs WHERE (${conditions}) AND ${PUBLIC_JOB_STATUS_SQL} ORDER BY ${JOB_MANUAL_PIN_SORT_SQL} LIMIT ? OFFSET ?`
-  ).bind(...binds, limit, offset).all();
-  return results || [];
+  try {
+    const conditions = names.map(() => '(location = ? OR location LIKE ?)').join(' OR ');
+    const binds = names.flatMap(n => [n, `%, ${n}`]);
+    const { results } = await env.DB.prepare(
+      `SELECT ${JOB_LISTING_COLUMNS} FROM jobs WHERE (${conditions}) AND ${PUBLIC_JOB_STATUS_SQL} ORDER BY ${JOB_MANUAL_PIN_SORT_SQL} LIMIT ? OFFSET ?`
+    ).bind(...binds, limit, offset).all();
+    return results || [];
+  } catch (e) { return []; }
 }
 
 export async function countJobsByRegion(env, regionNames) {
   const names = (Array.isArray(regionNames) ? regionNames : [regionNames]).filter(Boolean);
   if (!names.length) return 0;
-  const conditions = names.map(() => '(location = ? OR location LIKE ?)').join(' OR ');
-  const binds = names.flatMap(n => [n, `%, ${n}`]);
-  const { results } = await env.DB.prepare(`SELECT COUNT(*) AS c FROM jobs WHERE (${conditions}) AND ${PUBLIC_JOB_STATUS_SQL}`).bind(...binds).all();
-  return Number(results?.[0]?.c || 0);
+  try {
+    const conditions = names.map(() => '(location = ? OR location LIKE ?)').join(' OR ');
+    const binds = names.flatMap(n => [n, `%, ${n}`]);
+    const { results } = await env.DB.prepare(`SELECT COUNT(*) AS c FROM jobs WHERE (${conditions}) AND ${PUBLIC_JOB_STATUS_SQL}`).bind(...binds).all();
+    return Number(results?.[0]?.c || 0);
+  } catch (e) { return 0; }
 }
 
 export async function listCitiesRaw(env) {
-  const { results } = await env.DB.prepare(
-    `SELECT location, COUNT(*) c FROM jobs WHERE location IS NOT NULL AND location != '' AND ${PUBLIC_JOB_STATUS_SQL} GROUP BY location`
-  ).all();
-  const map = new Map();
-  for (const row of results || []) {
-    const { city } = splitLocation(row.location);
-    if (!city) continue;
-    const slug = slugify(city);
-    const prev = map.get(slug) || { name: city, slug, count: 0 };
-    prev.count += row.c;
-    map.set(slug, prev);
-  }
-  return [...map.values()].sort((a, b) => b.count - a.count);
+  try {
+    const { results } = await env.DB.prepare(
+      `SELECT location, COUNT(*) c FROM jobs WHERE location IS NOT NULL AND location != '' AND ${PUBLIC_JOB_STATUS_SQL} GROUP BY location`
+    ).all();
+    const map = new Map();
+    for (const row of results || []) {
+      const { city } = splitLocation(row.location);
+      if (!city) continue;
+      const slug = slugify(city);
+      const prev = map.get(slug) || { name: city, slug, count: 0 };
+      prev.count += row.c;
+      map.set(slug, prev);
+    }
+    return [...map.values()].sort((a, b) => b.count - a.count);
+  } catch (e) { return []; }
 }
 
 export async function listCities(env, { limit = 300 } = {}) {
@@ -246,12 +265,14 @@ export async function findCityBySlug(env, slug) {
 export async function jobsByCity(env, cityNames, { limit = 100 } = {}) {
   const names = (Array.isArray(cityNames) ? cityNames : [cityNames]).filter(Boolean);
   if (!names.length) return [];
-  const conditions = names.map(() => '(location = ? OR location LIKE ?)').join(' OR ');
-  const binds = names.flatMap(n => [n, `${n},%`]);
-  const { results } = await env.DB.prepare(
-    `SELECT ${JOB_LISTING_COLUMNS} FROM jobs WHERE (${conditions}) AND ${PUBLIC_JOB_STATUS_SQL} ORDER BY ${JOB_MANUAL_PIN_SORT_SQL} LIMIT ?`
-  ).bind(...binds, limit).all();
-  return results || [];
+  try {
+    const conditions = names.map(() => '(location = ? OR location LIKE ?)').join(' OR ');
+    const binds = names.flatMap(n => [n, `${n},%`]);
+    const { results } = await env.DB.prepare(
+      `SELECT ${JOB_LISTING_COLUMNS} FROM jobs WHERE (${conditions}) AND ${PUBLIC_JOB_STATUS_SQL} ORDER BY ${JOB_MANUAL_PIN_SORT_SQL} LIMIT ?`
+    ).bind(...binds, limit).all();
+    return results || [];
+  } catch (e) { return []; }
 }
 
 // ── Skills (parsed from the jobs.skills JSON column via SQLite json_each) ─
@@ -326,18 +347,22 @@ export function parseSalaryRange(salary) {
 export async function salaryBandsByCategory(env, categoryOrder, categoryMeta) {
   const bands = [];
   for (const key of categoryOrder) {
-    const { results } = await env.DB.prepare(
-      `SELECT salary FROM jobs WHERE LOWER(title) LIKE ? AND salary IS NOT NULL AND salary != '' AND ${PUBLIC_JOB_STATUS_SQL}`
-    ).bind(`%${key}%`).all();
-    const ranges = (results || []).map(r => parseSalaryRange(r.salary)).filter(Boolean);
-    if (!ranges.length) { bands.push({ key, label: categoryMeta[key].label, count: 0 }); continue; }
-    const mins = ranges.map(r => r.min), maxs = ranges.map(r => r.max);
-    const avg = arr => Math.round(arr.reduce((a, b) => a + b, 0) / arr.length);
-    bands.push({
-      key, label: categoryMeta[key].label, count: ranges.length,
-      avgMin: avg(mins), avgMax: avg(maxs),
-      low: Math.min(...mins), high: Math.max(...maxs)
-    });
+    try {
+      const { results } = await env.DB.prepare(
+        `SELECT salary FROM jobs WHERE LOWER(title) LIKE ? AND salary IS NOT NULL AND salary != '' AND ${PUBLIC_JOB_STATUS_SQL}`
+      ).bind(`%${key}%`).all();
+      const ranges = (results || []).map(r => parseSalaryRange(r.salary)).filter(Boolean);
+      if (!ranges.length) { bands.push({ key, label: categoryMeta[key].label, count: 0 }); continue; }
+      const mins = ranges.map(r => r.min), maxs = ranges.map(r => r.max);
+      const avg = arr => Math.round(arr.reduce((a, b) => a + b, 0) / arr.length);
+      bands.push({
+        key, label: categoryMeta[key].label, count: ranges.length,
+        avgMin: avg(mins), avgMax: avg(maxs),
+        low: Math.min(...mins), high: Math.max(...maxs)
+      });
+    } catch (e) {
+      bands.push({ key, label: categoryMeta[key].label, count: 0 });
+    }
   }
   return bands;
 }
