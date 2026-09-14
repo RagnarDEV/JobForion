@@ -305,6 +305,17 @@ export default {
       return await handleFetch(request, env, ctx);
     } catch (e) {
       console.error('[fetch] unhandled exception:', e && e.stack || e);
+      // Persist to error_logs so it's viewable from /admin — best-effort,
+      // fire-and-forget via waitUntil so a logging failure (or the DB
+      // itself being the thing that's broken) never blocks or further
+      // breaks the error response the visitor is about to receive.
+      try {
+        const logPath = new URL(request.url).pathname;
+        const logPromise = env.DB.prepare(
+          `INSERT INTO error_logs (path, message, stack) VALUES (?, ?, ?)`
+        ).bind(logPath, String((e && e.message) || e || 'Unknown error').slice(0, 500), String((e && e.stack) || '').slice(0, 4000)).run();
+        if (ctx?.waitUntil) ctx.waitUntil(logPromise.catch(() => {})); else logPromise.catch(() => {});
+      } catch (e4) { /* error_logs table may not exist yet on a brand-new DB — never worth failing over */ }
       try {
         // Temporary, safe diagnostic reveal: append ?jf_debug=<ADMIN_PASSWORD>
         // to the exact URL that failed to see the real error + stack trace
