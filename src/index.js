@@ -34,7 +34,7 @@ import { handleAuthRoute } from './routes/auth.router.js';
 import { handleUserRoute } from './routes/user.router.js';
 import { handleCompanyRoute } from './routes/company.router.js';
 import { handleSeoPagesRoute } from './routes/seo-pages.router.js';
-import { handlePagesRoute } from './routes/pages.router.js';
+import { handlePagesRoute, getCachedHomepage } from './routes/pages.router.js';
 import { handleApiRoute } from './routes/api.router.js';
 
 const NON_TRACKED_STATIC_PATHS = new Set([...ASSET_PATHS, '/feed.rss']);
@@ -206,6 +206,12 @@ async function handleFetch(request, env, ctx) {
       if (logoResponse) return withSecurityHeaders(logoResponse, env);
     }
 
+    // A cached anonymous homepage can be served without touching D1. This is
+    // intentionally checked before schema bootstrap so a D1 quota incident
+    // does not take down the most important public entry point.
+    const cachedHomepage = await getCachedHomepage(url, request);
+    if (cachedHomepage) return withSecurityHeaders(cachedHomepage, env);
+
     // D1 schema bootstrap is needed by settings, feeds, admin, accounts and
     // content routes, but not by static/R2/logo requests handled above.
     // ensureAllSchema() replaces two direct calls here — see db/schema.js
@@ -267,7 +273,7 @@ async function handleFetch(request, env, ctx) {
     if (companyResponse) return withSecurityHeaders(companyResponse, env);
 
     // ── core content: job / blog / static / home ──
-    const pageResponse = await handlePagesRoute(url, request, env, base);
+    const pageResponse = await handlePagesRoute(url, request, env, base, ctx);
     if (pageResponse) return withSecurityHeaders(pageResponse, env);
 
     // ── programmatic SEO: categories / companies / skills / search ──

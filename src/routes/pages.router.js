@@ -16,6 +16,31 @@ import { getCategoryData } from '../lib/categories.js';
 import { getSessionUser } from '../lib/accounts/session.js';
 import { renderPricingPage } from '../pages/pricing.js';
 
+const HOMEPAGE_CACHE_TTL_SECONDS = 60;
+
+function isCacheableHomepageRequest(url, request) {
+  return request.method === 'GET'
+    && url.pathname === '/'
+    && !url.search
+    && !request.headers.get('Cookie');
+}
+
+function homepageCacheKey(url) {
+  return new Request(`${url.origin}/?__jf_home_cache=1`);
+}
+
+export async function getCachedHomepage(url, request) {
+  if (!isCacheableHomepageRequest(url, request) || typeof caches === 'undefined' || !caches?.default) return null;
+  try { return await caches.default.match(homepageCacheKey(url)); } catch (e) { return null; }
+}
+
+function cacheHomepage(url, request, response, ctx) {
+  if (!isCacheableHomepageRequest(url, request) || typeof caches === 'undefined' || !caches?.default) return;
+  const cacheResponse = response.clone();
+  const write = caches.default.put(homepageCacheKey(url), cacheResponse).catch(() => {});
+  if (ctx?.waitUntil) ctx.waitUntil(write);
+}
+
 // A deleted/expired job's row is hard-removed from D1 (see
 // db/cleanup.js), so at request time there's no way to tell "this id
 // used to exist and was cleaned up" from "this id was never valid" by
@@ -94,7 +119,10 @@ async function renderBlogGonePage(env, base, slug) {
   );
 }
 
-export async function handlePagesRoute(url, request, env, base) {
+export async function handlePagesRoute(url, request, env, base, ctx = null) {
+  const cachedHomepage = await getCachedHomepage(url, request);
+  if (cachedHomepage) return cachedHomepage;
+
   const session = await getSessionUser(env, request);
   const user = session?.user || null;
 
@@ -157,8 +185,11 @@ export async function handlePagesRoute(url, request, env, base) {
   }
 
   if (url.pathname === '/') {
-    const html = await renderMainHTML(env, base, user);
-    return new Response(html, { headers: { "Content-Type": "text/html; charset=utf-8" } });
+    const response = new Response(await renderMainHTML(env, base, user), {
+      headers: { "Content-Type": "text/html; charset=utf-8", 'Cache-Control': `public, max-age=${HOMEPAGE_CACHE_TTL_SECONDS}` },
+    });
+    cacheHomepage(url, request, response, ctx);
+    return response;
   }
 
   // Built-in public information views use the CMS page when an admin has

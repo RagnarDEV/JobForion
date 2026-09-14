@@ -76,6 +76,8 @@ let schemaVersionConfirmed = false;
 // request (each one still renders normally with whatever schema
 // exists at that moment).
 const SCHEMA_MIGRATION_BUDGET_DEFAULT = 35;
+const SCHEMA_MARKER_CACHE_TTL_SECONDS = 300;
+let schemaEnsurePromise = null;
 class SchemaBudgetExceeded extends Error {}
 
 // makeSkippableDB() is the mechanism that makes the migration genuinely
@@ -1484,7 +1486,7 @@ export async function ensureAccountTables(env) {
 // ensureAccountTables() directly — same end result, same tables, same
 // columns — just gated behind a cheap persisted version check first.
 // ════════════════════════════════════════════════════════════════
-export async function ensureAllSchema(env) {
+async function ensureAllSchemaOnce(env) {
   if (schemaVersionConfirmed) return; // warm isolate — zero D1 calls
 
   // Same-request guard: index.js's own top-level call is only ONE of
@@ -1501,6 +1503,17 @@ export async function ensureAllSchema(env) {
   // migration attempt, regardless of how many places call this.
   if (env.__schemaMigrationAttemptedThisRequest) return;
   env.__schemaMigrationAttemptedThisRequest = true;
+
+  // Cache API marker avoids even the two-call D1 version probe on most cold
+  // isolates. It is an optimization only: a cache miss always falls back to
+  // the authoritative D1 version check below.
+  if (await readSchemaCacheMarker()) {
+    schemaEnsured = true;
+    accountSchemaEnsured = true;
+    aiSchemaEnsured = true;
+    schemaVersionConfirmed = true;
+    return;
+  }
 
   try {
     // Single tiny permanent table, never touched by the rest of the app.
@@ -1519,6 +1532,7 @@ export async function ensureAllSchema(env) {
       accountSchemaEnsured = true;
       aiSchemaEnsured = true;
       schemaVersionConfirmed = true;
+      await writeSchemaCacheMarker();
       return;
     }
   } catch (e) {
@@ -1604,4 +1618,47 @@ export async function ensureAllSchema(env) {
     // request over.
   }
   schemaVersionConfirmed = true;
+  await writeSchemaCacheMarker();
+}
+
+function schemaMarkerRequest() {
+  return new Request(`https://jobforion-schema-cache.invalid/${encodeURIComponent(SCHEMA_VERSION)}`);
+}
+
+async function readSchemaCacheMarker() {
+  try {
+    const cache = globalThis.caches?.default;
+    if (!cache) return false;
+    const response = await cache.match(schemaMarkerRequest());
+    return !!response && (await response.text()) === SCHEMA_VERSION;
+  } catch (e) {
+    return false;
+  }
+}
+
+async function writeSchemaCacheMarker() {
+  try {
+    const cache = globalThis.caches?.default;
+    if (!cache) return;
+    await cache.put(
+      schemaMarkerRequest(),
+      new Response(SCHEMA_VERSION, {
+        headers: { 'Cache-Control': `public, max-age=${SCHEMA_MARKER_CACHE_TTL_SECONDS}` },
+      }),
+    );
+  } catch (e) {
+    // Cache API availability is an optimization only; D1 remains authoritative.
+  }
+}
+
+// Coalesce simultaneous cold-start requests in the same isolate. Without
+// this promise, a burst of visitors can make every request run the D1 version
+// probe before the first one finishes and sets the module flag.
+export async function ensureAllSchema(env) {
+  if (schemaVersionConfirmed) return;
+  if (schemaEnsurePromise) return schemaEnsurePromise;
+  schemaEnsurePromise = ensureAllSchemaOnce(env).finally(() => {
+    schemaEnsurePromise = null;
+  });
+  return schemaEnsurePromise;
 }

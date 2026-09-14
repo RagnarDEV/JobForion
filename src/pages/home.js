@@ -46,13 +46,20 @@ const CLIENT_ICONS = {
 };
 
 async function getCategoryCounts(env, categories) {
-  const counts = Object.fromEntries((categories || []).map(c => [c.key, 0]));
-  await Promise.all((categories || []).map(async c => {
-    try {
-      const { results } = await env.DB.prepare(`SELECT COUNT(*) AS c FROM jobs WHERE ${PUBLIC_JOB_STATUS_SQL} AND LOWER(title) LIKE ?`).bind(`%${String(c.key || '').toLowerCase()}%`).all();
-      counts[c.key] = Number(results?.[0]?.c || 0);
-    } catch (e) {}
-  }));
+  const rows = Array.isArray(categories) ? categories.filter(c => c?.key) : [];
+  const counts = Object.fromEntries(rows.map(c => [c.key, 0]));
+  if (!rows.length) return counts;
+  // One aggregate scan replaces one COUNT query per category. Besides
+  // reducing D1 subrequests, this avoids reading the same active jobs table
+  // repeatedly when the homepage has eight category tiles enabled.
+  const expressions = rows.map((_, index) => `SUM(CASE WHEN LOWER(title) LIKE ? THEN 1 ELSE 0 END) AS c${index}`).join(', ');
+  try {
+    const { results } = await env.DB.prepare(
+      `SELECT ${expressions} FROM jobs WHERE ${PUBLIC_JOB_STATUS_SQL}`
+    ).bind(...rows.map(c => `%${String(c.key).toLowerCase()}%`)).all();
+    const aggregate = results?.[0] || {};
+    rows.forEach((c, index) => { counts[c.key] = Number(aggregate[`c${index}`] || 0); });
+  } catch (e) {}
   return counts;
 }
 
@@ -120,13 +127,19 @@ export async function renderMainHTML(env, base, user = null) {
   };
   let initialJobs = [], initialTotal = 0, totalJobsCount = 0, companiesCount = 0;
   try {
-    const { results } = await env.DB.prepare(`SELECT ${JOB_LISTING_COLUMNS} FROM jobs WHERE ${PUBLIC_JOB_STATUS_SQL} ORDER BY ${JOB_MANUAL_PIN_SORT_SQL} LIMIT 20`).all();
-    initialJobs = await hydrateHotPay(env, await attachCompanyLogos(env, results || []), settings);
-    const { results: cr } = await env.DB.prepare(`SELECT COUNT(*) as total FROM jobs WHERE ${PUBLIC_JOB_STATUS_SQL}`).all();
-    initialTotal = cr[0]?.total || 0;
+    const [{ results: jobRows }, { results: summaryRows }] = await Promise.all([
+      env.DB.prepare(`SELECT ${JOB_LISTING_COLUMNS} FROM jobs WHERE ${PUBLIC_JOB_STATUS_SQL} ORDER BY ${JOB_MANUAL_PIN_SORT_SQL} LIMIT 20`).all(),
+      env.DB.prepare(`
+        SELECT COUNT(*) AS total_jobs,
+               COUNT(DISTINCT CASE WHEN company IS NOT NULL AND company != '' THEN LOWER(company) END) AS total_companies
+        FROM jobs WHERE ${PUBLIC_JOB_STATUS_SQL}
+      `).all(),
+    ]);
+    initialJobs = await hydrateHotPay(env, await attachCompanyLogos(env, jobRows || []), settings);
+    const summary = summaryRows?.[0] || {};
+    initialTotal = Number(summary.total_jobs || 0);
     totalJobsCount = initialTotal;
-    const { results: ccr } = await env.DB.prepare(`SELECT COUNT(DISTINCT LOWER(company)) as c FROM jobs WHERE company IS NOT NULL AND company != '' AND ${PUBLIC_JOB_STATUS_SQL}`).all();
-    companiesCount = ccr[0]?.c || 0;
+    companiesCount = Number(summary.total_companies || 0);
   } catch (e) {}
 
   // Top companies prefer the real, admin-managed companies table (which
