@@ -883,6 +883,25 @@ export async function ensureTable(env) {
     )
   `).run();
 
+  // NEW, appended at the very end on purpose: adding this at the FRONT or
+  // middle of this function would shift every statement after it by one
+  // position, silently invalidating any `migration_cursor` already
+  // persisted in a real, still-catching-up production database (it would
+  // start skipping the WRONG statements). Appending at the end keeps
+  // every previously-numbered position pointing at exactly the same
+  // statement it always did — only brand-new work is added past
+  // whatever cursor already exists. This table is the diagnostic
+  // safety net itself: index.js's top-level catch writes every
+  // unhandled exception here, viewable from /admin without needing the
+  // ?jf_debug= URL trick.
+  await env.DB.prepare(`
+    CREATE TABLE IF NOT EXISTS error_logs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      path TEXT, message TEXT, stack TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `).run();
+
   schemaEnsured = true;
 }
 
