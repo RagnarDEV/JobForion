@@ -11,6 +11,7 @@ import { getSettings } from '../../lib/settings.js';
 import { isAiConfigured } from '../../lib/ai-service.js';
 import { getAnalyticsHealth } from '../../lib/analytics.js';
 import { paymentProviderStatus } from '../../lib/monetization.js';
+import { escapeHtml } from '../../lib/entities.js';
 
 // Tables considered safe/useful to show a row count for. Deliberately an
 // explicit allow-list (not "every table in sqlite_master") so a future
@@ -39,6 +40,15 @@ export async function renderSystemContent(env) {
     q("SELECT * FROM sync_logs ORDER BY id DESC LIMIT 15"),
     q("SELECT * FROM cleanup_logs ORDER BY id DESC LIMIT 10"),
   ]);
+
+  // error_logs is written by index.js's top-level safety net on every
+  // unhandled exception anywhere on the site — this is the single most
+  // direct way to get a confirmed root cause for "the site broke" reports
+  // without needing wrangler/terminal access or the ?jf_debug= URL trick.
+  let errorLogs = [];
+  try {
+    ({ results: errorLogs } = await q("SELECT * FROM error_logs ORDER BY id DESC LIMIT 20"));
+  } catch (e) { /* table not created yet on a brand-new install */ }
 
   const tableCounts = {};
   await Promise.all(COUNTED_TABLES.map(async (t) => {
@@ -203,6 +213,17 @@ export async function renderSystemContent(env) {
           <span class="adm-row-val" style="color:var(--coral)">−${c.deleted || 0}</span>
         </div>`).join('') : '<div class="adm-empty">No cleanup runs yet</div>'}
       </div>
+    </div>
+    <div class="adm-card" style="margin-top:16px">
+      <div class="adm-card-title">⚠️ Recent Errors <span style="font-weight:400;color:var(--ink3);font-size:12px">— last 20 uncaught exceptions, any page on the site</span></div>
+      ${(errorLogs || []).length ? errorLogs.map(err => `<div class="adm-row" style="align-items:flex-start;flex-direction:column;gap:4px">
+        <div style="display:flex;justify-content:space-between;width:100%;gap:10px">
+          <span class="adm-row-label" style="font-size:11px;font-family:monospace">${escapeHtml(err.path || '—')}</span>
+          <span class="adm-row-val" style="font-size:11px;color:var(--ink3);font-weight:500">${err.created_at ? new Date(err.created_at).toLocaleString() : '—'}</span>
+        </div>
+        <div style="font-size:12px;color:var(--coral);font-weight:700">${escapeHtml(err.message || '—')}</div>
+        ${err.stack ? `<details style="width:100%"><summary style="font-size:10.5px;color:var(--ink3);cursor:pointer">Stack trace</summary><pre style="font-size:10px;color:var(--ink3);background:var(--surface2);padding:8px;border-radius:8px;overflow:auto;white-space:pre-wrap;word-break:break-word;margin-top:6px">${escapeHtml(err.stack)}</pre></details>` : ''}
+      </div>`).join('') : '<div class="adm-empty">No errors logged — the site has been running clean.</div>'}
     </div>
   </div>`;
 }
