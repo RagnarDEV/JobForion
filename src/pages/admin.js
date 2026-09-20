@@ -4,6 +4,7 @@
 // page content (src/pages/admin/dashboard.js). Both exported function names
 // and signatures are identical to before — admin.router.js needs zero changes.
 
+import { escapeHtml } from '../lib/directory/entities.js';
 import { ICON_HEAD } from '../assets/favicon.js';
 import { SHARED_CSS } from '../styles/shared-css.js';
 import { adminShell } from './admin/shell.js';
@@ -29,7 +30,7 @@ body{display:flex;align-items:center;justify-content:center;min-height:100vh;pad
 <div class="box">
   <div class="logo"><img src="/favicon.svg" alt="JobForion">JobForion</div>
   <div class="sub">Admin Dashboard</div>
-  ${error ? `<div class="err">Incorrect password. Try again.</div>` : ''}
+  ${error ? `<div class="err">${typeof error === 'string' ? escapeHtml(error) : 'Incorrect password. Try again.'}</div>` : ''}
   <form method="POST" action="/admin/login">
     <input class="form-input" type="password" name="password" placeholder="Admin password" autofocus required>
     <button class="submit-btn" type="submit">Sign in to control center</button>

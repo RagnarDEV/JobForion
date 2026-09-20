@@ -51,6 +51,8 @@ const ARCHIVE_AFTER_DAYS = 14;
 // staleness window (see PHASE 1 below) + ARCHIVE_AFTER_DAYS + this.
 const DELETE_AFTER_DAYS = 30;
 
+class CleanupSkipped extends Error {}
+
 async function batchUpdateStatus(env, ids, newStatus) {
   let changed = 0;
   for (let i = 0; i < ids.length; i += BATCH_SIZE) {
@@ -70,6 +72,25 @@ export async function cleanupStaleJobs(env) {
   let totalDeleted = 0;
 
   try {
+    // ── SAFETY VALVE (added after a production incident) ─────────────────
+    // Lifecycle assumes the sync keeps refreshing updated_at on every job the
+    // sources still return. If syncing has been BROKEN (site errors, provider
+    // outage, quota) every job looks "stale" at once and this cleanup would
+    // silently expire — and later permanently delete — the whole catalogue.
+    // So: never advance the lifecycle unless a sync ran cleanly in the last
+    // 72 hours, and never expire more than 50% of a large catalogue in one run.
+    let healthy = true;
+    try {
+      const recent = await env.DB.prepare(
+        `SELECT 1 AS ok FROM sync_logs WHERE created_at >= datetime('now','-72 hours') AND (COALESCE(inserted,0) > 0 OR errors IS NULL OR errors = '[]') LIMIT 1`
+      ).first();
+      healthy = !!recent;
+    } catch (e) { healthy = true; /* no sync_logs yet: do not block */ }
+    if (!healthy) {
+      breakdown.skipped = 'no_healthy_sync_72h';
+      throw new CleanupSkipped();
+    }
+
     // ── PHASE 1: active/paused/closed → expired ──────────────────
     // A job qualifies once EITHER condition is true:
     //  - expires_at has passed (our own computed 45-day lease, extended
@@ -89,6 +110,11 @@ export async function cleanupStaleJobs(env) {
          OR ((expires_at IS NULL OR expires_at >= datetime('now')) AND (updated_at IS NULL OR updated_at < datetime('now','-30 day')) AND created_at < datetime('now','-30 day'))
        )`
     ).all();
+    const activeTotal = Number((await env.DB.prepare(`SELECT COUNT(*) AS c FROM jobs WHERE status = 'active'`).first())?.c || 0);
+    if (activeTotal >= 200 && (toExpire || []).length > activeTotal * 0.5) {
+      breakdown.skipped = `mass_expiry_blocked (${(toExpire || []).length}/${activeTotal})`;
+      throw new CleanupSkipped();
+    }
     breakdown.expired = await batchUpdateStatus(env, (toExpire || []).map(r => r.id), 'expired');
 
     // ── PHASE 2: expired → archived ───────────────────────────────
@@ -126,7 +152,7 @@ export async function cleanupStaleJobs(env) {
     }
     breakdown.deleted = totalDeleted;
   } catch (e) {
-    breakdown.error = String(e.message || e).slice(0, 200);
+    if (!(e instanceof CleanupSkipped)) breakdown.error = String(e.message || e).slice(0, 200);
   }
 
   try {

@@ -74,6 +74,20 @@ export async function handleAdminSystemRoute(url, request, env, base) {
     } catch (e) { return errorPage(e); }
   }
 
+  // ── Reactivate hidden jobs: expired/archived (or blank-status) jobs become
+  // public again with a fresh 45-day lease. Recovery tool for a stalled sync.
+  if (url.pathname === '/admin/system/reactivate-jobs' && request.method === 'POST') {
+    try {
+      const ok = await verifyAdminCookie(env, request.headers.get('Cookie'));
+      if (!ok) return new Response('Unauthorized', { status: 401 });
+      const r = await env.DB.prepare(
+        `UPDATE jobs SET status = 'active', updated_at = CURRENT_TIMESTAMP, expires_at = datetime('now','+45 days')
+         WHERE status IN ('expired','archived') OR status IS NULL OR status = ''`
+      ).run();
+      return new Response(null, { status: 302, headers: { 'Location': `/admin/system?flash=${encodeURIComponent(`Reactivated ${r.meta?.changes || 0} jobs`)}` } });
+    } catch (e) { return errorPage(e); }
+  }
+
   // ── Job Alerts (see lib/jobs/job-alerts-dispatcher.js) ───────────────────
   if (url.pathname === '/admin/system/run-job-alerts' && request.method === 'POST') {
     try {

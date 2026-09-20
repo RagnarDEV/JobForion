@@ -138,6 +138,8 @@ for (const p of ['/', '/jobs?q=zzzz', '/categories/developer', '/skills/zzz', '/
   const html = await (await call(p)).text();
   ok(!/\$\{icon|\[object Object\]|&lt;svg/.test(html), `${p}: icons render as real SVG`);
 }
+const sysHtml = await (await call('/admin/system', { headers: admin })).text();
+ok(/Jobs by status/.test(sysHtml) && /Repair schema/.test(sysHtml), '/admin/system shows the jobs-by-status card and the Repair schema button');
 const gate = await (await call('/admin/some-unknown-admin-route')).text();
 ok(/name="password"/.test(gate), 'central gate: unauthenticated /admin/* shows the login form');
 ok((await call('/admin/jobs/delete', { method: 'POST', headers: form, body: 'id=1' })).status === 401, 'unauthenticated admin POST → 401');
@@ -203,6 +205,47 @@ ok(cronErrors.length === 0, `scheduled tasks completed without errors (${JSON.st
   let last;
   for (let i = 0; i < 12; i++) { repairDb.startRequest(50); last = await repair({ DB: repairDb }); if (last.complete) break; }
   ok(last.complete, `repairSchema() completes within a few background-budget rounds (${JSON.stringify(last)})`);
+}
+
+// ── REGRESSION: admin lockout. With the D1 rate-limit table not created yet, a
+// CORRECT password must still log in, and a wrong one must say so accurately. ──
+{
+  const lockDb = new D1Shim();
+  const { schemaState } = await import('../src/db/schema/state.js');
+  Object.assign(schemaState, { core: false, ai: false, account: false, versionConfirmed: false, ensurePromise: null });
+  mem.clear();
+  const lockWorker = (await import('../src/index.js?lockout')).default;
+  const lockEnv = { DB: lockDb, ADMIN_PASSWORD: 'Correct-Pass-1', CSRF_SECRET: 'csrf-secret-test-value-xyz' };
+  const login = async (pw, ip) => {
+    lockDb.startRequest(50);
+    const res = await lockWorker.fetch(new Request(`${BASE}/admin/login`, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'CF-Connecting-IP': ip }, body: `password=${pw}` }), { ...lockEnv }, ctx);
+    return { status: res.status, html: await res.text(), cookie: (res.headers.get('Set-Cookie') || '').split(';')[0] };
+  };
+  const wrong = await login('nope', '203.0.113.50');
+  ok(wrong.status === 401 && /Incorrect password/.test(wrong.html), 'wrong password says "Incorrect password" (401)');
+  const good = await login('Correct-Pass-1', '203.0.113.51');
+  ok(good.status === 302 && good.cookie.startsWith('jn_admin='), 'correct password logs in even while the rate-limit table is missing');
+  let blocked = null;
+  for (let i = 0; i < 8; i++) { const r = await login('nope', '203.0.113.52'); if (r.status === 429) { blocked = r; break; } }
+  ok(blocked && /Too many attempts/.test(blocked.html) && !/Incorrect password/.test(blocked.html), 'lockout message is accurate ("Too many attempts"), not "Incorrect password"');
+}
+
+// ── REGRESSION: lifecycle safety valve — a broken sync must never cause a mass expiry ──
+{
+  const { cleanupStaleJobs } = await import('../src/db/cleanup.js');
+  const seedStale = async (db, n) => {
+    for (let i = 0; i < n; i++) await db.prepare("INSERT INTO jobs (title,company,location,url,description,salary,remote_type,skills,status,created_at,updated_at,expires_at,source) VALUES (?,?,?,?,?,?,?,?,'active',datetime('now','-100 day'),datetime('now','-100 day'),datetime('now','-10 day'),'t')").bind(`Stale ${i}`, 'Acme', 'Remote', `https://stale.example/${i}`, 'd', '', 'fully_remote', '[]').run();
+  };
+  await seedStale(DB, 250);
+  await DB.prepare("DELETE FROM sync_logs").run();
+  let res = await cleanupStaleJobs({ ...baseEnv });
+  const stillActive = Number((await DB.prepare("SELECT COUNT(*) c FROM jobs WHERE title LIKE 'Stale %' AND status='active'").first()).c);
+  ok(stillActive === 250 && /no_healthy_sync/.test(JSON.stringify(res.breakdown || {})), 'cleanup does nothing when no healthy sync ran in the last 72h');
+  await DB.prepare("INSERT INTO sync_logs (inserted, skipped, errors, created_at) VALUES (5, 0, '[]', datetime('now'))").run();
+  res = await cleanupStaleJobs({ ...baseEnv });
+  const stillActive2 = Number((await DB.prepare("SELECT COUNT(*) c FROM jobs WHERE title LIKE 'Stale %' AND status='active'").first()).c);
+  ok(stillActive2 === 250 && /mass_expiry_blocked/.test(JSON.stringify(res.breakdown || {})), 'cleanup refuses to expire >50% of a large catalogue in one run');
+  await DB.prepare("DELETE FROM jobs WHERE title LIKE 'Stale %'").run();
 }
 
 // ── sanitizer ──

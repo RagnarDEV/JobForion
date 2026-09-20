@@ -38,8 +38,8 @@ export async function renderSystemContent(env) {
   const q = (sql, ...params) => env.DB.prepare(sql).bind(...params).all();
 
   const [{ results: syncLogs }, { results: cleanupLogs }] = await Promise.all([
-    q("SELECT * FROM sync_logs ORDER BY id DESC LIMIT 15"),
-    q("SELECT * FROM cleanup_logs ORDER BY id DESC LIMIT 10"),
+    q("SELECT * FROM sync_logs ORDER BY id DESC LIMIT 15").catch(() => ({ results: [] })),
+    q("SELECT * FROM cleanup_logs ORDER BY id DESC LIMIT 10").catch(() => ({ results: [] })),
   ]);
 
   // error_logs is written by index.js's top-level safety net on every
@@ -51,15 +51,28 @@ export async function renderSystemContent(env) {
     ({ results: errorLogs } = await q("SELECT * FROM error_logs ORDER BY id DESC LIMIT 20"));
   } catch (e) { /* table not created yet on a brand-new install */ }
 
+  // PERFORMANCE/RELIABILITY: this used to fire ~40 separate COUNT(*) queries in
+  // parallel — on the free plan that alone exceeds the 50-call ceiling and
+  // crashed the very page that hosts "Repair schema". Two queries now: one to
+  // learn which tables exist, one UNION ALL over those.
   const tableCounts = {};
-  await Promise.all(COUNTED_TABLES.map(async (t) => {
-    try {
-      const { results } = await q(`SELECT COUNT(*) c FROM ${t}`);
-      tableCounts[t] = results?.[0]?.c ?? null;
-    } catch (e) {
-      tableCounts[t] = null; // table not created yet on a fresh install — show em-dash, not an error
+  try {
+    const { results: existing } = await q("SELECT name FROM sqlite_master WHERE type='table'");
+    const have = new Set((existing || []).map(r => r.name));
+    const present = COUNTED_TABLES.filter(t => have.has(t));
+    for (const t of COUNTED_TABLES) tableCounts[t] = null; // missing table → em-dash
+    if (present.length) {
+      const { results } = await q(present.map(t => `SELECT '${t}' AS t, COUNT(*) AS c FROM ${t}`).join(' UNION ALL '));
+      for (const r of results || []) tableCounts[r.t] = r.c;
     }
-  }));
+  } catch (e) { for (const t of COUNTED_TABLES) tableCounts[t] = null; }
+
+  // Jobs by lifecycle status — the first thing to look at when "my jobs disappeared".
+  let statusBreakdown = [];
+  try {
+    ({ results: statusBreakdown } = await q("SELECT COALESCE(NULLIF(status,''),'(empty)') AS s, COUNT(*) AS c FROM jobs GROUP BY s ORDER BY c DESC"));
+  } catch (e) { /* jobs.status not migrated yet */ }
+  const hiddenJobs = statusBreakdown.filter(r => ['expired', 'archived', '(empty)'].includes(r.s)).reduce((n, r) => n + Number(r.c || 0), 0);
 
   const { results: salaryTierStatsRows } = await q(
     `SELECT
@@ -96,9 +109,10 @@ export async function renderSystemContent(env) {
     // eventually hard-delete a job ~89 days after it goes stale — a
     // saved_jobs row surviving that isn't a bug, it's expected, but an
     // admin should be able to SEE the count exists.
-    q("SELECT COUNT(*) c FROM saved_jobs sj WHERE NOT EXISTS (SELECT 1 FROM jobs j WHERE j.id = sj.job_id)"),
-    q("SELECT COUNT(*) c FROM applications a WHERE NOT EXISTS (SELECT 1 FROM jobs j WHERE j.id = a.job_id)"),
-    q("SELECT status, COUNT(*) c FROM jobs GROUP BY status"),
+    // .catch: a table that is not migrated yet must not crash the page that hosts "Repair schema"
+    q("SELECT COUNT(*) c FROM saved_jobs sj WHERE NOT EXISTS (SELECT 1 FROM jobs j WHERE j.id = sj.job_id)").catch(() => ({ results: [] })),
+    q("SELECT COUNT(*) c FROM applications a WHERE NOT EXISTS (SELECT 1 FROM jobs j WHERE j.id = a.job_id)").catch(() => ({ results: [] })),
+    q("SELECT status, COUNT(*) c FROM jobs GROUP BY status").catch(() => ({ results: [] })),
   ]);
   const orphanSaved = orphanSavedRows?.[0]?.c || 0;
   const orphanApps = orphanAppRows?.[0]?.c || 0;
@@ -117,9 +131,10 @@ export async function renderSystemContent(env) {
     <div class="adm-grid" style="margin-bottom:16px">
       <div class="adm-card">
         <div class="adm-card-title">Cron Jobs <span style="font-weight:400;color:var(--ink3);font-size:12px">— configured in wrangler.toml</span></div>
-        <div class="adm-row"><span class="adm-row-label">Job Sync</span><span class="adm-row-val">Every 6 hours</span></div>
-        <div class="adm-row"><span class="adm-row-label">Cleanup (stale jobs)</span><span class="adm-row-val">Daily · 03:00 UTC</span></div>
+        <div class="adm-row"><span class="adm-row-label">Job Sync</span><span class="adm-row-val">00 · 06 · 12 · 18 UTC</span></div>
+        <div class="adm-row"><span class="adm-row-label">Cleanup (stale jobs)</span><span class="adm-row-val">Daily · 03:00 UTC (blocked if sync unhealthy)</span></div>
         <div class="adm-row"><span class="adm-row-label">Job Alerts Dispatch</span><span class="adm-row-val">Daily · 08:00 UTC</span></div>
+        <div class="adm-row"><span class="adm-row-label">Analytics aggregation</span><span class="adm-row-val">Every hour · :30</span></div>
         <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
           <form method="POST" action="/api/sync" onsubmit="return confirm('Run job sync now?')"><button class="adm-btn adm-btn-primary" type="submit">↻ Sync Now</button></form>
           <form method="POST" action="/admin/cleanup" onsubmit="return confirm('Run cleanup now? It advances expired jobs through the retention lifecycle; only archived jobs past retention are permanently deleted.')"><button class="adm-btn" type="submit" style="color:var(--coral);border-color:var(--coral)">${iconTrash2({ size: 15 })} Cleanup Now</button></form>
@@ -127,6 +142,11 @@ export async function renderSystemContent(env) {
           <form method="POST" action="/admin/system/run-job-alerts" onsubmit="return confirm('Send job alert digests now to every due alert?')"><button class="adm-btn" type="submit">${iconMail({ size: 15 })} Send Job Alerts Now</button></form>
           <form method="POST" action="/admin/system/ai-smoke-test" onsubmit="return confirm('Run the protected AI foundation smoke test?')"><button class="adm-btn" type="submit" ${!aiEnabled ? 'disabled' : ''}>AI Smoke Test</button></form>
         </div>
+      </div>
+      <div class="adm-card">
+        <div class="adm-card-title">Jobs by status <span style="font-weight:400;color:var(--ink3);font-size:12px">— only "active" jobs are public</span></div>
+        ${statusBreakdown.length ? statusBreakdown.map(r => `<div class="adm-row"><span class="adm-row-label">${escapeHtml(r.s)}</span><span class="adm-row-val">${Number(r.c).toLocaleString()}</span></div>`).join('') : '<div class="adm-empty">No jobs table data yet</div>'}
+        ${hiddenJobs > 0 ? `<form method="POST" action="/admin/system/reactivate-jobs" style="margin-top:12px" onsubmit="return confirm('Make ${hiddenJobs.toLocaleString()} expired/archived jobs public again and give them a fresh 45-day lease?')"><button class="adm-btn adm-btn-primary" type="submit">Reactivate ${hiddenJobs.toLocaleString()} hidden jobs</button></form><div style="font-size:10.5px;color:var(--ink3);margin-top:8px">Jobs that are really gone from their source will expire again 30 days after the next sync stops returning them.</div>` : ''}
       </div>
       <div class="adm-card">
         <div class="adm-card-title">Cache</div>
