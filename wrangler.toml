@@ -1,0 +1,86 @@
+name = "jobforion"
+main = "src/index.js"
+compatibility_date = "2026-06-25"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "jobforion_db"
+database_id = "58e366ac-f5d4-4da5-b23f-0aa2e4208866"
+
+# ── R2 bucket (company logo/cover uploads — Company System, Stage 3) ──
+# OPTIONAL: until this is set up, the profile form's "paste a Logo URL /
+# Cover Image URL" fields work with zero extra setup (company.router.js
+# already handles both paths). Enable in-app file upload by:
+#   1. wrangler r2 bucket create jobforion-company-assets
+#   2. Keep the [[r2_buckets]] block below (remove it if you do NOT use R2 —
+#      deploy fails when the bucket does not exist)
+#   3. (recommended) Enable the bucket's public r2.dev access in the
+#      Cloudflare dashboard (R2 → jobforion-company-assets → Settings),
+#      then: wrangler secret put R2_PUBLIC_BASE_URL
+#      (value = the https://pub-xxxxxxxx.r2.dev URL shown there)
+#      Without this secret, uploaded images still work — they're served
+#      by the Worker itself at /r2-asset/<key> (see
+#      routes/assets.router.js: handleR2AssetRoute) — just slightly
+#      slower than R2's own edge, since every request round-trips
+#      through the Worker instead of being served directly by R2/CDN.
+#
+[[r2_buckets]]
+binding = "COMPANY_ASSETS"
+bucket_name = "jobforion-company-assets"
+
+# ── Workers AI (Phase 12.1) ──
+# Server-side binding only; application code accesses it as env.AI.
+[ai]
+binding = "AI"
+remote = true
+
+# ── Secrets (set these via `wrangler secret put <name>`, do NOT put them here) ──
+# ADMIN_PASSWORD      -> password to access /admin dashboard
+# ADMIN_SESSION_SECRET -> RECOMMENDED: long random string used only to sign the admin
+#                        session/CSRF cookies (auth/admin-auth.js). Falls back to
+#                        ADMIN_PASSWORD when unset. Generate: openssl rand -hex 32
+# CSRF_SECRET         -> pepper for the account/company forms' CSRF tokens
+#                        (lib/accounts/csrf.js). Production fails closed when
+#                        this secret is missing; use JOBFORION_DEV=1 only for
+#                        explicitly labelled local development.
+# BREVO_API_KEY       -> Brevo transactional email API key (lib/accounts/email.js)
+# EMAIL_FROM_ADDRESS  -> sender address, must be verified in Brevo
+# EMAIL_FROM_NAME     -> sender display name
+# R2_PUBLIC_BASE_URL  -> OPTIONAL, see R2 bucket note above. The public
+#                        https://pub-xxxx.r2.dev (or custom) domain mapped
+#                        to the COMPANY_ASSETS bucket.
+# PAYMENT_PROVIDER     -> optional provider adapter name (no adapter ships
+#                        enabled by default; checkout remains unavailable).
+# PAYMENT_WEBHOOK_SECRET -> optional secret for the signed webhook boundary;
+#                        set via `wrangler secret put`, never commit it.
+# ANALYTICS_HASH_SECRET -> optional secret pepper for pseudonymous analytics
+#                        and rate-limit fingerprints; never commit it.
+#
+# NOTE: API_KEY is no longer used. Every job provider (Greenhouse, Lever,
+# Ashby, SmartRecruiters, Workable, Teamtailor, Recruitee, Workday, iCIMS)
+# is keyless — companies are added by public career-site slug only, from
+# /admin. If an API_KEY secret still exists from a previous deployment it
+# is simply ignored and safe to remove.
+
+# ── Scheduled tasks ──
+# ONE trigger only. Cloudflare's free plan allows 5 Cron Triggers per ACCOUNT,
+# so every job is dispatched by UTC time inside src/app/cron.js instead:
+#   :30 every hour           -> analytics aggregation + retention + alerts
+#   :00, hour % 6 == 0       -> syncJobs()  (00/06/12/18 UTC, bounded rotating batch)
+#   :00, hour == 3           -> daily maintenance: cleanupStaleJobs() +
+#                               runBlogExpirationCleanup() + expireMonetizationCampaigns()
+#   :00, hour == 8           -> runJobAlertsDispatch() (each alert's own frequency /
+#                               last_notified_at decides whether it is actually due)
+#   :00, hour == 9           -> runBlogGeneration() (D1 settings decide whether today
+#                               is a publishing day and whether the weekly cap is hit)
+# One task group per invocation keeps the 50-subrequest free-plan budget
+# unshared. Failures are written to error_logs (visible in /admin/system).
+[triggers]
+crons = ["*/30 * * * *"]
+
+# ── Observability (Workers Logs) ──
+# The code logs via console.error / lib/observability.js; this makes those
+# logs searchable in the dashboard (Workers & Pages -> jobforion -> Logs).
+[observability]
+enabled = true
+head_sampling_rate = 1

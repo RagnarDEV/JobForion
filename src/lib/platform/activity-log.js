@@ -1,0 +1,146 @@
+// src/lib/platform/activity-log.js
+// ════════════════════════════════════════════════════════════════
+// ADMIN ACTIVITY LOG — records WHO changed WHAT and WHEN across the
+// admin panel (see admin_activity_log in db/schema.js). Backs the
+// Dashboard's "Recent Activity" panel and the full log at
+// /admin/security (see "Admin & Security" in the Admin Dashboard V2).
+//
+// DESIGN: this is purely an observability/audit trail, never a source
+// of truth for any business decision — no route ever branches on what's
+// in this table. That keeps it safe to add liberally: logActivity() is
+// best-effort and NEVER throws (see try/catch below), so a logging bug
+// can never break the real action (deleting a job, saving settings,
+// toggling a source) it's attached to. Every call site fires this
+// AFTER the real mutation already succeeded.
+// ════════════════════════════════════════════════════════════════
+
+const MAX_META_LEN = 500;
+
+// Single source of truth for human-readable activity labels — used by
+// both the Dashboard's "Recent Activity" panel and the full log at
+// /admin/security, so the two views can never drift out of sync.
+export const ACTION_LABELS = {
+  login_success: 'Signed in',
+  login_failed: 'Failed sign-in attempt',
+  login_rate_limited: 'Sign-in blocked (rate limit)',
+  source_added: 'Job source added',
+  source_deleted: 'Job source removed',
+  source_toggled: 'Job source paused/activated',
+  company_hidden: 'Company hidden',
+  company_unhidden: 'Company unhidden',
+  settings_updated: 'Settings changed',
+  job_deleted: 'Job deleted',
+  jobs_bulk_deleted: 'Jobs bulk-deleted',
+  job_featured_toggled: 'Job pin toggled',
+  job_type_bulk_changed: 'Job type bulk-changed',
+  category_created: 'Category added',
+  category_updated: 'Category updated',
+  category_deleted: 'Category deleted',
+  page_created: 'Page created',
+  page_updated: 'Page updated',
+  page_deleted: 'Page deleted',
+  blog_created: 'Article published',
+  blog_updated: 'Article updated',
+  blog_deleted: 'Article deleted',
+  ads_updated: 'Ad slot updated',
+  ads_toggled: 'Ads master switch toggled',
+  monetization_product_saved: 'Monetization product saved',
+  monetization_affiliate_saved: 'Affiliate program saved',
+  monetization_refund_requested: 'Refund requested',
+  monetization_entitlement_granted: 'Entitlement granted by admin',
+  cleanup_run: 'Cleanup executed',
+  sync_run: 'Job sync triggered',
+  cache_purged: 'Cache purged',
+  salary_backfill_run: 'Salary data backfill run',
+  homepage_section_toggled: 'Homepage section enabled/disabled',
+  homepage_section_moved: 'Homepage section reordered',
+  homepage_custom_section_created: 'Custom homepage section created',
+  homepage_custom_section_updated: 'Custom homepage section updated',
+  homepage_custom_section_toggled: 'Custom homepage section enabled/disabled',
+  homepage_custom_section_moved: 'Custom homepage section reordered',
+  homepage_custom_section_deleted: 'Custom homepage section deleted',
+  homepage_section_code_updated: 'Homepage section code updated',
+  homepage_section_code_cleared: 'Homepage section code restored',
+  blog_automation_settings_updated: 'Blog Automation settings changed',
+  analytics_settings_updated: 'Analytics settings changed',
+  analytics_data_purged: 'Analytics data purged',
+  analytics_alert_resolved: 'Analytics alert resolved',
+
+  // ── Accounts & Companies (Identity system) ─────────────────────
+  user_registered: 'User registered',
+  user_login_success: 'User signed in',
+  user_login_failed: 'User failed sign-in',
+  user_login_rate_limited: 'User sign-in blocked (rate limit)',
+  user_logout: 'User signed out',
+  user_password_changed: 'User changed password',
+  user_email_changed: 'User changed email',
+  user_password_reset_requested: 'User requested password reset',
+  user_password_reset_completed: 'User completed password reset',
+  user_email_verified: 'User verified email',
+  user_account_deleted: 'User deleted their account',
+  user_suspended: 'User suspended (admin)',
+  user_restored: 'User restored (admin)',
+  email_not_sent_no_provider: 'Email not sent — no provider configured',
+  email_send_failed: 'Email send failed',
+  company_created: 'Company created',
+  company_profile_updated: 'Company profile updated',
+  company_member_added: 'Company member added',
+  company_member_removed: 'Company member removed',
+  company_verified: 'Company verified (admin)',
+  company_rejected: 'Company rejected (admin)',
+  company_suspended: 'Company suspended (admin)',
+  employer_job_submitted: 'Employer job submitted for review',
+  job_alerts_dispatch_completed: 'Job alerts dispatch completed',
+  job_alerts_dispatch_failed: 'Job alerts dispatch failed',
+  job_alert_dispatch_error: 'Job alert dispatch error',
+  ai_smoke_test: 'AI foundation smoke test',
+  ai_job_intelligence: 'Job Intelligence analysis',
+  user_job_matching: 'User job matching run',
+  user_career_assistant: 'Career Assistant request',
+};
+
+// action: short machine-readable key, e.g. 'login_failed', 'job_deleted'.
+// target: human-readable subject, e.g. the job title or source label.
+// meta: optional extra context (string or JSON-serializable object).
+export async function logActivity(env, action, target = '', meta = '') {
+  try {
+    const metaStr = typeof meta === 'string' ? meta : JSON.stringify(meta);
+    await env.DB.prepare(
+      `INSERT INTO admin_activity_log (action, target, meta, created_at) VALUES (?, ?, ?, CURRENT_TIMESTAMP)`
+    ).bind(
+      String(action || '').slice(0, 80),
+      String(target || '').slice(0, 200),
+      metaStr.slice(0, MAX_META_LEN)
+    ).run();
+  } catch (e) {
+    // Best-effort only — an audit-trail write failure must never surface
+    // to the admin as if their actual action (the thing being logged)
+    // had failed. See file header.
+  }
+}
+
+export async function getRecentActivity(env, limit = 20) {
+  try {
+    const { results } = await env.DB.prepare(
+      `SELECT * FROM admin_activity_log ORDER BY id DESC LIMIT ?`
+    ).bind(limit).all();
+    return results || [];
+  } catch (e) {
+    return [];
+  }
+}
+
+// Used by /admin/security to surface a simple brute-force signal
+// alongside the rate limiter already blocking the requests themselves
+// (see lib/platform/rate-limit.js) — this counts what got through the rate
+// limiter's window boundaries too, not just what it blocked.
+export async function countRecentLoginFailures(env, minutes = 15) {
+  try {
+    const { results } = await env.DB.prepare(
+      `SELECT COUNT(*) c FROM admin_activity_log WHERE action = 'login_failed' AND created_at >= datetime('now', '-' || ? || ' minutes')`
+    ).bind(minutes).all();
+    return results?.[0]?.c || 0;
+  } catch (e) {
+    return 0;
+  }
+}

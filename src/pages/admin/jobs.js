@@ -1,0 +1,450 @@
+// src/pages/admin/jobs.js
+// Job Management: search/filter/paginate, edit, delete, feature/unfeature,
+// copy-link, preview, duplicate-detection (manual review, never auto-delete),
+// and stale-job cleanup (configurable age threshold, confirmed before running).
+
+import { BASE_URL, JOB_TYPE_META, JOB_TYPE_ORDER, JOB_STATUS_META, JOB_STATUS_ORDER, JOB_SORT_OPTIONS } from '../../config/constants.js';
+import { getCategories } from '../../lib/content/categories.js';
+import { ensureTable } from '../../db/schema.js';
+import { escapeHtml } from '../../lib/directory/entities.js';
+import { getJobIntelligence } from '../../lib/ai/job-intelligence.js';
+import { jobTypeIconHtml } from '../../lib/jobs/job-card-styles.js';
+
+import { iconArchive, iconBriefcase, iconDollarSign, iconEdit3, iconPin, iconSearch, iconTrash2 } from '../../assets/icons.js';
+const PAGE_SIZE = 30;
+// Sorting (plan §19, Stage 5): now defined once in config/constants.js
+// as JOB_SORT_OPTIONS and shared with the public /api/jobs (Stage 8) —
+// SORT_OPTIONS here is just a local alias so the rest of this file
+// doesn't need renaming.
+const SORT_OPTIONS = JOB_SORT_OPTIONS;
+
+// `categoryOrder`/`categoryMap` are optional — default to empty (no
+// category column shown) only if a caller somehow forgets to pass them;
+// every real call site below always supplies the live D1-backed list.
+function jobRow(j, categoryOrder = [], categoryMap = {}) {
+  const cat = categoryOrder.find(k => (j.title || '').toLowerCase().includes(k));
+  const catMeta = cat ? categoryMap[cat] : null;
+  const jt = (j.job_type && JOB_TYPE_META[j.job_type]) ? j.job_type : 'Free';
+  const jtBadge = jt !== 'Free' ? `<span class="adm-jt-badge">${jobTypeIconHtml(jt, null, { size: 12 })} ${jt}</span> ` : '';
+  const statusMeta = JOB_STATUS_META[j.status] || { label: j.status || 'active', color: 'var(--ink3)' };
+  return `<tr>
+    <td style="width:32px"><input type="checkbox" class="bulk-row-check" name="ids" form="bulkForm" value="${j.id}" onchange="jnBulkSync()"></td>
+    <td style="max-width:220px">
+      <div style="font-weight:700;font-size:12.5px;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${j.featured ? `${iconPin({ size: 15 })} ` : ''}${jtBadge}${escapeHtml(j.title)}</div>
+      <div style="font-size:11px;color:var(--ink3)">${escapeHtml(j.company)}${j.source_type === 'employer' ? ' · <span style="color:var(--brand)">Employer</span>' : ''}</div>
+    </td>
+    <td><span class="status-badge" style="background:${statusMeta.color}22;color:${statusMeta.color}">${statusMeta.label}</span></td>
+    <td style="font-size:11px;color:var(--ink2)">${escapeHtml(j.location || '—')}</td>
+    <td style="font-size:11px;color:var(--ink2)">${catMeta ? `${catMeta.emoji} ${escapeHtml(catMeta.label)}` : '—'}</td>
+    <td style="font-size:11px;color:var(--ink2)">${escapeHtml(j.source || '—')}</td>
+    <td style="font-size:11px;color:var(--green);font-weight:700">${escapeHtml(j.salary || '—')}</td>
+    <td style="font-size:11px;color:var(--ink3)">${j.created_at ? new Date(j.created_at).toLocaleDateString() : '—'}</td>
+    <td>
+      <div style="display:flex;gap:5px;flex-wrap:wrap">
+        <a class="adm-btn-sm" href="/job/${j.id}" target="_blank" style="color:var(--ink2)">Preview</a>
+        <a class="adm-btn-sm" href="/admin/jobs/edit?id=${j.id}" style="color:var(--brand)">Edit</a>
+        <button class="adm-btn-sm" style="color:var(--ink2)" onclick="jnCopyLink('${BASE_URL}/job/${j.id}')">Copy</button>
+        <form method="POST" action="/admin/jobs/feature" style="display:inline">
+          <input type="hidden" name="id" value="${j.id}">
+          <input type="hidden" name="redirect" value="${escapeHtml(currentQueryString())}">
+          <button class="adm-btn-sm" type="submit" style="color:var(--ink2)">${j.featured ? 'Unpin' : 'Pin'}</button>
+        </form>
+        <form method="POST" action="/admin/jobs/delete" onsubmit="return confirm('Delete this job permanently?')" style="display:inline">
+          <input type="hidden" name="id" value="${j.id}">
+          <input type="hidden" name="redirect" value="${escapeHtml(currentQueryString())}">
+          <button class="adm-btn-sm" type="submit">Delete</button>
+        </form>
+      </div>
+    </td>
+  </tr>`;
+}
+
+// Placeholder resolved client-side is unnecessary here — redirect target is
+// built server-side per request; see renderJobsListContent for real usage.
+function currentQueryString() { return '__REDIRECT__'; }
+
+// Shared by renderJobsListContent (below) and the CSV export handler in
+// routes/admin/jobs.router.js, so the two can never drift apart — an
+// export must always match exactly what the admin is currently looking
+// at, filters included (plan §22: "يجب أن يحترم Filters").
+export function buildJobsFilterSql(params) {
+  const qText = (params.get('q') || '').trim();
+  const category = params.get('category') || '';
+  const remote = params.get('remote') || '';
+  const employment = params.get('employment') || '';
+  const jobType = params.get('job_type') || '';
+  const status = params.get('status') || '';
+  const source = params.get('source') || '';
+
+  const where = [];
+  const binds = [];
+  if (qText) { where.push('(LOWER(title) LIKE ? OR LOWER(company) LIKE ?)'); binds.push(`%${qText.toLowerCase()}%`, `%${qText.toLowerCase()}%`); }
+  if (category) { where.push('LOWER(title) LIKE ?'); binds.push(`%${category}%`); }
+  if (remote) { where.push('remote_type = ?'); binds.push(remote); }
+  if (employment) { where.push('employment_type = ?'); binds.push(employment); }
+  if (jobType) { where.push('job_type = ?'); binds.push(jobType); }
+  if (status) { where.push('status = ?'); binds.push(status); }
+  if (source) { where.push('source = ?'); binds.push(source); }
+  const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+  return { whereSql, binds, filters: { qText, category, remote, employment, jobType, status, source } };
+}
+
+export async function renderJobsListContent(env, params) {
+  await ensureTable(env);
+  const categories = await getCategories(env);
+  const categoryOrder = categories.map(c => c.key);
+  const categoryMap = Object.fromEntries(categories.map(c => [c.key, { label: c.label, emoji: c.emoji, color: c.color }]));
+  const { whereSql, binds, filters: { qText, category, remote, employment, jobType, status, source } } = buildJobsFilterSql(params);
+  const sortKey = SORT_OPTIONS[params.get('sort')] ? params.get('sort') : 'relevance';
+  const page = Math.max(1, parseInt(params.get('page') || '1', 10) || 1);
+  const offset = (page - 1) * PAGE_SIZE;
+  const qsString = params.toString();
+  const redirectTarget = qsString ? `/admin/jobs?${qsString}` : '/admin/jobs';
+
+  const [{ results: rows }, { results: countRows }, { results: sourceRows }] = await Promise.all([
+    env.DB.prepare(`SELECT * FROM jobs ${whereSql} ORDER BY ${SORT_OPTIONS[sortKey].sql} LIMIT ${PAGE_SIZE} OFFSET ${offset}`).bind(...binds).all(),
+    env.DB.prepare(`SELECT COUNT(*) c FROM jobs ${whereSql}`).bind(...binds).all(),
+    env.DB.prepare(`SELECT DISTINCT source FROM jobs WHERE source IS NOT NULL AND source != '' ORDER BY source ASC`).all(),
+  ]);
+  const total = countRows[0]?.c || 0;
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+
+  const { results: staleCountRows } = await env.DB.prepare(
+    "SELECT COUNT(*) c FROM jobs WHERE created_at < datetime('now','-45 day')"
+  ).all();
+  const staleCount = staleCountRows[0]?.c || 0;
+
+  const { results: unbackfilledRows } = await env.DB.prepare(
+    "SELECT COUNT(*) c FROM jobs WHERE salary IS NOT NULL AND salary != '' AND salary_min_usd IS NULL"
+  ).all();
+  const unbackfilledCount = unbackfilledRows[0]?.c || 0;
+
+  const rowsHtml = (rows || []).map(j => jobRow(j, categoryOrder, categoryMap)).join('').replaceAll('__REDIRECT__', escapeHtml(redirectTarget));
+
+  const qs = (overrides) => {
+    const p = new URLSearchParams(params);
+    Object.entries(overrides).forEach(([k, v]) => v ? p.set(k, v) : p.delete(k));
+    return p.toString();
+  };
+
+  return `
+  <div class="adm-wrap">
+    <div class="adm-hdr">
+      <div>
+        <div class="adm-title">${iconBriefcase({ size: 22 })} Job Management</div>
+        <div class="adm-sub">${total.toLocaleString()} jobs match current filters</div>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <a href="/admin/jobs/duplicates" class="adm-btn">${iconSearch({ size: 15 })} Find Duplicates</a>
+        <a href="/admin/jobs/export?${params.toString()}" class="adm-btn">⬇ Export CSV</a>
+      </div>
+    </div>
+
+    ${staleCount > 0 ? `
+    <div class="adm-card" style="margin-bottom:14px;border-color:rgba(224,168,58,.4)">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
+        <div style="font-size:12.5px;color:var(--ink2)"><b>${staleCount.toLocaleString()}</b> jobs are older than 45 days and may be stale.</div>
+        <form method="POST" action="/admin/jobs/delete-stale" onsubmit="return confirm('Mark ' + ${staleCount} + ' jobs older than the chosen age as expired? They will remain recoverable during the lifecycle window.')" style="display:flex;gap:6px;align-items:center">
+          <input class="adm-input" type="number" name="days" value="45" min="7" style="width:70px" title="Age in days">
+          <button class="adm-btn adm-btn-primary" type="submit" style="background:#e0a83a;border-color:#e0a83a">Expire Stale Jobs</button>
+        </form>
+      </div>
+    </div>` : ''}
+
+    ${unbackfilledCount > 0 ? `
+    <div class="adm-card" style="margin-bottom:14px;border-color:rgba(53,86,255,.3)">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
+        <div style="font-size:12.5px;color:var(--ink2)">
+          <b>${unbackfilledCount.toLocaleString()}</b> jobs have a salary but were synced before salary normalization existed — their "Hot" badge and salary filter may be inaccurate until backfilled.
+        </div>
+        <form method="POST" action="/admin/jobs/backfill-salary" style="display:inline">
+          <button class="adm-btn adm-btn-primary" type="submit">${iconDollarSign({ size: 15 })} Backfill Salary Data (300 at a time)</button>
+        </form>
+      </div>
+    </div>` : ''}
+
+    <div class="adm-card" style="margin-bottom:14px">
+      <form method="GET" action="/admin/jobs" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <input class="adm-input" name="q" placeholder="Search title or company…" value="${escapeHtml(qText)}" style="flex:1;min-width:180px">
+        <select class="adm-input" name="category" onchange="this.form.submit()">
+          <option value="">All categories</option>
+          ${categoryOrder.map(k => `<option value="${k}" ${category === k ? 'selected' : ''}>${categoryMap[k].emoji} ${escapeHtml(categoryMap[k].label)}</option>`).join('')}
+        </select>
+        <select class="adm-input" name="remote" onchange="this.form.submit()">
+          <option value="">Any remote type</option>
+          <option value="fully_remote" ${remote === 'fully_remote' ? 'selected' : ''}>Fully remote</option>
+          <option value="hybrid" ${remote === 'hybrid' ? 'selected' : ''}>Hybrid</option>
+          <option value="on_site" ${remote === 'on_site' ? 'selected' : ''}>On-site</option>
+        </select>
+        <select class="adm-input" name="status" onchange="this.form.submit()">
+          <option value="">Any status</option>
+          ${JOB_STATUS_ORDER.map(s => `<option value="${s}" ${status === s ? 'selected' : ''}>${JOB_STATUS_META[s].label}</option>`).join('')}
+        </select>
+        <select class="adm-input" name="source" onchange="this.form.submit()">
+          <option value="">Any source</option>
+          ${(sourceRows || []).map(r => `<option value="${escapeHtml(r.source)}" ${source === r.source ? 'selected' : ''}>${escapeHtml(r.source)}</option>`).join('')}
+        </select>
+        <select class="adm-input" name="employment" onchange="this.form.submit()">
+          <option value="">Any employment type</option>
+          <option value="full_time" ${employment === 'full_time' ? 'selected' : ''}>Full-time</option>
+          <option value="part_time" ${employment === 'part_time' ? 'selected' : ''}>Part-time</option>
+          <option value="contract" ${employment === 'contract' ? 'selected' : ''}>Contract</option>
+        </select>
+        <select class="adm-input" name="job_type" onchange="this.form.submit()">
+          <option value="">Any job type</option>
+          ${JOB_TYPE_ORDER.map(t => `<option value="${t}" ${jobType === t ? 'selected' : ''}>${t}</option>`).join('')}
+        </select>
+        <select class="adm-input" name="sort" onchange="this.form.submit()">
+          ${Object.entries(SORT_OPTIONS).map(([k, o]) => `<option value="${k}" ${sortKey === k ? 'selected' : ''}>Sort: ${o.label}</option>`).join('')}
+        </select>
+        <button class="adm-btn adm-btn-primary" type="submit">Filter</button>
+        ${(qText || category || remote || employment || jobType || status || source) ? `<a href="/admin/jobs" class="adm-btn">Clear</a>` : ''}
+      </form>
+    </div>
+
+    <div class="adm-card adm-table-wrap" style="overflow-x:auto">
+      <form id="bulkForm" method="POST" action="/admin/jobs/bulk" onsubmit="return jnBulkSubmit(event)">
+        <input type="hidden" name="bulk_action" id="bulkActionField">
+        <input type="hidden" name="job_type_value" id="bulkJobTypeField">
+        <input type="hidden" name="redirect" value="${escapeHtml(redirectTarget)}">
+      </form>
+      <div class="bulk-bar" id="bulkBar">
+        <span class="bulk-bar-count" id="bulkCount">0 selected</span>
+        <div class="bulk-bar-actions">
+          <button type="button" class="adm-btn-sm" onclick="jnBulkAction('feature')" style="color:var(--brand)">${iconPin({ size: 15 })} Pin</button>
+          <button type="button" class="adm-btn-sm" onclick="jnBulkAction('unfeature')" style="color:var(--ink2)">Unpin</button>
+          <select class="adm-input" id="bulkJobTypeSelect" style="padding:5px 8px;font-size:11px">
+            ${JOB_TYPE_ORDER.map(t => `<option value="${t}">${t}</option>`).join('')}
+          </select>
+          <button type="button" class="adm-btn-sm" onclick="jnBulkAction('set_job_type')" style="color:var(--brand)">Set Job Type</button>
+          <button type="button" class="adm-btn-sm" onclick="jnBulkAction('pause')" style="color:var(--amber, #F5A623)">⏸ Pause</button>
+          <button type="button" class="adm-btn-sm" onclick="jnBulkAction('restore')" style="color:var(--green)">▶ Restore</button>
+          <button type="button" class="adm-btn-sm" onclick="jnBulkAction('archive')" style="color:var(--ink2)">${iconArchive({ size: 15 })} Archive</button>
+          <button type="button" class="adm-btn-sm" onclick="jnBulkAction('delete')" style="color:var(--coral)">${iconTrash2({ size: 15 })} Delete</button>
+        </div>
+      </div>
+      <table style="width:100%;border-collapse:collapse;font-size:12px">
+        <thead><tr style="text-align:left;border-bottom:1.5px solid var(--border)">
+          <th style="padding:8px 6px;width:32px"><input type="checkbox" id="bulkSelectAll" onchange="jnBulkToggleAll(this)"></th>
+          <th style="padding:8px 6px;color:var(--ink3);font-size:10.5px;text-transform:uppercase">Job</th>
+          <th style="padding:8px 6px;color:var(--ink3);font-size:10.5px;text-transform:uppercase">Status</th>
+          <th style="padding:8px 6px;color:var(--ink3);font-size:10.5px;text-transform:uppercase">Location</th>
+          <th style="padding:8px 6px;color:var(--ink3);font-size:10.5px;text-transform:uppercase">Category</th>
+          <th style="padding:8px 6px;color:var(--ink3);font-size:10.5px;text-transform:uppercase">Source</th>
+          <th style="padding:8px 6px;color:var(--ink3);font-size:10.5px;text-transform:uppercase">Salary</th>
+          <th style="padding:8px 6px;color:var(--ink3);font-size:10.5px;text-transform:uppercase">Posted</th>
+          <th style="padding:8px 6px;color:var(--ink3);font-size:10.5px;text-transform:uppercase">Actions</th>
+        </tr></thead>
+        <tbody>${rowsHtml || `<tr><td colspan="9" style="padding:20px;text-align:center;color:var(--ink3)">No jobs match these filters</td></tr>`}</tbody>
+      </table>
+    </div>
+
+    ${totalPages > 1 ? `
+    <div style="display:flex;justify-content:center;gap:8px;margin-top:16px">
+      ${page > 1 ? `<a class="adm-btn" href="/admin/jobs?${qs({ page: page - 1 })}"> Prev</a>` : ''}
+      <span class="adm-btn" style="cursor:default">Page ${page} of ${totalPages}</span>
+      ${page < totalPages ? `<a class="adm-btn" href="/admin/jobs?${qs({ page: page + 1 })}">Next </a>` : ''}
+    </div>` : ''}
+  </div>
+  <script>
+    function jnCopyLink(url){
+      navigator.clipboard.writeText(url).then(function(){ if(window.jnToast) jnToast('Link copied'); });
+    }
+
+    // ── Bulk Actions (Admin Dashboard V2, Phase 2) ──────────────────
+    // Checkboxes live inside <td> cells that are NOT nested inside
+    // #bulkForm (a <form> can never validly wrap a <table> that also
+    // contains other independent per-row <form>s) — instead every
+    // checkbox/hidden field uses the HTML5 form="bulkForm" attribute to
+    // associate with the form from outside it. See jobRow() above.
+    function jnBulkSync(){
+      var checked = document.querySelectorAll('.bulk-row-check:checked').length;
+      var bar = document.getElementById('bulkBar');
+      var count = document.getElementById('bulkCount');
+      count.textContent = checked + ' selected';
+      bar.classList.toggle('show', checked > 0);
+      var all = document.querySelectorAll('.bulk-row-check').length;
+      var selectAll = document.getElementById('bulkSelectAll');
+      if (selectAll) selectAll.checked = all > 0 && checked === all;
+    }
+    function jnBulkToggleAll(cb){
+      document.querySelectorAll('.bulk-row-check').forEach(function(el){ el.checked = cb.checked; });
+      jnBulkSync();
+    }
+    function jnBulkAction(action){
+      var checked = document.querySelectorAll('.bulk-row-check:checked').length;
+      if (!checked) return;
+      if (action === 'delete' && !confirm('Permanently delete ' + checked + ' job' + (checked === 1 ? '' : 's') + '? This cannot be undone.')) return;
+      if (action === 'archive' && !confirm('Archive ' + checked + ' job' + (checked === 1 ? '' : 's') + '? Archived jobs are removed from public listings and permanently deleted after 30 days.')) return;
+      if (action === 'set_job_type') {
+        document.getElementById('bulkJobTypeField').value = document.getElementById('bulkJobTypeSelect').value;
+      }
+      document.getElementById('bulkActionField').value = action;
+      document.getElementById('bulkForm').requestSubmit ? document.getElementById('bulkForm').requestSubmit() : document.getElementById('bulkForm').submit();
+    }
+    // onsubmit guard: a bare Enter-key submit (no action chosen) must not
+    // fire an empty bulk_action against the server.
+    function jnBulkSubmit(e){
+      if (!document.getElementById('bulkActionField').value) { e.preventDefault(); return false; }
+      return true;
+    }
+  </script>`;
+}
+
+function intelligenceItems(items, empty = 'No items identified.') {
+  const values = Array.isArray(items) ? items.filter(Boolean) : [];
+  return values.length ? `<ul style="margin:6px 0 0 18px;padding:0;line-height:1.7">${values.map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ul>` : `<div style="color:var(--ink3);margin-top:5px">${empty}</div>`;
+}
+
+function renderJobIntelligenceCard(j, intelligence) {
+  const hasFresh = Boolean(intelligence?.fresh && intelligence?.data);
+  const data = intelligence?.data || {};
+  const stale = Boolean(intelligence?.stored && !hasFresh);
+  return `<div class="adm-card" style="margin-bottom:14px;border-color:${hasFresh ? 'rgba(52,211,153,.35)' : 'var(--border)'}">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
+      <div>
+        <div class="adm-card-title" style="margin-bottom:3px">Job Intelligence <span style="font-weight:400;color:var(--ink3);font-size:11px">— on-demand internal analysis</span></div>
+        <div style="font-size:11px;color:var(--ink2)">${hasFresh ? `Updated ${escapeHtml(intelligence.stored?.updated_at || 'recently')}` : stale ? 'Source job changed; analysis is stale.' : 'No analysis has been generated for this job yet.'}</div>
+      </div>
+      <form method="POST" action="/admin/jobs/intelligence"><input type="hidden" name="id" value="${j.id}"><input type="hidden" name="force" value="1"><button class="adm-btn ${hasFresh ? '' : 'adm-btn-primary'}" type="submit">${hasFresh ? 'Regenerate analysis' : 'Analyze this job'}</button></form>
+    </div>
+    ${hasFresh ? `<div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:14px;font-size:12px;color:var(--ink2)">
+      <div><strong style="color:var(--ink)">Summary</strong><p style="margin:5px 0;line-height:1.6">${escapeHtml(data.summary)}</p></div>
+      <div><strong style="color:var(--ink)">Candidate profile</strong><p style="margin:5px 0;line-height:1.6">${escapeHtml(data.candidate_profile || 'Not specified')}</p></div>
+      <div><strong style="color:var(--ink)">Responsibilities</strong>${intelligenceItems(data.responsibilities)}</div>
+      <div><strong style="color:var(--ink)">Requirements</strong>${intelligenceItems(data.requirements)}</div>
+      <div><strong style="color:var(--ink)">Skills</strong>${intelligenceItems(data.skills)}</div>
+      <div><strong style="color:var(--ink)">Signals</strong><div style="margin-top:5px;line-height:1.7">Seniority: ${escapeHtml(data.seniority || 'Not specified')}<br>Work mode: ${escapeHtml(data.work_mode || 'Not specified')}<br>Salary: ${escapeHtml(data.salary_signal || 'Not specified')}</div></div>
+      <div style="grid-column:1/-1"><strong style="color:var(--ink)">Missing information</strong>${intelligenceItems(data.missing_information, 'The model did not flag missing information.')}</div>
+    </div>` : `<div style="margin-top:12px;font-size:12px;color:var(--ink2);line-height:1.7">The analysis uses only this job's stored fields and is never run during public page rendering. It is retained separately from the job record.</div>`}
+  </div>`;
+}
+
+export async function renderJobEditContent(env, id) {
+  await ensureTable(env);
+  const { results } = await env.DB.prepare('SELECT * FROM jobs WHERE id = ?').bind(id).all();
+  const j = results[0];
+  if (!j) {
+    return `<div class="adm-wrap"><div class="adm-card">Job not found. <a href="/admin/jobs"> Back to Job Management</a></div></div>`;
+  }
+  let skills = [];
+  try { skills = JSON.parse(j.skills || '[]'); } catch (e) {}
+  const intelligence = await getJobIntelligence(env, j);
+
+  return `
+  <div class="adm-wrap" style="max-width:680px">
+    <div class="adm-hdr">
+      <div>
+        <div class="adm-title">${iconEdit3({ size: 22 })} Edit Job</div>
+        <div class="adm-sub">#${j.id} — ${escapeHtml(j.title)}</div>
+      </div>
+      <a href="/admin/jobs" class="adm-btn"> Back</a>
+    </div>
+    ${renderJobIntelligenceCard(j, intelligence)}
+    <form method="POST" action="/admin/jobs/update" class="adm-card" style="display:flex;flex-direction:column;gap:12px">
+      <input type="hidden" name="id" value="${j.id}">
+      <label style="font-size:11px;font-weight:700;color:var(--ink3);text-transform:uppercase">Title
+        <input class="adm-input" style="width:100%;margin-top:4px" name="title" value="${escapeHtml(j.title)}" required></label>
+      <label style="font-size:11px;font-weight:700;color:var(--ink3);text-transform:uppercase">Company
+        <input class="adm-input" style="width:100%;margin-top:4px" name="company" value="${escapeHtml(j.company)}" required></label>
+      <label style="font-size:11px;font-weight:700;color:var(--ink3);text-transform:uppercase">Location
+        <input class="adm-input" style="width:100%;margin-top:4px" name="location" value="${escapeHtml(j.location || '')}"></label>
+      <label style="font-size:11px;font-weight:700;color:var(--ink3);text-transform:uppercase">Apply URL
+        <input class="adm-input" style="width:100%;margin-top:4px" name="url" value="${escapeHtml(j.url)}" required></label>
+      <div style="display:flex;gap:10px">
+        <label style="flex:1;font-size:11px;font-weight:700;color:var(--ink3);text-transform:uppercase">Salary
+          <input class="adm-input" style="width:100%;margin-top:4px" name="salary" value="${escapeHtml(j.salary || '')}" placeholder="e.g. $90k - $130k"></label>
+        <label style="flex:1;font-size:11px;font-weight:700;color:var(--ink3);text-transform:uppercase">Seniority
+          <input class="adm-input" style="width:100%;margin-top:4px" name="seniority" value="${escapeHtml(j.seniority || '')}"></label>
+      </div>
+      <div style="display:flex;gap:10px">
+        <label style="flex:1;font-size:11px;font-weight:700;color:var(--ink3);text-transform:uppercase">Remote Type
+          <select class="adm-input" style="width:100%;margin-top:4px" name="remote_type">
+            <option value="" ${!j.remote_type ? 'selected' : ''}>—</option>
+            <option value="fully_remote" ${j.remote_type === 'fully_remote' ? 'selected' : ''}>Fully remote</option>
+            <option value="hybrid" ${j.remote_type === 'hybrid' ? 'selected' : ''}>Hybrid</option>
+            <option value="on_site" ${j.remote_type === 'on_site' ? 'selected' : ''}>On-site</option>
+          </select></label>
+        <label style="flex:1;font-size:11px;font-weight:700;color:var(--ink3);text-transform:uppercase">Employment Type
+          <select class="adm-input" style="width:100%;margin-top:4px" name="employment_type">
+            <option value="" ${!j.employment_type ? 'selected' : ''}>—</option>
+            <option value="full_time" ${j.employment_type === 'full_time' ? 'selected' : ''}>Full-time</option>
+            <option value="part_time" ${j.employment_type === 'part_time' ? 'selected' : ''}>Part-time</option>
+            <option value="contract" ${j.employment_type === 'contract' ? 'selected' : ''}>Contract</option>
+          </select></label>
+      </div>
+      <label style="font-size:11px;font-weight:700;color:var(--ink3);text-transform:uppercase">Skills (comma-separated)
+        <input class="adm-input" style="width:100%;margin-top:4px" name="skills" value="${escapeHtml(skills.join(', '))}"></label>
+      <label style="font-size:11px;font-weight:700;color:var(--ink3);text-transform:uppercase">Description
+        <textarea class="adm-input" style="width:100%;margin-top:4px;min-height:160px;font-family:inherit" name="description">${escapeHtml(j.description || '')}</textarea></label>
+      <div style="display:flex;gap:10px">
+        <label style="flex:1;font-size:11px;font-weight:700;color:var(--ink3);text-transform:uppercase">Job Type
+          <select class="adm-input" style="width:100%;margin-top:4px" name="job_type">
+            ${JOB_TYPE_ORDER.map(t => `<option value="${t}" ${(j.job_type || 'Free') === t ? 'selected' : ''}>${t}</option>`).join('')}
+          </select></label>
+        <label style="flex:2;font-size:11px;font-weight:700;color:var(--ink3);text-transform:uppercase">Note <span style="color:var(--ink3);font-weight:400;text-transform:none;letter-spacing:0;font-size:11px">(optional — shown for Sponsored)</span>
+          <input class="adm-input" style="width:100%;margin-top:4px" name="job_type_note" value="${escapeHtml(j.job_type_note || '')}" maxlength="140" placeholder="One-line company blurb"></label>
+      </div>
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--ink2)">
+        <input type="checkbox" name="featured" value="1" ${j.featured ? 'checked' : ''}> Pin this job to the top within its tier
+      </label>
+      <div style="display:flex;gap:10px;margin-top:6px">
+        <button class="adm-btn adm-btn-primary" type="submit">Save Changes</button>
+        <a href="/job/${j.id}" target="_blank" class="adm-btn">Preview Live</a>
+      </div>
+    </form>
+  </div>`;
+}
+
+export async function renderDuplicatesContent(env) {
+  await ensureTable(env);
+  // DATA QUALITY: normalize dash-character variants (- – —) and trim
+  // whitespace before grouping — cross-provider duplicates often differ
+  // only in which dash character or how much padding a provider happens
+  // to use (e.g. "Backend Engineer - Remote" vs "Backend Engineer — Remote"),
+  // which the old exact LOWER(title) match missed entirely.
+  const { results: groups } = await env.DB.prepare(`
+    SELECT
+      TRIM(REPLACE(REPLACE(LOWER(title), '–', '-'), '—', '-')) t,
+      LOWER(TRIM(company)) c,
+      GROUP_CONCAT(id) ids, COUNT(*) n
+    FROM jobs GROUP BY t, c HAVING n > 1 ORDER BY n DESC LIMIT 50
+  `).all();
+
+  if (!groups || !groups.length) {
+    return `<div class="adm-wrap"><div class="adm-hdr"><div class="adm-title">${iconSearch({ size: 22 })} Possible Duplicates</div></div>
+      <div class="adm-card"><div class="adm-empty">No duplicate title+company groups found. <a href="/admin/jobs"> Back to Job Management</a></div></div></div>`;
+  }
+
+  const ids = groups.flatMap(g => g.ids.split(',').map(Number));
+  const placeholders = ids.map(() => '?').join(',');
+  const { results: jobRows } = await env.DB.prepare(`SELECT * FROM jobs WHERE id IN (${placeholders})`).bind(...ids).all();
+  const jobsById = Object.fromEntries((jobRows || []).map(j => [j.id, j]));
+
+  const groupsHtml = groups.map(g => {
+    const groupIds = g.ids.split(',').map(Number).sort((a, b) => b - a); // newest first
+    return `<div class="adm-card" style="margin-bottom:12px">
+      <div class="adm-card-title" style="text-transform:capitalize">${escapeHtml(jobsById[groupIds[0]]?.title || g.t)} <span style="color:var(--ink3);font-weight:400">at ${escapeHtml(jobsById[groupIds[0]]?.company || g.c)} — ${g.n} copies</span></div>
+      ${groupIds.map((id, idx) => {
+        const j = jobsById[id];
+        if (!j) return '';
+        return `<div class="adm-row">
+          <span class="adm-row-label">#${id} ${idx === 0 ? '<span style="color:var(--green);font-weight:700">· newest, kept by default</span>' : ''} · ${j.created_at ? new Date(j.created_at).toLocaleDateString() : '—'} · <a href="/job/${id}" target="_blank" style="color:var(--brand)">preview</a></span>
+          <form method="POST" action="/admin/jobs/delete" onsubmit="return confirm('Delete job #${id}?')" style="display:inline">
+            <input type="hidden" name="id" value="${id}">
+            <input type="hidden" name="redirect" value="/admin/jobs/duplicates">
+            <button class="adm-btn-sm" type="submit">Delete</button>
+          </form>
+        </div>`;
+      }).join('')}
+    </div>`;
+  }).join('');
+
+  return `<div class="adm-wrap">
+    <div class="adm-hdr">
+      <div><div class="adm-title">${iconSearch({ size: 22 })} Possible Duplicates</div><div class="adm-sub">${groups.length} groups found — review before deleting, nothing is removed automatically</div></div>
+      <a href="/admin/jobs" class="adm-btn"> Back</a>
+    </div>
+    ${groupsHtml}
+  </div>`;
+}
