@@ -169,18 +169,32 @@ ok(cronErrors.length === 0, `scheduled tasks completed without errors (${JSON.st
 // migration. A brand-new database + a hard 50-call limit per request must never
 // produce a 500 on the way to a complete schema. ──
 {
+  mem.clear(); // start from an empty edge cache, like a brand-new deployment
+  // per-isolate schema flags live in a shared module: reset them so this DB is treated as brand new
+  const { schemaState } = await import('../src/db/schema/state.js');
+  Object.assign(schemaState, { core: false, ai: false, account: false, versionConfirmed: false, ensurePromise: null });
   const fresh = new D1Shim();
   const freshWorker = (await import('../src/index.js?fresh-db')).default;
   const freshEnv = { DB: fresh, ADMIN_PASSWORD: 'test-admin-pass-123', CSRF_SECRET: 'csrf-secret-test-value-xyz' };
   const codes = [];
+  let seededMidMigration = false;
+  const seenListing = [];
   for (let i = 0; i < 40; i++) {
     fresh.startRequest(50);
-    const res = await freshWorker.fetch(new Request(`${BASE}/`, { headers: { 'CF-Connecting-IP': '198.51.100.1' } }), { ...freshEnv }, ctx);
-    await res.text();
+    const res = await freshWorker.fetch(new Request(`${BASE}/?nocache=${i}`, { headers: { 'CF-Connecting-IP': '198.51.100.1' } }), { ...freshEnv }, ctx);
+    const html = await res.text();
     codes.push(res.status);
     fresh.startRequest(0);
+    if (seededMidMigration) seenListing.push(html.includes('Mid Migration Job') && !html.includes('<div class="loader-wrap">'));
+    if (!seededMidMigration) {
+      try {
+        await fresh.prepare("INSERT INTO jobs (title,company,location,url,description,salary,remote_type,skills) VALUES ('Mid Migration Job','Acme','Remote','https://example.com/mid','d','','fully_remote','[]')").run();
+        seededMidMigration = true;
+      } catch (e) { /* jobs table not created yet */ }
+    }
     if (await fresh.prepare("SELECT v FROM _schema_meta WHERE k='version'").first().catch(() => null)) break;
   }
+  ok(seenListing.length > 3 && seenListing.every(Boolean), 'homepage lists jobs (never an endless spinner) while columns are still being migrated');
   ok(codes.length > 3 && codes.every((c) => c === 200), `no 500 while the schema builds under the 50-call limit (${codes.join(',')})`);
 
   mem.clear(); // the edge "schema OK" marker written above belongs to a different database

@@ -278,7 +278,10 @@ async function loadJobs(pushHistory){
   if(paginationEl)paginationEl.innerHTML='';
   const p=buildQueryParams();
   try{
-    const res=await fetch('/api/jobs?'+p);
+    const ctl=new AbortController();const tm=setTimeout(()=>ctl.abort(),12000);
+    const res=await fetch('/api/jobs?'+p,{signal:ctl.signal});
+    clearTimeout(tm);
+    if(!res.ok)throw new Error('HTTP '+res.status);
     const data=await res.json();
     jobs=data.jobs||[];total=data.total||0;
     updateUrlBar(!!pushHistory);
@@ -444,6 +447,10 @@ function renderPagination(){
 // but pagination needs the live "total" count known only after render)
 document.addEventListener('DOMContentLoaded',()=>{
     initHomepageReveal();
+    // Server could not build the list (schema still migrating, D1 hiccup): never leave
+    // the spinner up — fetch it from the API, which shows a clear message on failure.
+    const jl=document.getElementById('jobsList');
+    if(jl&&jl.dataset.degraded==='1'&&!jl.querySelector('.job-card'))loadJobs();
     savedIds.forEach(id=>{const b=document.getElementById('sb-'+id);if(b)b.classList.add('saved');});
     document.querySelectorAll('.card-save-btn').forEach(btn=>{const id=Number(btn.id.replace('sb-',''));if(savedIds.includes(id))btn.classList.add('saved');});
   // If the URL was opened WITH search state (shared link, refresh, or a

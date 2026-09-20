@@ -29,7 +29,7 @@ import { getVerifiedCompanyNameSet, listPublicCompanies } from '../lib/companies
 import { getLogoOverrides, attachCompanyLogos } from '../lib/companies/company-logos.js';
 import { hydrateHotPay, HOT_PAY_LABEL } from '../lib/jobs/hot-pay.js';
 import { getPosts } from '../lib/content/blog-cms.js';
-import { iconSparkle, iconFlame, iconPin, iconMapPin, iconBookmark, iconLink, iconBadgeCheck, iconClock, iconGlobe, iconBuilding, iconSearch, iconCheck, iconInfo, iconAlertTriangle, iconChevronDown, iconSliders, iconX, iconBell, iconFileText, iconPlus, iconBriefcase, iconArrowRight, iconTierStar, iconTierCrown, iconTierRocket } from '../assets/icons.js';
+import { iconSparkle, iconFlame, iconPin, iconMapPin, iconBookmark, iconLink, iconBadgeCheck, iconClock, iconGlobe, iconBuilding, iconSearch, iconCheck, iconInfo, iconAlertTriangle, iconChevronDown, iconSliders, iconX, iconBell, iconFileText, iconPlus, iconBriefcase, iconArrowRight, iconTierStar, iconTierCrown, iconTierRocket, iconInbox } from '../assets/icons.js';
 
 // Same icon markup used by the server-rendered cards (job-card.js) is
 // reused for client-rendered cards (search/filter/pagination results) by
@@ -127,22 +127,47 @@ export async function renderMainHTML(env, base, user = null) {
     blogTitle: settings.homepage_blog_title || HOMEPAGE_COPY_DEFAULTS.homepage_blog_title,
     blogCta: settings.homepage_blog_cta || HOMEPAGE_COPY_DEFAULTS.homepage_blog_cta,
   };
-  let initialJobs = [], initialTotal = 0, totalJobsCount = 0, companiesCount = 0;
+  // RESILIENT LOADING: the listing query names many columns that only exist
+  // once the schema migration has finished. Previously ANY failure was
+  // swallowed and the page showed an endless spinner (and that broken HTML was
+  // edge-cached). Now each step has its own fallback and the page is marked
+  // `degraded` so it is never cached and the browser re-fetches the list.
+  let initialJobs = [], initialTotal = 0, totalJobsCount = 0, companiesCount = 0, jobsDegraded = false;
+  const listingQueries = [
+    `SELECT ${JOB_LISTING_COLUMNS} FROM jobs WHERE ${PUBLIC_JOB_STATUS_SQL} ORDER BY ${JOB_MANUAL_PIN_SORT_SQL} LIMIT 20`,
+    `SELECT id,title,company,location,url,salary,remote_type,skills,seniority,employment_type,created_at,featured FROM jobs WHERE ${PUBLIC_JOB_STATUS_SQL} ORDER BY featured DESC, id DESC LIMIT 20`,
+    `SELECT id,title,company,location,url,salary,remote_type,skills,seniority,employment_type,created_at FROM jobs ORDER BY id DESC LIMIT 20`,
+  ];
+  let jobRows = [];
+  for (let attempt = 0; attempt < listingQueries.length; attempt++) {
+    try {
+      jobRows = (await env.DB.prepare(listingQueries[attempt]).all()).results || [];
+      if (attempt > 0) jobsDegraded = true;
+      break;
+    } catch (e) {
+      jobsDegraded = true;
+      if (attempt === listingQueries.length - 1) console.error('[home] job listing query failed:', e && e.message || e);
+    }
+  }
+  try { jobRows = await attachCompanyLogos(env, jobRows); } catch (e) { jobsDegraded = true; }
+  try { jobRows = await hydrateHotPay(env, jobRows, settings); } catch (e) { jobsDegraded = true; }
+  initialJobs = jobRows;
   try {
-    const [{ results: jobRows }, { results: summaryRows }] = await Promise.all([
-      env.DB.prepare(`SELECT ${JOB_LISTING_COLUMNS} FROM jobs WHERE ${PUBLIC_JOB_STATUS_SQL} ORDER BY ${JOB_MANUAL_PIN_SORT_SQL} LIMIT 20`).all(),
-      env.DB.prepare(`
-        SELECT COUNT(*) AS total_jobs,
-               COUNT(DISTINCT CASE WHEN company IS NOT NULL AND company != '' THEN LOWER(company) END) AS total_companies
-        FROM jobs WHERE ${PUBLIC_JOB_STATUS_SQL}
-      `).all(),
-    ]);
-    initialJobs = await hydrateHotPay(env, await attachCompanyLogos(env, jobRows || []), settings);
-    const summary = summaryRows?.[0] || {};
+    const summary = (await env.DB.prepare(`
+      SELECT COUNT(*) AS total_jobs,
+             COUNT(DISTINCT CASE WHEN company IS NOT NULL AND company != '' THEN LOWER(company) END) AS total_companies
+      FROM jobs WHERE ${PUBLIC_JOB_STATUS_SQL}
+    `).all()).results?.[0] || {};
     initialTotal = Number(summary.total_jobs || 0);
-    totalJobsCount = initialTotal;
     companiesCount = Number(summary.total_companies || 0);
-  } catch (e) {}
+  } catch (e) {
+    jobsDegraded = true;
+    try {
+      initialTotal = Number((await env.DB.prepare('SELECT COUNT(*) AS c FROM jobs').first())?.c || 0);
+    } catch (e2) { initialTotal = initialJobs.length; }
+  }
+  if (!initialTotal) initialTotal = initialJobs.length;
+  totalJobsCount = initialTotal;
 
   // Top companies prefer the real, admin-managed companies table (which
   // carries logo_url, verification and an exact job_count). Legacy provider-
@@ -190,7 +215,9 @@ export async function renderMainHTML(env, base, user = null) {
   const jobLogoOverrides = { ...companyLogoMap, ...initialLogoOverrides };
   const ssrJobsHtml = initialJobs.length
     ? initialJobs.map((j, i) => jobCardSSR(j, i, categoryMap, categoryOrder, cardStyles, jobLogoOverrides, featuredEnabled, verifiedCompanySet, settings)).join('')
-    : `<div class="loader-wrap"><div class="loader"></div></div>`;
+    : (jobsDegraded
+      ? `<div class="loader-wrap"><div class="loader"></div></div>`
+      : `<div class="empty"><div class="e-icon">${iconInbox({ size: 44 })}</div><h3>No jobs yet</h3><p>New remote jobs are added every few hours — check back soon.</p></div>`);
 
   const siteName = escapeHtml(settings.site_name);
   const siteDescription = settings.site_description || `${settings.site_name} is a curated remote job board with ${totalJobsCount ? totalJobsCount.toLocaleString() + '+' : ''} verified positions in development, design, marketing, data and more. Updated every few hours.`;
@@ -276,7 +303,7 @@ export async function renderMainHTML(env, base, user = null) {
       <div class="job-tabs" role="tablist"><button class="active" data-job-tab="all" onclick="quickJobTab('all',this)">All jobs</button><button data-job-tab="remote" onclick="quickJobTab('remote',this)">Remote</button><button data-job-tab="full_time" onclick="quickJobTab('full_time',this)">Full-time</button><button data-job-tab="part_time" onclick="quickJobTab('part_time',this)">Part-time</button><button data-job-tab="contract" onclick="quickJobTab('contract',this)">Contract</button></div>
       <div class="results-hdr"><div class="results-count" id="resultsCount" style="display:none"><strong>${initialTotal.toLocaleString()}</strong> jobs found</div></div>
       ${adSlot('homepage-results-top', '', adConfig, adsEnabled)}
-      <div class="jobs-list" id="jobsList">${ssrJobsHtml}</div><a class="jobs-view-all" href="/jobs">${escapeHtml(homepageCopy.jobsCta)}</a>
+      <div class="jobs-list" id="jobsList"${jobsDegraded ? ' data-degraded="1"' : ''}>${ssrJobsHtml}</div><a class="jobs-view-all" href="/jobs">${escapeHtml(homepageCopy.jobsCta)}</a>
     </div>${sidebarSectionsHtml ? `<aside class="home-sidebar">${sidebarSectionsHtml}</aside>` : ''}</div></section>`,
 
     career_insights: blogPosts.length ? `<section class="insights-strip homepage-reveal-section"><div class="content-wrap"><div class="section-heading compact-heading"><div><p class="eyebrow">CAREER GUIDANCE</p><h2>${escapeHtml(homepageCopy.blogTitle)}</h2></div><a class="text-button" href="/blog">${escapeHtml(homepageCopy.blogCta)}</a></div><div class="insights-grid">${blogPosts.map((post, i) => `<a class="insight-tile" href="/blog/${escapeHtml(post.slug)}"><div class="insight-cover" style="${post.cover_image_url ? `background-image:url('${escapeHtml(post.cover_image_url)}')` : `background:linear-gradient(135deg,${['#6a53d8','#ed9d83','#54a9b5','#d47898'][i % 4]},#29244e)`}"><span>${escapeHtml(post.category || 'Career advice')}</span></div><strong>${escapeHtml(post.title)}</strong><small>${escapeHtml(post.excerpt || 'Practical guidance for your next remote opportunity.')}</small></a>`).join('')}</div></div></section>` : '',

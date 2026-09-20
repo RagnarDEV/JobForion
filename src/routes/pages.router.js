@@ -197,10 +197,14 @@ export async function handlePagesRoute(url, request, env, base, ctx = null) {
   }
 
   if (url.pathname === '/') {
-    const response = new Response(await renderMainHTML(env, base, user), {
-      headers: { "Content-Type": "text/html; charset=utf-8", 'Cache-Control': `public, max-age=${HOMEPAGE_CACHE_TTL_SECONDS}` },
+    const homeHtml = await renderMainHTML(env, base, user);
+    // A degraded render (listing query fell back / failed) must never be cached
+    // at the edge or by the browser — the next request should retry cleanly.
+    const degraded = homeHtml.includes('data-degraded="1"');
+    const response = new Response(homeHtml, {
+      headers: { "Content-Type": "text/html; charset=utf-8", 'Cache-Control': degraded ? 'no-store' : `public, max-age=${HOMEPAGE_CACHE_TTL_SECONDS}` },
     });
-    cacheHomepage(url, request, response, ctx);
+    if (!degraded) cacheHomepage(url, request, response, ctx);
     return response;
   }
 
