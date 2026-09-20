@@ -22,7 +22,7 @@
 // (event.cron matches one of them) they keep working exactly as before.
 // ════════════════════════════════════════════════════════════════
 
-import { ensureAllSchema } from '../db/schema.js';
+import { ensureAllSchema, SCHEMA_MIGRATION_BUDGET_BACKGROUND } from '../db/schema.js';
 import { syncJobs } from '../db/sync.js';
 import { cleanupStaleJobs } from '../db/cleanup.js';
 import { getSettings } from '../lib/platform/settings.js';
@@ -36,7 +36,10 @@ import { reportOperationalError } from '../lib/platform/observability.js';
 const CRON_LEASE_MS = 10 * 60 * 1000;
 
 export async function withCronLease(env, name, task) {
-  await ensureAllSchema(env);
+  // A scheduled invocation renders no page, so a pending schema migration may
+  // use (almost) the whole 50-call budget — this is what heals a schema that a
+  // page request could only advance in small steps.
+  await ensureAllSchema({ ...env, SCHEMA_MIGRATION_BUDGET: String(SCHEMA_MIGRATION_BUDGET_BACKGROUND) });
   const key = `_cron_lock_${String(name).replace(/[^a-z0-9_-]/gi, '_').slice(0, 40)}`;
   const now = Date.now();
   let acquired = false;

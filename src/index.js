@@ -46,6 +46,20 @@ const LOGO_PROXY_PREFIX = '/logo/';
 // again. Add any other retired hostnames to this set as domains change.
 const RETIRED_HOSTS = new Set(['jobnova.manasa.workers.dev', 'jobnova.sryze.cc', 'jobforion.manasa.workers.dev']);
 
+// Throttled (once per 5 min per isolate) so a persistent failure cannot itself
+// burn the D1 budget by logging on every request.
+let lastSchemaFailureLoggedAt = 0;
+function logSchemaFailure(env, ctx, error) {
+  const now = Date.now();
+  if (now - lastSchemaFailureLoggedAt < 5 * 60 * 1000) return;
+  lastSchemaFailureLoggedAt = now;
+  try {
+    const p = env.DB.prepare('INSERT INTO error_logs (path, message, stack) VALUES (?, ?, ?)')
+      .bind('schema:bootstrap', String((error && error.message) || error || 'Unknown error').slice(0, 500), String((error && error.stack) || '').slice(0, 4000)).run().catch(() => {});
+    if (ctx?.waitUntil) ctx.waitUntil(p);
+  } catch (e) { /* error_logs may not exist yet */ }
+}
+
 async function notFoundResponse(base, env) {
   try {
     return new Response(await renderNotFoundPage(base, env), { status: 404, headers: { 'Content-Type': 'text/html; charset=utf-8' } });
@@ -91,8 +105,16 @@ async function routeRequest(request, env, ctx, state) {
   const cachedHomepage = await getCachedHomepage(url, request);
   if (cachedHomepage) return cachedHomepage;
 
-  // D1 schema bootstrap (persisted version gate — see db/schema.js).
-  await ensureAllSchema(env);
+  // D1 schema bootstrap (persisted version gate — see db/schema.js). A failure
+  // here must NOT take the whole site (including /admin, the place you repair
+  // things from) down: it is logged (throttled) and the request continues —
+  // pages guard their own reads, and the next request retries the bootstrap.
+  try {
+    await ensureAllSchema(env);
+  } catch (e) {
+    console.error('[schema] bootstrap failed:', e && e.stack || e);
+    logSchemaFailure(env, ctx, e);
+  }
 
   // ── maintenance mode (toggled from /admin/settings, no redeploy) ──
   // /admin/* is always exempt — otherwise a site owner who enables

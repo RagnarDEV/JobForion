@@ -13,7 +13,7 @@ import { getAnalyticsHealth } from '../../lib/analytics/events.js';
 import { paymentProviderStatus } from '../../lib/monetization/core.js';
 import { escapeHtml } from '../../lib/directory/entities.js';
 
-import { iconAlertTriangle, iconMail, iconServer, iconTrash2 } from '../../assets/icons.js';
+import { iconAlertTriangle, iconDatabase, iconMail, iconServer, iconTrash2 } from '../../assets/icons.js';
 // Tables considered safe/useful to show a row count for. Deliberately an
 // explicit allow-list (not "every table in sqlite_master") so a future
 // internal table never gets exposed here by accident.
@@ -123,6 +123,7 @@ export async function renderSystemContent(env) {
         <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
           <form method="POST" action="/api/sync" onsubmit="return confirm('Run job sync now?')"><button class="adm-btn adm-btn-primary" type="submit">↻ Sync Now</button></form>
           <form method="POST" action="/admin/cleanup" onsubmit="return confirm('Run cleanup now? It advances expired jobs through the retention lifecycle; only archived jobs past retention are permanently deleted.')"><button class="adm-btn" type="submit" style="color:var(--coral);border-color:var(--coral)">${iconTrash2({ size: 15 })} Cleanup Now</button></form>
+          <form method="POST" action="/admin/system/repair-schema"><button class="adm-btn" type="submit">${iconDatabase({ size: 15 })} Repair schema</button></form>
           <form method="POST" action="/admin/system/run-job-alerts" onsubmit="return confirm('Send job alert digests now to every due alert?')"><button class="adm-btn" type="submit">${iconMail({ size: 15 })} Send Job Alerts Now</button></form>
           <form method="POST" action="/admin/system/ai-smoke-test" onsubmit="return confirm('Run the protected AI foundation smoke test?')"><button class="adm-btn" type="submit" ${!aiEnabled ? 'disabled' : ''}>AI Smoke Test</button></form>
         </div>

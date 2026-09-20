@@ -10,7 +10,15 @@ import { schemaState } from './state.js';
 // longer own separate runtime DDL definitions. This keeps the four tables,
 // indexes, and lifecycle reviewable in one place without destructive changes.
 export async function ensureAiTables(env) {
-  if (schemaState.ai && !env.__migCtx) return; // see ensureTable(): keep unit positions deterministic
+  // BOOTSTRAP IS OWNED BY ensureAllSchema() (db/schema.js), which calls this
+  // with a budgeted env carrying __migCtx. Called from anywhere else — dozens of
+  // pages and libraries still do `await ensureAiTables(env)` defensively — this
+  // MUST be a no-op: while a schema change is pending the per-isolate flag is
+  // still false, and running the full DDL here (hundreds of D1 calls) blew the
+  // 50-subrequest ceiling and produced the site-wide fallback error page.
+  // (Inside a migration the flag is also ignored so unit positions stay
+  // deterministic — see db/schema/state.js.)
+  if (!env.__migCtx) return;
   const statements = [
     `CREATE TABLE IF NOT EXISTS job_intelligence (
       id INTEGER PRIMARY KEY AUTOINCREMENT,

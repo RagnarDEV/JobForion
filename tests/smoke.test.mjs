@@ -164,6 +164,33 @@ for (const [h, m] of [[1, 30], [6, 0], [3, 0], [8, 0], [9, 0]]) {
 const cronErrors = (await DB.prepare("SELECT path, message FROM error_logs WHERE path LIKE 'cron:%'").all()).results;
 ok(cronErrors.length === 0, `scheduled tasks completed without errors (${JSON.stringify(cronErrors)})`);
 
+// ── REGRESSION (the recurring site-wide "temporary error" page): while the schema
+// is being (re)built, page requests share Cloudflare's 50-call ceiling with the
+// migration. A brand-new database + a hard 50-call limit per request must never
+// produce a 500 on the way to a complete schema. ──
+{
+  const fresh = new D1Shim();
+  const freshWorker = (await import('../src/index.js?fresh-db')).default;
+  const freshEnv = { DB: fresh, ADMIN_PASSWORD: 'test-admin-pass-123', CSRF_SECRET: 'csrf-secret-test-value-xyz' };
+  const codes = [];
+  for (let i = 0; i < 40; i++) {
+    fresh.startRequest(50);
+    const res = await freshWorker.fetch(new Request(`${BASE}/`, { headers: { 'CF-Connecting-IP': '198.51.100.1' } }), { ...freshEnv }, ctx);
+    await res.text();
+    codes.push(res.status);
+    fresh.startRequest(0);
+    if (await fresh.prepare("SELECT v FROM _schema_meta WHERE k='version'").first().catch(() => null)) break;
+  }
+  ok(codes.length > 3 && codes.every((c) => c === 200), `no 500 while the schema builds under the 50-call limit (${codes.join(',')})`);
+
+  mem.clear(); // the edge "schema OK" marker written above belongs to a different database
+  const repairDb = new D1Shim();
+  const { repairSchema: repair } = await import('../src/db/schema.js?repair-db');
+  let last;
+  for (let i = 0; i < 12; i++) { repairDb.startRequest(50); last = await repair({ DB: repairDb }); if (last.complete) break; }
+  ok(last.complete, `repairSchema() completes within a few background-budget rounds (${JSON.stringify(last)})`);
+}
+
 // ── sanitizer ──
 ok(sanitizeRichHtml('<p onclick="x()">a<script>1</script><img src=x onerror=1><a href="javascript:1">l</a></p>') === '<p>a<a>l</a></p>', 'sanitizer strips script/handlers/javascript:');
 

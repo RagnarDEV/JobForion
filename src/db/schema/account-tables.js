@@ -34,7 +34,15 @@ import { ensureAiTables } from './ai-tables.js';
 // user accounts (job seekers) and company accounts (employers).
 
 export async function ensureAccountTables(env) {
-  if (schemaState.account && !env.__migCtx) return; // see ensureTable(): keep unit positions deterministic
+  // BOOTSTRAP IS OWNED BY ensureAllSchema() (db/schema.js), which calls this
+  // with a budgeted env carrying __migCtx. Called from anywhere else — dozens of
+  // pages and libraries still do `await ensureAccountTables(env)` defensively — this
+  // MUST be a no-op: while a schema change is pending the per-isolate flag is
+  // still false, and running the full DDL here (hundreds of D1 calls) blew the
+  // 50-subrequest ceiling and produced the site-wide fallback error page.
+  // (Inside a migration the flag is also ignored so unit positions stay
+  // deterministic — see db/schema/state.js.)
+  if (!env.__migCtx) return;
 
   // ── users ───────────────────────────────────────────────────────
   // Identity only — no profile fields here (see user_profiles below).

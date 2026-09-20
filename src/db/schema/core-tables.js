@@ -24,12 +24,15 @@ import { ensureColumn } from './migration-kit.js';
 // file, which is what index.js actually calls.)
 
 export async function ensureTable(env) {
-  // FIX (phase 1): during a resumable migration (env.__migCtx present) the
-  // module-level flag MUST be ignored. Unit positions are counted from the
-  // start of every migration run; if a warm isolate short-circuits here the
-  // positions shift and the persisted cursor silently skips units that never
-  // ran (tables missing while the schema is marked complete).
-  if (schemaState.core && !env.__migCtx) return;
+  // BOOTSTRAP IS OWNED BY ensureAllSchema() (db/schema.js), which calls this
+  // with a budgeted env carrying __migCtx. Called from anywhere else — dozens of
+  // pages and libraries still do `await ensureTable(env)` defensively — this
+  // MUST be a no-op: while a schema change is pending the per-isolate flag is
+  // still false, and running the full DDL here (hundreds of D1 calls) blew the
+  // 50-subrequest ceiling and produced the site-wide fallback error page.
+  // (Inside a migration the flag is also ignored so unit positions stay
+  // deterministic — see db/schema/state.js.)
+  if (!env.__migCtx) return;
   await env.DB.prepare(`
     CREATE TABLE IF NOT EXISTS jobs (
       id INTEGER PRIMARY KEY AUTOINCREMENT,

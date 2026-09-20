@@ -70,7 +70,16 @@ const SCHEMA_VERSION = '2026-09-20.1';
 // zero manual steps and zero site-wide downtime for any single
 // request (each one still renders normally with whatever schema
 // exists at that moment).
-const SCHEMA_MIGRATION_BUDGET_DEFAULT = 35;
+//
+// BUDGET SIZING (fixed): the migration shares the 50-call ceiling with the page
+// that triggered it. A homepage render needs ~20-30 D1 calls on a cold isolate,
+// so the old default of 35 left too little room and the first visitors after a
+// schema change got the fallback error page ("Too many subrequests"). Inline
+// (page-request) migrations therefore spend at most 18 calls; the scheduled
+// job and the admin "Repair schema" button run with a large budget
+// (SCHEMA_MIGRATION_BUDGET_BACKGROUND) because no page is rendered afterwards.
+const SCHEMA_MIGRATION_BUDGET_DEFAULT = 18;
+export const SCHEMA_MIGRATION_BUDGET_BACKGROUND = 44;
 const SCHEMA_MARKER_CACHE_TTL_SECONDS = 300;
 let schemaEnsurePromise = null;
 
@@ -265,4 +274,19 @@ export async function ensureAllSchema(env) {
     schemaState.ensurePromise = null;
   });
   return schemaState.ensurePromise;
+}
+
+// Runs (or resumes) the migration with the large background budget and reports
+// progress. Used by the cron dispatcher and by /admin/system "Repair schema".
+// Safe to call repeatedly: every unit is idempotent and progress is persisted.
+export async function repairSchema(env) {
+  const repairEnv = { ...env, SCHEMA_MIGRATION_BUDGET: String(SCHEMA_MIGRATION_BUDGET_BACKGROUND) };
+  schemaState.versionConfirmed = false; // force a real check against D1, not the isolate flag
+  await ensureAllSchema(repairEnv);
+  let stored = null, cursor = null;
+  try {
+    stored = (await env.DB.prepare(`SELECT v FROM _schema_meta WHERE k = 'version'`).first())?.v || null;
+    cursor = (await env.DB.prepare(`SELECT v FROM _schema_meta WHERE k = 'migration_cursor'`).first())?.v || null;
+  } catch (e) { /* _schema_meta missing = nothing applied yet */ }
+  return { complete: stored === SCHEMA_VERSION, version: stored, expected: SCHEMA_VERSION, cursor };
 }

@@ -3,6 +3,7 @@
 // backfill, and the full sync/cleanup history page. See admin.router.js
 // for how every admin/*.router.js sub-router is composed.
 
+import { repairSchema } from '../../db/schema.js';
 import { verifyAdminCookie } from '../../auth/admin-auth.js';
 import { renderAdminLogin } from '../../pages/admin.js';
 import { renderSystemContent } from '../../pages/admin/system.js';
@@ -55,6 +56,20 @@ export async function handleAdminSystemRoute(url, request, env, base) {
         : result.remaining > 0
           ? `Processed ${result.processed} — HIGH ${result.high}, GOOD ${result.good}, STANDARD ${result.standard}, UNKNOWN ${result.unknown}; ${result.remaining} remaining`
           : `Processed ${result.processed} — HIGH ${result.high}, GOOD ${result.good}, STANDARD ${result.standard}, UNKNOWN ${result.unknown}; all rows are classified`;
+      return new Response(null, { status: 302, headers: { 'Location': `/admin/system?flash=${encodeURIComponent(msg)}` } });
+    } catch (e) { return errorPage(e); }
+  }
+
+  // ── Repair schema: runs/resumes the D1 migration with the large background
+  // budget (no page is rendered afterwards). Press again until it reports complete.
+  if (url.pathname === '/admin/system/repair-schema' && request.method === 'POST') {
+    try {
+      const ok = await verifyAdminCookie(env, request.headers.get('Cookie'));
+      if (!ok) return new Response('Unauthorized', { status: 401 });
+      const r = await repairSchema(env);
+      const msg = r.complete
+        ? `Schema is up to date (${r.version})`
+        : `Schema repair in progress (${r.version || 'none'} -> ${r.expected}, cursor ${r.cursor || 0}) — press Repair schema again`;
       return new Response(null, { status: 302, headers: { 'Location': `/admin/system?flash=${encodeURIComponent(msg)}` } });
     } catch (e) { return errorPage(e); }
   }
