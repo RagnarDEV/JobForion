@@ -8,50 +8,68 @@ permissions:
 
 jobs:
   extract:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Extract ZIP
+      - name: Find and extract JobForion ZIP
+        shell: bash
         run: |
           set -e
 
-          ZIP="JobForion-v2.1.0.zip"
-          TEMP_DIR=".zip_extract"
+          echo "=== Repository files ==="
+          ls -la
 
-          if [ ! -f "$ZIP" ]; then
-            echo "ZIP file not found: $ZIP"
+          ZIP=$(find . -maxdepth 1 -type f -name "JobForion-v*.zip" | head -n 1)
+
+          if [ -z "$ZIP" ]; then
+            echo "ERROR: JobForion ZIP file was not found."
             exit 1
           fi
 
-          rm -rf "$TEMP_DIR"
-          mkdir -p "$TEMP_DIR"
+          echo "ZIP found: $ZIP"
 
-          echo "Extracting $ZIP..."
-          unzip -o "$ZIP" -d "$TEMP_DIR"
+          rm -rf .zip_extract
+          mkdir -p .zip_extract
 
-          echo "Detecting ZIP structure..."
+          echo "=== ZIP contents ==="
+          unzip -l "$ZIP"
 
-          # إذا كان الملف يحتوي مجلدًا رئيسيًا واحدًا
-          ITEMS=$(find "$TEMP_DIR" -mindepth 1 -maxdepth 1 | wc -l)
+          echo "=== Extracting ==="
+          unzip -o "$ZIP" -d .zip_extract
 
-          if [ "$ITEMS" -eq 1 ] && [ -d "$(find "$TEMP_DIR" -mindepth 1 -maxdepth 1 -type d)" ]; then
-            ROOT_DIR=$(find "$TEMP_DIR" -mindepth 1 -maxdepth 1 -type d)
+          echo "=== Extracted structure ==="
+          find .zip_extract -maxdepth 2 -type f | head -100
 
-            echo "Single root folder detected: $ROOT_DIR"
+          ROOT_COUNT=$(find .zip_extract -mindepth 1 -maxdepth 1 | wc -l)
 
-            cp -a "$ROOT_DIR"/. ./
+          if [ "$ROOT_COUNT" -eq 1 ]; then
+
+            ROOT=$(find .zip_extract -mindepth 1 -maxdepth 1 -type d | head -n 1)
+
+            if [ -n "$ROOT" ]; then
+              echo "Single root directory detected:"
+              echo "$ROOT"
+
+              cp -a "$ROOT"/. ./
+            else
+              cp -a .zip_extract/. ./
+            fi
+
           else
-            echo "Extracting files directly into repository..."
-            cp -a "$TEMP_DIR"/. ./
+            cp -a .zip_extract/. ./
           fi
 
-          rm -rf "$TEMP_DIR"
+          rm -rf .zip_extract
           rm -f "$ZIP"
 
+          echo "=== Final repository structure ==="
+          ls -la
+
       - name: Commit extracted files
+        shell: bash
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -59,7 +77,7 @@ jobs:
           git add -A
 
           if git diff --cached --quiet; then
-            echo "No changes to commit."
+            echo "No changes detected."
             exit 0
           fi
 
