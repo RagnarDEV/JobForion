@@ -1,85 +1,130 @@
 name: Extract JobForion ZIP
 
+# Upload JobForion-vX.Y.Z.zip to the ROOT of the repository (any branch you
+# run this from), then run: Actions -> "Extract JobForion ZIP" -> Run workflow.
+#
+# Optional secret WORKFLOW_PAT: a fine-grained PAT with "Contents: write" and
+# "Workflows: write" on this repo. Without it GitHub refuses to let the
+# built-in token change files under .github/workflows/, so that folder is
+# skipped (a warning tells you).
+
 on:
   workflow_dispatch:
+    inputs:
+      deploy_after:
+        description: "Trigger the Cloudflare deploy workflow after extracting"
+        type: boolean
+        default: true
 
 permissions:
   contents: write
+  actions: write   # lets the last step start deploy.yml
+
+concurrency:
+  group: extract-jobforion-zip
+  cancel-in-progress: false
 
 jobs:
   extract:
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.WORKFLOW_PAT || github.token }}
 
-      - name: Find and extract JobForion ZIP
+      - name: Extract ZIP over the repository
         shell: bash
+        env:
+          HAS_PAT: ${{ secrets.WORKFLOW_PAT != '' }}
         run: |
-          set -e
+          set -euo pipefail
 
-          echo "=== Repository files ==="
+          echo "=== Repository root ==="
           ls -la
 
-          ZIP=$(find . -maxdepth 1 -type f -name "JobForion-v*.zip" | head -n 1)
-
+          # 1) Locate the newest JobForion-v*.zip in the repository root
+          ZIP=$(find . -maxdepth 1 -type f -name 'JobForion-v*.zip' | sort -V | tail -n 1)
           if [ -z "$ZIP" ]; then
-            echo "ERROR: JobForion ZIP file was not found."
+            echo "::error::No JobForion-v*.zip found in the repository root. Upload it to the root of the repo first."
             exit 1
           fi
+          echo "Using: $ZIP"
 
-          echo "ZIP found: $ZIP"
+          # 2) Extract to a temp dir OUTSIDE the repository
+          WORK="${RUNNER_TEMP:-/tmp}/jobforion_zip"
+          rm -rf "$WORK"
+          mkdir -p "$WORK"
+          unzip -q "$ZIP" -d "$WORK"
 
-          rm -rf .zip_extract
-          mkdir -p .zip_extract
-
-          echo "=== ZIP contents ==="
-          unzip -l "$ZIP"
-
-          echo "=== Extracting ==="
-          unzip -o "$ZIP" -d .zip_extract
-
-          echo "=== Extracted structure ==="
-          find .zip_extract -maxdepth 2 -type f | head -100
-
-          ROOT_COUNT=$(find .zip_extract -mindepth 1 -maxdepth 1 | wc -l)
-
-          if [ "$ROOT_COUNT" -eq 1 ]; then
-
-            ROOT=$(find .zip_extract -mindepth 1 -maxdepth 1 -type d | head -n 1)
-
-            if [ -n "$ROOT" ]; then
-              echo "Single root directory detected:"
-              echo "$ROOT"
-
-              cp -a "$ROOT"/. ./
-            else
-              cp -a .zip_extract/. ./
-            fi
-
-          else
-            cp -a .zip_extract/. ./
+          # 3) If the ZIP has a single top-level folder, descend into it
+          SRC="$WORK"
+          if [ "$(find "$SRC" -mindepth 1 -maxdepth 1 ! -name '__MACOSX' | wc -l)" -eq 1 ]; then
+            ONLY=$(find "$SRC" -mindepth 1 -maxdepth 1 ! -name '__MACOSX')
+            [ -d "$ONLY" ] && SRC="$ONLY"
           fi
+          echo "Project root inside ZIP: $SRC"
 
-          rm -rf .zip_extract
+          # 4) Sanity check: refuse to replace the repo with something that is not JobForion
+          for required in wrangler.toml package.json src/index.js; do
+            if [ ! -f "$SRC/$required" ]; then
+              echo "::error::'$required' is missing from the ZIP - aborting before anything is changed."
+              exit 1
+            fi
+          done
+
+          # 5) Remove the OLD tracked source folders first. Copying on top would leave
+          #    stale files behind (e.g. the old flat src/lib/*.js that v2.1.0 moved into
+          #    domain folders), and those stale files break imports and the CI audit.
+          git rm -r -q --ignore-unmatch src tests scripts docs
+          rm -rf src tests scripts docs
+
+          # 6) Copy the new project over the repository root
+          EXCLUDES=(--exclude='./__MACOSX' --exclude='.DS_Store' --exclude='./.git')
+          if [ "${HAS_PAT:-false}" != "true" ]; then
+            # GITHUB_TOKEN is not allowed to modify files under .github/workflows
+            echo "::warning::WORKFLOW_PAT secret not set - .github/ is NOT updated from the ZIP (GitHub blocks it). Update .github/workflows/deploy.yml manually once."
+            EXCLUDES+=(--exclude='./.github')
+          fi
+          tar -C "$SRC" "${EXCLUDES[@]}" -cf - . | tar -xf -
+
+          # 7) Remove the ZIP from the repository
+          git rm -q -f --ignore-unmatch "$ZIP" || true
           rm -f "$ZIP"
+          rm -rf "$WORK"
 
-          echo "=== Final repository structure ==="
+          echo "=== Result ==="
           ls -la
 
-      - name: Commit extracted files
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Verify before committing (syntax, imports, tests)
+        run: |
+          node scripts/audit.mjs
+          npm test
+
+      - name: Commit and push
         shell: bash
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
           git add -A
-
           if git diff --cached --quiet; then
             echo "No changes detected."
             exit 0
           fi
-
-          git commit -m "Extract JobForion v2.1.0"
+          VERSION=$(node -p "require('./package.json').version")
+          git commit -m "Extract JobForion v$VERSION"
           git push
+
+      - name: Trigger deploy (pushes by GITHUB_TOKEN do not start workflows)
+        if: ${{ inputs.deploy_after }}
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run deploy.yml --ref "${{ github.ref_name }}"
