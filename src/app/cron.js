@@ -32,6 +32,7 @@ import { runJobAlertsDispatch } from '../lib/jobs/job-alerts-dispatcher.js';
 import { expireMonetizationCampaigns } from '../lib/monetization/core.js';
 import { aggregateAnalytics, cleanupAnalytics, evaluateAnalyticsAlerts } from '../lib/analytics/events.js';
 import { reportOperationalError } from '../lib/platform/observability.js';
+import { refreshSiteCache, siteCacheAgeMinutes, SITE_CACHE_MAX_AGE_MINUTES } from '../lib/platform/site-cache.js';
 
 const CRON_LEASE_MS = 10 * 60 * 1000;
 
@@ -69,6 +70,9 @@ const TASKS = {
     const settings = await getSettings(env);
     await cleanupAnalytics(env, settings.analytics_retention);
     await evaluateAnalyticsAlerts(env, settings);
+    // Precomputed aggregates (see lib/platform/site-cache.js): refreshed at most
+    // every ~6h, or immediately when missing (first run after a deploy).
+    if (await siteCacheAgeMinutes(env) > SITE_CACHE_MAX_AGE_MINUTES) await refreshSiteCache(env);
   },
   'daily-maintenance': async (env) => {
     await Promise.all([cleanupStaleJobs(env), runBlogExpirationCleanup(env), expireMonetizationCampaigns(env)]);

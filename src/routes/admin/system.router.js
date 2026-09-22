@@ -4,6 +4,7 @@
 // for how every admin/*.router.js sub-router is composed.
 
 import { repairSchema } from '../../db/schema.js';
+import { refreshSiteCache } from '../../lib/platform/site-cache.js';
 import { verifyAdminCookie } from '../../auth/admin-auth.js';
 import { renderAdminLogin } from '../../pages/admin.js';
 import { renderSystemContent } from '../../pages/admin/system.js';
@@ -71,6 +72,16 @@ export async function handleAdminSystemRoute(url, request, env, base) {
         ? `Schema is up to date (${r.version})`
         : `Schema repair in progress (${r.version || 'none'} -> ${r.expected}, cursor ${r.cursor || 0}) — press Repair schema again`;
       return new Response(null, { status: 302, headers: { 'Location': `/admin/system?flash=${encodeURIComponent(msg)}` } });
+    } catch (e) { return errorPage(e); }
+  }
+
+  // ── Refresh precomputed aggregates now (also runs from cron every ~6h) ──
+  if (url.pathname === '/admin/system/refresh-stats' && request.method === 'POST') {
+    try {
+      const ok = await verifyAdminCookie(env, request.headers.get('Cookie'));
+      if (!ok) return new Response('Unauthorized', { status: 401 });
+      const r = await refreshSiteCache(env);
+      return new Response(null, { status: 302, headers: { 'Location': `/admin/system?flash=${encodeURIComponent(`Stats refreshed: ${r.totalActive} active jobs, ${r.companies} companies`)}` } });
     } catch (e) { return errorPage(e); }
   }
 

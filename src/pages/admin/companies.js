@@ -5,6 +5,7 @@
 // without touching their individual job postings, which stay searchable
 // and browsable exactly as before. Hiding is reversible at any time.
 
+import { windowedJobs } from '../../lib/platform/job-window.js';
 import { escapeHtml } from '../../lib/directory/entities.js';
 import { ensureTable } from '../../db/schema.js';
 import { getLogoOverrides } from '../../lib/companies/company-logos.js';
@@ -49,10 +50,15 @@ export async function renderCompaniesListContent(env, params) {
   const searchClause = qText ? `AND LOWER(company) LIKE ?` : '';
   const binds = qText ? [`%${qText.toLowerCase()}%`] : [];
 
+  // ROW-READ BUDGET (D1 free tier: 5M rows/day): a LIKE '%x%' pattern cannot use
+  // an index either way, so BOTH the search and the unfiltered "browse everything"
+  // list are bounded to the most recent DIRECTORY_WINDOW active jobs instead of a
+  // full-table GROUP BY — companies with only old/inactive postings simply won't
+  // appear here until they post again, same tradeoff the public directory makes.
   const { results: allCompanies } = await env.DB.prepare(
-    `SELECT company, COUNT(*) job_count FROM jobs
+    `SELECT company, COUNT(*) job_count FROM ${windowedJobs()}
      WHERE company IS NOT NULL AND company != '' ${searchClause}
-     GROUP BY company ORDER BY job_count DESC`
+     GROUP BY company ORDER BY job_count DESC LIMIT 2000`
   ).bind(...binds).all();
 
   const { results: hiddenRows } = await env.DB.prepare(`SELECT company_lower FROM hidden_companies`).all();

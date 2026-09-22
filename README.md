@@ -46,7 +46,8 @@ jobforion/
       ├─ ai/          ai-service · ai-control-center · admin/career/content/job-intelligence · matching
       ├─ analytics/   events · tracker · tag
       ├─ seo/         jsonld · meta · breadcrumbs · sitemap
-      ├─ platform/    settings · cache · rate-limit · observability · activity-log · html-sanitizer · search-utils
+      ├─ platform/    settings · cache · rate-limit · observability · activity-log · html-sanitizer · search-utils ·
+      │               site-cache (طبقة التجميع المحسوبة مسبقاً — راجع docs/CHANGELOG.md) · job-window (استعلامات مقيَّدة)
       ├─ accounts/    session · csrf · password · permissions · tokens · email · users
       └─ monetization/core.js
 ```

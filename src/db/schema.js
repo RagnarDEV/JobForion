@@ -39,7 +39,7 @@
 // actually changed (i.e. right after a deploy that added something) —
 // exactly the "rare, self-healing, one-time" behavior the original
 // comment below intended, now actually delivered.
-const SCHEMA_VERSION = '2026-09-20.1';
+const SCHEMA_VERSION = '2026-09-21.3';
 
 // ════════════════════════════════════════════════════════════════
 // MIGRATION BUDGET — the missing piece: on Cloudflare's Workers Free

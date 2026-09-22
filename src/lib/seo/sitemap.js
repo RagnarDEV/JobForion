@@ -19,6 +19,8 @@
 // level /sitemap.xml — Google follows the <sitemap> entries automatically.
 // ════════════════════════════════════════════════════════════════
 
+import { getSiteStats } from '../platform/site-cache.js';
+import { cappedCount } from '../platform/job-window.js';
 import { listCompanies, listSkills, listCountries, MIN_JOBS_FOR_INDEXING } from '../directory/entities.js';
 import { getPages } from '../content/pages-cms.js';
 import { getPosts } from '../content/blog-cms.js';
@@ -30,7 +32,8 @@ import { PUBLIC_JOB_STATUS_SQL } from '../../config/constants.js';
 // file could still absorb a burst of new jobs between cleanup runs without
 // ever approaching the hard cap), while keeping each chunk's D1 query and
 // XML payload comfortably small and fast to generate/cache.
-export const JOBS_PER_SITEMAP = 20000;
+export { JOBS_PER_SITEMAP } from '../../config/constants.js';
+import { JOBS_PER_SITEMAP } from '../../config/constants.js';
 
 function xmlEscape(value) {
   return String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;');
@@ -49,8 +52,10 @@ ${urls.join('')}
 
 export async function getJobCount(env) {
   try {
-    const { results } = await env.DB.prepare(`SELECT COUNT(*) c FROM jobs WHERE ${PUBLIC_JOB_STATUS_SQL}`).all();
-    return results[0]?.c || 0;
+    const stats = await getSiteStats(env);
+    if (stats) return Number(stats.totalActive || 0);
+    // No precomputed stats yet: capped count (bounded read cost).
+    return await cappedCount(env, 'jobs', PUBLIC_JOB_STATUS_SQL, [], 50000);
   } catch (e) { return 0; }
 }
 
@@ -122,9 +127,14 @@ export async function buildJobsSitemapXml(env, base, page) {
   const offset = Math.max(0, (page - 1)) * JOBS_PER_SITEMAP;
   const urls = [];
   try {
-    const { results } = await env.DB.prepare(
-      `SELECT id, created_at FROM jobs WHERE ${PUBLIC_JOB_STATUS_SQL} ORDER BY id DESC LIMIT ? OFFSET ?`
-    ).bind(JOBS_PER_SITEMAP, offset).all();
+    // ROW-READ BUDGET: OFFSET pagination re-reads every skipped row (chunk N reads
+    // N x JOBS_PER_SITEMAP rows). The refresh stores the id that starts each chunk,
+    // so a chunk is a plain id-range read of exactly JOBS_PER_SITEMAP rows.
+    const stats = await getSiteStats(env);
+    const bound = stats?.sitemapBounds?.[Math.max(0, page - 1)];
+    const { results } = bound
+      ? await env.DB.prepare(`SELECT id, created_at FROM jobs WHERE ${PUBLIC_JOB_STATUS_SQL} AND id <= ? ORDER BY id DESC LIMIT ?`).bind(bound, JOBS_PER_SITEMAP).all()
+      : await env.DB.prepare(`SELECT id, created_at FROM jobs WHERE ${PUBLIC_JOB_STATUS_SQL} ORDER BY id DESC LIMIT ? OFFSET ?`).bind(JOBS_PER_SITEMAP, offset).all();
     for (const j of results || []) {
       urls.push(urlTag(`${base}/job/${j.id}`, {
         changefreq: 'weekly', priority: '0.6',

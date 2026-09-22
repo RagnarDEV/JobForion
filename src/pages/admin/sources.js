@@ -6,6 +6,7 @@
 // the Overview screen. Nothing about how sync itself works changes —
 // this is presentation + one new capability (pause without deleting).
 
+import { readSiteCache } from '../../lib/platform/site-cache.js';
 import { escapeHtml } from '../../lib/directory/entities.js';
 import { ensureTable } from '../../db/schema.js';
 import { PROVIDERS } from '../../providers/index.js';
@@ -41,11 +42,14 @@ export async function renderSourcesContent(env) {
   await ensureTable(env);
   const q = (sql, ...params) => env.DB.prepare(sql).bind(...params).all();
 
-  const [{ results: apiSources }, { results: syncLogs }, { results: jobCountRows }] = await Promise.all([
+  // ROW-READ BUDGET: precomputed per-source counts (0 D1 rows) instead of a live GROUP BY over every job.
+  const [{ results: apiSources }, { results: syncLogs }, cachedSources] = await Promise.all([
     q("SELECT * FROM api_sources ORDER BY id DESC"),
     q("SELECT * FROM sync_logs ORDER BY id DESC LIMIT 5"),
-    q("SELECT COALESCE(source,'unknown') s, COUNT(*) c FROM jobs GROUP BY s"),
+    readSiteCache(env, 'admin:sources'),
   ]);
+  let jobCountRows = cachedSources;
+  if (!jobCountRows) ({ results: jobCountRows } = await q("SELECT COALESCE(source,'unknown') s, COUNT(*) c FROM jobs GROUP BY s"));
   const jobCountMap = Object.fromEntries((jobCountRows || []).map(r => [r.s, r.c]));
 
   const latestSync = (syncLogs || [])[0];

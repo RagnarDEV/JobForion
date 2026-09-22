@@ -3,6 +3,7 @@
 // category breakdown, sync history, API sources, pending postings.
 // Returns inner HTML only — adminShell() in shell.js wraps it.
 
+import { getSiteStats, readSiteCacheMany } from '../../lib/platform/site-cache.js';
 import { getCategories } from '../../lib/content/categories.js';
 import { ensureTable } from '../../db/schema.js';
 import { escapeHtml } from '../../lib/directory/entities.js';
@@ -99,32 +100,21 @@ function healthRow(label, status, detail) {
   </div>`;
 }
 
-// Skills are stored as a JSON array string per job, not a normalized table
-// — count distinct values from a bounded sample instead of scanning the
-// whole table on every dashboard load. Good enough for a KPI card, not
-// meant to be a billing-grade exact count.
-async function estimateDistinctSkills(env) {
-  try {
-    const { results } = await env.DB.prepare(
-      "SELECT skills FROM jobs WHERE skills IS NOT NULL AND skills != '[]' ORDER BY id DESC LIMIT 5000"
-    ).all();
-    const set = new Set();
-    for (const row of results || []) {
-      try {
-        const arr = JSON.parse(row.skills || '[]');
-        if (Array.isArray(arr)) arr.forEach(s => { if (s) set.add(String(s).trim().toLowerCase()); });
-      } catch (e) {}
-    }
-    return set.size;
-  } catch (e) { return 0; }
-}
-
 export async function renderDashboardContent(env) {
   await ensureTable(env);
   const q = (sql, ...params) => env.DB.prepare(sql).bind(...params).all();
   const settings = await getSettings(env);
   const analyticsHealth = await getAnalyticsHealth(env);
   const paymentStatus = paymentProviderStatus(env);
+  // ROW-READ BUDGET (D1 free tier: 5M rows/day, scanned rows count): this page used to run
+  // ~40 live COUNT/GROUP BY queries — ~550,000 rows per load. Job/company/category/source
+  // aggregates now come from the precomputed site_cache (lib/platform/site-cache.js, refreshed
+  // from cron / "Refresh stats"); visits-based numbers are capped subqueries.
+  const stats = await getSiteStats(env);
+  const cached = await readSiteCacheMany(env, ['admin:status', 'admin:sources', 'admin:tiers', 'admin:source_types', 'cat:counts', 'dir:skills']);
+  const one = v => Promise.resolve({ results: [{ c: Number(v || 0) }] });
+  const rows = list => Promise.resolve({ results: list || [] });
+  const capped = (fromWhere, cap = 5000) => q(`SELECT COUNT(*) c FROM (SELECT 1 FROM ${fromWhere} LIMIT ${cap})`);
   const hotPayEnabled = settings.hot_pay_enabled !== '0';
   const hotPayThreshold = hotPayThresholdUsd(settings);
   // Mirror lib/jobs/hot-pay.js for persisted normalized salary columns: a genuine
@@ -135,48 +125,48 @@ export async function renderDashboardContent(env) {
     OR (salary_min_usd IS NOT NULL AND salary_max_usd IS NOT NULL AND salary_min_usd >= 0 AND salary_max_usd >= 0 AND ((salary_min_usd + salary_max_usd) / 2.0) >= ?)`;
 
   const [{ results: totalJobsR }, { results: jobsTodayR }, { results: jobsWeekR }, { results: jobsMonthR }, { results: subsR }, { results: companiesR }, { results: hotR }, { results: usersR }, { results: articlesR }, { results: recentJobsR }, { results: recentUsersR }, { results: recentCompaniesR }, { results: aiActivityR }, { results: salaryTierR }] = await Promise.all([
-    q("SELECT COUNT(*) c FROM jobs"),
-    q("SELECT COUNT(*) c FROM jobs WHERE created_at >= datetime('now','-1 day')"),
-    q("SELECT COUNT(*) c FROM jobs WHERE created_at >= datetime('now','-7 day')"),
-    q("SELECT COUNT(*) c FROM jobs WHERE created_at >= datetime('now','-30 day')"),
+    stats ? one(stats.totalAll) : capped('jobs'),
+    stats ? one(stats.newDay) : capped("jobs WHERE created_at >= datetime('now','-1 day')"),
+    stats ? one(stats.newWeek) : capped("jobs WHERE created_at >= datetime('now','-7 day')"),
+    stats ? one(stats.newMonth) : capped("jobs WHERE created_at >= datetime('now','-30 day')"),
     q("SELECT COUNT(*) c FROM subscribers"),
-    q("SELECT COUNT(DISTINCT LOWER(company)) c FROM jobs WHERE company IS NOT NULL AND company != ''"),
-    hotPayEnabled ? q(`SELECT COUNT(*) c FROM jobs WHERE ${hotPaySql}`, hotPayThreshold, hotPayThreshold, hotPayThreshold) : q("SELECT 0 c"),
+    one(stats?.companies),
+    one(hotPayEnabled ? stats?.hot : 0),
     q("SELECT COUNT(*) c FROM users"),
     q("SELECT COUNT(*) c FROM blog_posts WHERE status = 'published'"),
     q("SELECT id, title, company, location, created_at, status FROM jobs ORDER BY id DESC LIMIT 6"),
     q("SELECT id, email, status, email_verified, created_at FROM users ORDER BY id DESC LIMIT 6"),
-    q("SELECT company, COUNT(*) c, MAX(created_at) created_at FROM jobs WHERE company IS NOT NULL AND company != '' GROUP BY LOWER(company), company ORDER BY created_at DESC LIMIT 6"),
+    q("SELECT company, COUNT(*) c, MAX(created_at) created_at FROM (SELECT company, created_at FROM jobs WHERE company IS NOT NULL AND company != '' ORDER BY id DESC LIMIT 500) GROUP BY LOWER(company), company ORDER BY created_at DESC LIMIT 6"),
     q("SELECT action, meta AS metadata FROM admin_activity_log WHERE created_at >= datetime('now','-7 day') AND (action LIKE 'ai_%' OR action LIKE 'admin_%intelligence' OR action = 'admin_career_assistant' OR action = 'user_job_matching' OR action = 'user_career_assistant') ORDER BY id DESC LIMIT 1000"),
-    q("SELECT COALESCE(salary_tier, 'UNKNOWN') tier, COUNT(*) c FROM jobs GROUP BY COALESCE(salary_tier, 'UNKNOWN')"),
+    rows(cached['admin:tiers']),
   ]);
 
   const [{ results: totalVisitsR }, { results: visitsTodayR }, { results: visits7dR }, { results: uniqCountriesR }] = await Promise.all([
-    q("SELECT COUNT(*) c FROM visits"),
-    q("SELECT COUNT(*) c FROM visits WHERE created_at >= datetime('now','-1 day')"),
-    q("SELECT COUNT(*) c FROM visits WHERE created_at >= datetime('now','-7 day')"),
-    q("SELECT COUNT(DISTINCT country) c FROM visits WHERE created_at >= datetime('now','-7 day')"),
+    capped('visits', 20000),
+    capped("visits WHERE created_at >= datetime('now','-1 day')", 20000),
+    capped("visits WHERE created_at >= datetime('now','-7 day')", 20000),
+    q("SELECT COUNT(DISTINCT country) c FROM (SELECT country FROM visits WHERE created_at >= datetime('now','-7 day') LIMIT 20000)"),
   ]);
 
   const aiActivityCount = (aiActivityR || []).length;
   const aiFailureCount = (aiActivityR || []).filter(row => /failed|error/i.test(String(row.metadata || ''))).length;
   const aiFeatureCounts = Object.entries((aiActivityR || []).reduce((map, row) => { const key = String(row.action || 'AI').replace(/^admin_|^user_/, ''); map[key] = (map[key] || 0) + 1; return map; }, {})).map(([label, count]) => ({ label, count })).sort((a, b) => b.count - a.count).slice(0, 8);
   const { results: pendingR } = await q("SELECT COUNT(*) c FROM job_postings WHERE status='pending'");
-  const skillsCount = await estimateDistinctSkills(env);
+  const skillsCount = (cached['dir:skills'] || []).length;
 
   // ── Job Lifecycle stats (schema.js: updated_at/expires_at/source/status) ──
   const [{ results: activeR }, { results: expiringSoonR }, { results: deletedTodayR }, { results: sourceBreakdownR }, { results: statusBreakdownR }, { results: sourceTypeR }] = await Promise.all([
-    q("SELECT COUNT(*) c FROM jobs WHERE status = 'active'"),
-    q("SELECT COUNT(*) c FROM jobs WHERE expires_at IS NOT NULL AND expires_at < datetime('now','+3 day')"),
+    stats ? one(stats.totalActive) : capped("jobs WHERE status = 'active'"),
+    capped("jobs WHERE expires_at IS NOT NULL AND expires_at < datetime('now','+3 day')"),
     q("SELECT COALESCE(SUM(deleted),0) c FROM cleanup_logs WHERE created_at >= datetime('now','-1 day')"),
-    q("SELECT COALESCE(source,'unknown') s, COUNT(*) c FROM jobs GROUP BY s ORDER BY c DESC LIMIT 12"),
+    rows((cached['admin:sources'] || []).slice(0, 12)),
     // Job Management (Stage 5) — status breakdown across the FULL new
     // lifecycle (active/paused/closed/expired/archived), one GROUP BY
     // instead of five separate COUNT(*) queries.
-    q("SELECT COALESCE(status,'active') s, COUNT(*) c FROM jobs GROUP BY s"),
+    rows((cached['admin:status'] || []).map(r => ({ s: r.s === '(empty)' ? 'active' : r.s, c: r.c }))),
     // Provider-synced vs employer-submitted vs admin-created — plan §25's
     // "Provider Jobs" / "Company Jobs" split.
-    q("SELECT COALESCE(source_type,'provider') s, COUNT(*) c FROM jobs GROUP BY s"),
+    rows(cached['admin:source_types']),
   ]);
   const statusCounts = Object.fromEntries((statusBreakdownR || []).map(r => [r.s, r.c]));
   const sourceTypeCounts = Object.fromEntries((sourceTypeR || []).map(r => [r.s, r.c]));
@@ -187,7 +177,7 @@ export async function renderDashboardContent(env) {
   const { results: lastCleanupR } = await q("SELECT created_at FROM cleanup_logs ORDER BY id DESC LIMIT 1");
 
   const { results: dailyVisits } = await q(
-    "SELECT date(created_at) d, COUNT(*) c FROM visits WHERE created_at >= datetime('now','-14 day') GROUP BY d ORDER BY d ASC"
+    "SELECT date(created_at) d, COUNT(*) c FROM (SELECT created_at FROM visits WHERE created_at >= datetime('now','-14 day') ORDER BY id DESC LIMIT 20000) GROUP BY d ORDER BY d ASC"
   );
   const dailyMap = Object.fromEntries((dailyVisits || []).map(r => [r.d, r.c]));
   const days = [];
@@ -198,17 +188,14 @@ export async function renderDashboardContent(env) {
   const maxDaily = Math.max(1, ...days.map(d => d.count));
 
   const { results: topPages } = await q(
-    "SELECT path, COUNT(*) c FROM visits WHERE created_at >= datetime('now','-7 day') GROUP BY path ORDER BY c DESC LIMIT 8"
+    "SELECT path, COUNT(*) c FROM (SELECT path FROM visits WHERE created_at >= datetime('now','-7 day') ORDER BY id DESC LIMIT 20000) GROUP BY path ORDER BY c DESC LIMIT 8"
   );
   const { results: topCountries } = await q(
-    "SELECT country, COUNT(*) c FROM visits WHERE created_at >= datetime('now','-7 day') GROUP BY country ORDER BY c DESC LIMIT 8"
+    "SELECT country, COUNT(*) c FROM (SELECT country FROM visits WHERE created_at >= datetime('now','-7 day') ORDER BY id DESC LIMIT 20000) GROUP BY country ORDER BY c DESC LIMIT 8"
   );
 
   const categories = await getCategories(env);
-  const catCounts = await Promise.all(categories.map(async cat => {
-    const { results } = await q("SELECT COUNT(*) c FROM jobs WHERE LOWER(title) LIKE ?", `%${cat.key}%`);
-    return { label: cat.label, count: results[0]?.c || 0 };
-  }));
+  const catCounts = categories.map(cat => ({ label: cat.label, count: Number(cached['cat:counts']?.[String(cat.key).toLowerCase()] || 0) }));
 
   const { results: syncLogs } = await q("SELECT * FROM sync_logs ORDER BY id DESC LIMIT 6");
   const { results: apiSources } = await q("SELECT * FROM api_sources ORDER BY id DESC");

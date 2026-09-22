@@ -259,6 +259,14 @@ export async function ensureAccountTables(env) {
   // rest are new.
   await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_companies_user ON companies(created_by_user_id)`).run();
   await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_companies_status ON companies(status)`).run();
+  // ROW-READ BUDGET (D1 free tier): job_count/remote_job_count are DENORMALIZED
+  // from `jobs` — persisted here (kept current by lib/platform/site-cache.js's
+  // refresh) so the public /companies directory can ORDER BY job_count without a
+  // correlated-subquery-per-company scan of the whole jobs table on every page
+  // load. NULL until the first refresh has run (see listPublicCompanies fallback).
+  await ensureColumn(env, 'companies', 'job_count', 'INTEGER');
+  await ensureColumn(env, 'companies', 'remote_job_count', 'INTEGER');
+  await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_companies_status_featured_jobcount ON companies(status, featured DESC, job_count DESC)`).run();
   await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_companies_verified ON companies(verified)`).run();
   await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_companies_featured ON companies(featured)`).run();
   await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_companies_country ON companies(country)`).run();
@@ -363,6 +371,17 @@ export async function ensureAccountTables(env) {
   // common paths without adding an index for every free-text search column.
   await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_jobs_status_created ON jobs(status, created_at DESC, id DESC)`).run();
   await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_jobs_status_source_type ON jobs(status, source_type, created_at DESC)`).run();
+  // Row-read budget: the default listing order is `featured DESC, id DESC`
+  // (JOB_MANUAL_PIN_SORT_SQL). Without an index that matches it SQLite reads
+  // AND sorts every active job to return 20 — ~20,000 rows per homepage,
+  // /jobs and /api/jobs request. With it, LIMIT 20 reads 20 rows.
+  await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_jobs_status_featured_id ON jobs(status, featured DESC, id DESC)`).run();
+  // /admin/jobs with no filters (admin sees every status) sorts by featured/id
+  // without a status predicate — without this index that scanned and sorted
+  // every row in the table.
+  await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_jobs_featured_id ON jobs(featured DESC, id DESC)`).run();
+  // Company pages / related jobs: `WHERE company = ? AND status = 'active' ORDER BY featured DESC, id DESC`
+  await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_jobs_company_status_id ON jobs(company, status, id DESC)`).run();
   await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_jobs_status_salary_tier ON jobs(status, salary_tier, created_at DESC)`).run();
 
   // Retain only the minimum tombstone needed to return an accurate 410 for a

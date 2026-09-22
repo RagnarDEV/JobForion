@@ -18,16 +18,26 @@
 import { getCategories } from '../categories.js';
 import { listCompanies, listSkills, listCountries } from '../../directory/entities.js';
 import { PUBLIC_JOB_STATUS_SQL } from '../../../config/constants.js';
+import { getSiteStats, readSiteCache } from '../../platform/site-cache.js';
+import { windowedJobs } from '../../platform/job-window.js';
 
 export async function getCategoryCandidates(env, minJobs) {
   const categories = await getCategories(env);
+  // ROW-READ BUDGET: precomputed per-category counts (1 row) instead of a
+  // LIKE scan of the whole jobs table for every category.
+  const cachedCounts = await readSiteCache(env, 'cat:counts');
   const out = [];
   for (const c of categories) {
     try {
-      const { results } = await env.DB.prepare(
-        `SELECT COUNT(*) c FROM jobs WHERE LOWER(title) LIKE ? AND ${PUBLIC_JOB_STATUS_SQL}`
-      ).bind(`%${c.key}%`).all();
-      const count = results?.[0]?.c || 0;
+      let count;
+      if (cachedCounts && cachedCounts[String(c.key).toLowerCase()] !== undefined) {
+        count = Number(cachedCounts[String(c.key).toLowerCase()] || 0);
+      } else {
+        const { results } = await env.DB.prepare(
+          `SELECT COUNT(*) c FROM ${windowedJobs()} WHERE LOWER(title) LIKE ?`
+        ).bind(`%${c.key}%`).all();
+        count = results?.[0]?.c || 0;
+      }
       if (count >= minJobs) out.push({ key: c.key, label: c.label, emoji: c.emoji, color: c.color, count });
     } catch (e) { /* skip this category, others still get a chance */ }
   }
@@ -53,6 +63,11 @@ export async function getCompanyCandidates(env, minJobs) {
 
 export async function getTotalActiveJobs(env) {
   try {
+    // ROW-READ BUDGET: precomputed total (0 D1 rows) instead of a live COUNT(*)
+    // over every active job, run separately by every blog-automation template
+    // that needs a headline number.
+    const stats = await getSiteStats(env);
+    if (stats) return Number(stats.totalActive || 0);
     const { results } = await env.DB.prepare(`SELECT COUNT(*) c FROM jobs WHERE ${PUBLIC_JOB_STATUS_SQL}`).all();
     return results?.[0]?.c || 0;
   } catch (e) { return 0; }
@@ -79,8 +94,12 @@ export async function getNewestJobs(env, limit = 14) {
 // at sync time, not re-parsed here).
 export async function getTopPayingJobs(env, limit = 10) {
   try {
+    // ROW-READ BUDGET: there is no index that can satisfy "ORDER BY salary DESC"
+    // (salary_min_usd/salary_max_usd aren't sortable via an index here), so SQLite
+    // materializes and sorts every matching row before LIMIT applies — bounded to
+    // the most recent DIRECTORY_WINDOW active jobs instead of the whole table.
     const { results } = await env.DB.prepare(
-      `SELECT * FROM jobs WHERE salary_min_usd IS NOT NULL AND salary_min_usd > 0 AND ${PUBLIC_JOB_STATUS_SQL}
+      `SELECT * FROM ${windowedJobs()} WHERE salary_min_usd IS NOT NULL AND salary_min_usd > 0
        ORDER BY salary_max_usd DESC, salary_min_usd DESC LIMIT ?`
     ).bind(limit).all();
     return results || [];

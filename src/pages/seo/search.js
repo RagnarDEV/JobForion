@@ -1,13 +1,14 @@
 // src/pages/seo/search.js
 // /search/:q results (always noindex).
 
+import { windowedJobs } from '../../lib/platform/job-window.js';
 import { baseLayout } from '../../layout/base-layout.js';
 import { escapeHtml } from '../../lib/directory/entities.js';
 import { itemListSchema, ldJsonTag } from '../../lib/seo/jsonld.js';
 import { buildBreadcrumb } from '../../lib/seo/breadcrumbs.js';
 import { truncateDescription } from '../../lib/seo/meta.js';
 import { keywordCondition, normalizeSearchTerm, safeDecodeURIComponent } from '../../lib/platform/search-utils.js';
-import { JOB_MANUAL_PIN_SORT_SQL, PUBLIC_JOB_STATUS_SQL, JOB_LISTING_COLUMNS } from '../../config/constants.js';
+import { JOB_MANUAL_PIN_SORT_SQL, JOB_LISTING_COLUMNS } from '../../config/constants.js';
 import { loadPageContext, jobsListHtml } from './shared.js';
 
 import { iconSearch } from '../../assets/icons.js';
@@ -25,7 +26,7 @@ export async function renderSearchPage(env, base, query, user = null) {
     const kw = keywordCondition(q);
     try {
       ({ results } = await env.DB.prepare(
-        `SELECT ${JOB_LISTING_COLUMNS} FROM jobs WHERE ${kw.sql} AND ${PUBLIC_JOB_STATUS_SQL} ORDER BY ${JOB_MANUAL_PIN_SORT_SQL} LIMIT 50`
+        `SELECT ${JOB_LISTING_COLUMNS} FROM ${windowedJobs()} WHERE ${kw.sql} ORDER BY ${JOB_MANUAL_PIN_SORT_SQL} LIMIT 50`
       ).bind(...kw.binds).all());
     } catch (e) { results = []; }
   }

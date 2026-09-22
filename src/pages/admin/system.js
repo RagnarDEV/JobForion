@@ -5,6 +5,8 @@
 // reuse the exact same handlers as before (/api/sync, /admin/cleanup) —
 // no new mutation logic, just a fuller view of what's already there.
 
+import { getSiteStats, readSiteCache } from '../../lib/platform/site-cache.js';
+import { cappedCount } from '../../lib/platform/job-window.js';
 import { ensureTable } from '../../db/schema.js';
 import { JOB_STATUS_ORDER, JOB_STATUS_META } from '../../config/constants.js';
 import { getSettings } from '../../lib/platform/settings.js';
@@ -13,7 +15,7 @@ import { getAnalyticsHealth } from '../../lib/analytics/events.js';
 import { paymentProviderStatus } from '../../lib/monetization/core.js';
 import { escapeHtml } from '../../lib/directory/entities.js';
 
-import { iconAlertTriangle, iconDatabase, iconMail, iconServer, iconTrash2 } from '../../assets/icons.js';
+import { iconAlertTriangle, iconDatabase, iconMail, iconRefreshCw, iconServer, iconTrash2 } from '../../assets/icons.js';
 // Tables considered safe/useful to show a row count for. Deliberately an
 // explicit allow-list (not "every table in sqlite_master") so a future
 // internal table never gets exposed here by accident.
@@ -55,12 +57,17 @@ export async function renderSystemContent(env) {
   // parallel — on the free plan that alone exceeds the 50-call ceiling and
   // crashed the very page that hosts "Repair schema". Two queries now: one to
   // learn which tables exist, one UNION ALL over those.
+  const siteStats = await getSiteStats(env);
   const tableCounts = {};
   try {
     const { results: existing } = await q("SELECT name FROM sqlite_master WHERE type='table'");
     const have = new Set((existing || []).map(r => r.name));
-    const present = COUNTED_TABLES.filter(t => have.has(t));
+    // `jobs` comes from the precomputed stats row (0 D1 rows) instead of a live
+    // COUNT(*) — by far the largest table, and this page hosts "Repair schema" /
+    // "Refresh stats" themselves, so it must stay cheap even when those are needed.
+    const present = COUNTED_TABLES.filter(t => t !== 'jobs' && have.has(t));
     for (const t of COUNTED_TABLES) tableCounts[t] = null; // missing table → em-dash
+    if (have.has('jobs')) tableCounts.jobs = siteStats ? Number(siteStats.totalAll || 0) : await cappedCount(env, 'jobs', '', [], 20000);
     if (present.length) {
       const { results } = await q(present.map(t => `SELECT '${t}' AS t, COUNT(*) AS c FROM ${t}`).join(' UNION ALL '));
       for (const r of results || []) tableCounts[r.t] = r.c;
@@ -68,22 +75,30 @@ export async function renderSystemContent(env) {
   } catch (e) { for (const t of COUNTED_TABLES) tableCounts[t] = null; }
 
   // Jobs by lifecycle status — the first thing to look at when "my jobs disappeared".
-  let statusBreakdown = [];
-  try {
-    ({ results: statusBreakdown } = await q("SELECT COALESCE(NULLIF(status,''),'(empty)') AS s, COUNT(*) AS c FROM jobs GROUP BY s ORDER BY c DESC"));
-  } catch (e) { /* jobs.status not migrated yet */ }
+  // ROW-READ BUDGET: precomputed status breakdown (0 D1 rows) instead of a live GROUP BY over every job.
+  let statusBreakdown = (await readSiteCache(env, 'admin:status')) || [];
+  if (!statusBreakdown.length) {
+    try { ({ results: statusBreakdown } = await q("SELECT COALESCE(NULLIF(status,''),'(empty)') AS s, COUNT(*) AS c FROM jobs GROUP BY s ORDER BY c DESC")); } catch (e) { /* jobs.status not migrated yet */ }
+  }
   const hiddenJobs = statusBreakdown.filter(r => ['expired', 'archived', '(empty)'].includes(r.s)).reduce((n, r) => n + Number(r.c || 0), 0);
 
-  const { results: salaryTierStatsRows } = await q(
-    `SELECT
-       SUM(CASE WHEN salary_tier IS NULL THEN 1 ELSE 0 END) pending,
-       SUM(CASE WHEN salary_tier = 'HIGH' THEN 1 ELSE 0 END) high,
-       SUM(CASE WHEN salary_tier = 'GOOD' THEN 1 ELSE 0 END) good,
-       SUM(CASE WHEN salary_tier = 'STANDARD' THEN 1 ELSE 0 END) standard,
-       SUM(CASE WHEN salary_tier = 'UNKNOWN' OR salary_tier IS NULL THEN 1 ELSE 0 END) unknown
-       FROM jobs`
-  );
-  const salaryTierStats = salaryTierStatsRows?.[0] || {};
+  // ROW-READ BUDGET: precomputed per-tier counts (0 D1 rows) instead of a live
+  // SUM(CASE...) aggregate over every job.
+  let tierRows = await readSiteCache(env, 'admin:tiers');
+  if (!tierRows) {
+    const { results } = await q(
+      `SELECT COALESCE(salary_tier,'UNKNOWN') AS tier, COUNT(*) AS c FROM jobs GROUP BY COALESCE(salary_tier,'UNKNOWN')`
+    );
+    tierRows = results || [];
+  }
+  const tierCount = (tier) => Number((tierRows || []).find(r => r.tier === tier)?.c || 0);
+  const salaryTierStats = {
+    pending: tierCount('UNKNOWN'),
+    high: tierCount('HIGH'),
+    good: tierCount('GOOD'),
+    standard: tierCount('STANDARD'),
+    unknown: tierCount('UNKNOWN'),
+  };
   const salaryRemaining = Number(salaryTierStats.pending || 0);
   const emailConfigured = Boolean(env.BREVO_API_KEY && env.EMAIL_FROM_ADDRESS);
   const storageConfigured = Boolean(env.COMPANY_ASSETS);
@@ -104,7 +119,7 @@ export async function renderSystemContent(env) {
   // two use idx_saved_jobs_job/idx_applications_job (already existed),
   // the status breakdown uses idx_jobs_status, and NOT EXISTS avoids
   // pulling any actual row data into memory just to count it.
-  const [{ results: orphanSavedRows }, { results: orphanAppRows }, { results: jobStatusRows }] = await Promise.all([
+  const [{ results: orphanSavedRows }, { results: orphanAppRows }] = await Promise.all([
     // Possible since Job Management's (Stage 5) 3-phase lifecycle can
     // eventually hard-delete a job ~89 days after it goes stale — a
     // saved_jobs row surviving that isn't a bug, it's expected, but an
@@ -112,11 +127,15 @@ export async function renderSystemContent(env) {
     // .catch: a table that is not migrated yet must not crash the page that hosts "Repair schema"
     q("SELECT COUNT(*) c FROM saved_jobs sj WHERE NOT EXISTS (SELECT 1 FROM jobs j WHERE j.id = sj.job_id)").catch(() => ({ results: [] })),
     q("SELECT COUNT(*) c FROM applications a WHERE NOT EXISTS (SELECT 1 FROM jobs j WHERE j.id = a.job_id)").catch(() => ({ results: [] })),
-    q("SELECT status, COUNT(*) c FROM jobs GROUP BY status").catch(() => ({ results: [] })),
   ]);
   const orphanSaved = orphanSavedRows?.[0]?.c || 0;
   const orphanApps = orphanAppRows?.[0]?.c || 0;
-  const jobStatusMap = Object.fromEntries((jobStatusRows || []).map(r => [r.status || 'active', r.c]));
+  // ROW-READ BUDGET: reuse the status breakdown already read above (0 extra D1
+  // rows) instead of a second, separate live GROUP BY over every job. Raw NULL/
+  // empty status ('(empty)') folds into 'active' to match the original query's
+  // `status || 'active'` behavior.
+  const jobStatusMap = Object.fromEntries(statusBreakdown.map(r => [r.s, Number(r.c || 0)]));
+  if (jobStatusMap['(empty)']) { jobStatusMap.active = (jobStatusMap.active || 0) + jobStatusMap['(empty)']; delete jobStatusMap['(empty)']; }
 
   return `
   <div class="adm-wrap">
@@ -138,6 +157,7 @@ export async function renderSystemContent(env) {
         <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
           <form method="POST" action="/api/sync" onsubmit="return confirm('Run job sync now?')"><button class="adm-btn adm-btn-primary" type="submit">↻ Sync Now</button></form>
           <form method="POST" action="/admin/cleanup" onsubmit="return confirm('Run cleanup now? It advances expired jobs through the retention lifecycle; only archived jobs past retention are permanently deleted.')"><button class="adm-btn" type="submit" style="color:var(--coral);border-color:var(--coral)">${iconTrash2({ size: 15 })} Cleanup Now</button></form>
+          <form method="POST" action="/admin/system/refresh-stats"><button class="adm-btn" type="submit">${iconRefreshCw({ size: 15 })} Refresh stats</button></form>
           <form method="POST" action="/admin/system/repair-schema"><button class="adm-btn" type="submit">${iconDatabase({ size: 15 })} Repair schema</button></form>
           <form method="POST" action="/admin/system/run-job-alerts" onsubmit="return confirm('Send job alert digests now to every due alert?')"><button class="adm-btn" type="submit">${iconMail({ size: 15 })} Send Job Alerts Now</button></form>
           <form method="POST" action="/admin/system/ai-smoke-test" onsubmit="return confirm('Run the protected AI foundation smoke test?')"><button class="adm-btn" type="submit" ${!aiEnabled ? 'disabled' : ''}>AI Smoke Test</button></form>

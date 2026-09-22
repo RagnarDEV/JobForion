@@ -2,6 +2,8 @@
 // Public job listing/search JSON API (edge-cached, rate-limited).
 // Returns a Response, or null when the path is not this module's concern.
 
+import { getSiteStats } from '../../lib/platform/site-cache.js';
+import { windowedJobs, cappedCount } from '../../lib/platform/job-window.js';
 import { checkRateLimit } from '../../lib/platform/rate-limit.js';
 import { keywordCondition, normalizeSearchTerm } from '../../lib/platform/search-utils.js';
 import { PUBLIC_JOB_STATUS_SQL, JOB_LISTING_COLUMNS, JOB_SORT_OPTIONS } from '../../config/constants.js';
@@ -181,12 +183,39 @@ export async function handleJobsApi(url, request, env, ctx) {
       orderParams.push(`%${s}%`, `%${s}%`, `%${s}%`);
     }
 
-    const [{ results }, { results: cr }, verifiedCompanySet, settings] = await Promise.all([
-      env.DB.prepare(`SELECT ${JOB_LISTING_COLUMNS} FROM jobs${where} ORDER BY ${orderBySql} LIMIT ${limit} OFFSET ${offset}`).bind(...params, ...orderParams).all(),
-      env.DB.prepare(`SELECT COUNT(*) as total FROM jobs${where}`).bind(...params).all(),
+    // ROW-READ BUDGET (see lib/platform/site-cache.js): unfiltered and company-only
+    // requests are index-driven (~limit rows); every other filter runs over the
+    // most recent API_FILTER_WINDOW active jobs so cost stays bounded at any scale.
+    const API_FILTER_WINDOW = 2000;
+    const unfiltered = conditions.length === 1;
+    const onlyCompany = conditions.length === 2 && !!company;
+    const fromSql = (unfiltered || onlyCompany) ? 'jobs' : windowedJobs(API_FILTER_WINDOW);
+    const safeOffset = (unfiltered || onlyCompany) ? Math.min(offset, 2000) : offset;
+    const windowMode = !(unfiltered || onlyCompany);
+    const [listed, verifiedCompanySet, settings] = await Promise.all([
+      windowMode
+        // ONE pass over the window: page rows + total matches (COUNT(*) OVER ()).
+        ? env.DB.prepare(`SELECT ${JOB_LISTING_COLUMNS}, COUNT(*) OVER () AS jf_total FROM ${fromSql}${where} ORDER BY ${orderBySql} LIMIT ${limit} OFFSET ${safeOffset}`).bind(...params, ...orderParams).all()
+        : env.DB.prepare(`SELECT ${JOB_LISTING_COLUMNS} FROM ${fromSql}${where} ORDER BY ${orderBySql} LIMIT ${limit} OFFSET ${safeOffset}`).bind(...params, ...orderParams).all(),
       getVerifiedCompanyNameSet(env), // 60s-cached, see lib/companies/companies.js — drives the "✓ Verified" badge client-side (plan §8)
       getSettings(env),
     ]);
+    let results = listed.results || [];
+    let cr;
+    if (windowMode) {
+      let total = results[0]?.jf_total;
+      if (total === undefined && safeOffset > 0) {
+        // page beyond the last match: the total is only known from a (bounded) count
+        total = (await env.DB.prepare(`SELECT COUNT(*) AS total FROM ${fromSql}${where}`).bind(...params).first())?.total || 0;
+      }
+      cr = [{ total: total || 0 }];
+      results = results.map(({ jf_total, ...row }) => row);
+    } else if (unfiltered) {
+      const st = await getSiteStats(env);
+      cr = [{ total: st ? Math.min(Number(st.totalActive || 0), 2000) : await cappedCount(env, 'jobs', PUBLIC_JOB_STATUS_SQL, [], 2000) }];
+    } else {
+      cr = [{ total: await cappedCount(env, 'jobs', conditions.join(' AND '), params, 2000) }];
+    }
     const hydratedJobs = await attachCompanyLogos(env, results || []);
     const hotJobs = await hydrateHotPay(env, hydratedJobs, settings);
     const jobsWithVerified = hotJobs.map(j => ({ ...j, is_verified: verifiedCompanySet.has((j.company || '').toLowerCase()) }));

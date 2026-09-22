@@ -2,6 +2,8 @@
 // The homepage SPA shell: SSR job list (first page, for SEO + fast first paint),
 // hero, featured-companies strip, filters, and all client-side interactivity.
 
+import { readSiteCache, getSiteStats } from '../lib/platform/site-cache.js';
+import { windowedJobs, cappedCount } from '../lib/platform/job-window.js';
 import { ensureTable } from '../db/schema.js';
 import { navHtml, mobileHeaderHtml, mobileBottomNavHtml } from '../components/nav.js';
 import { footerHtml } from '../components/footer.js';
@@ -50,14 +52,14 @@ async function getCategoryCounts(env, categories) {
   const rows = Array.isArray(categories) ? categories.filter(c => c?.key) : [];
   const counts = Object.fromEntries(rows.map(c => [c.key, 0]));
   if (!rows.length) return counts;
-  // One aggregate scan replaces one COUNT query per category. Besides
-  // reducing D1 subrequests, this avoids reading the same active jobs table
-  // repeatedly when the homepage has eight category tiles enabled.
+  // ROW-READ BUDGET: read the precomputed counts (1 row). Only when they do not
+  // exist yet (first run after a deploy) fall back to ONE aggregate over the
+  // most recent DIRECTORY_WINDOW jobs — never over the whole table.
+  const cached = await readSiteCache(env, 'cat:counts');
+  if (cached) { rows.forEach(c => { counts[c.key] = Number(cached[String(c.key).toLowerCase()] || 0); }); return counts; }
   const expressions = rows.map((_, index) => `SUM(CASE WHEN LOWER(title) LIKE ? THEN 1 ELSE 0 END) AS c${index}`).join(', ');
   try {
-    const { results } = await env.DB.prepare(
-      `SELECT ${expressions} FROM jobs WHERE ${PUBLIC_JOB_STATUS_SQL}`
-    ).bind(...rows.map(c => `%${String(c.key).toLowerCase()}%`)).all();
+    const { results } = await env.DB.prepare(`SELECT ${expressions} FROM ${windowedJobs()}`).bind(...rows.map(c => `%${String(c.key).toLowerCase()}%`)).all();
     const aggregate = results?.[0] || {};
     rows.forEach((c, index) => { counts[c.key] = Number(aggregate[`c${index}`] || 0); });
   } catch (e) {}
@@ -152,19 +154,21 @@ export async function renderMainHTML(env, base, user = null) {
   try { jobRows = await attachCompanyLogos(env, jobRows); } catch (e) { jobsDegraded = true; }
   try { jobRows = await hydrateHotPay(env, jobRows, settings); } catch (e) { jobsDegraded = true; }
   initialJobs = jobRows;
+  // ROW-READ BUDGET: totals come from the precomputed stats row, never from a
+  // live COUNT/COUNT(DISTINCT) over every job (that was ~40,000 rows per render).
   try {
-    const summary = (await env.DB.prepare(`
-      SELECT COUNT(*) AS total_jobs,
-             COUNT(DISTINCT CASE WHEN company IS NOT NULL AND company != '' THEN LOWER(company) END) AS total_companies
-      FROM jobs WHERE ${PUBLIC_JOB_STATUS_SQL}
-    `).all()).results?.[0] || {};
-    initialTotal = Number(summary.total_jobs || 0);
-    companiesCount = Number(summary.total_companies || 0);
+    const stats = await getSiteStats(env);
+    if (stats) {
+      initialTotal = Number(stats.totalActive || 0);
+      companiesCount = Number(stats.companies || 0);
+    } else {
+      // No stats yet (first run after a deploy): bounded, capped fallback.
+      initialTotal = await cappedCount(env, 'jobs', PUBLIC_JOB_STATUS_SQL);
+      companiesCount = 0;
+    }
   } catch (e) {
     jobsDegraded = true;
-    try {
-      initialTotal = Number((await env.DB.prepare('SELECT COUNT(*) AS c FROM jobs').first())?.c || 0);
-    } catch (e2) { initialTotal = initialJobs.length; }
+    initialTotal = initialJobs.length;
   }
   if (!initialTotal) initialTotal = initialJobs.length;
   totalJobsCount = initialTotal;

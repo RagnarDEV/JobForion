@@ -2,6 +2,7 @@
 // Core content pages: single job, blog index/article, static legal pages,
 // and the homepage SPA shell.
 
+import { windowedJobs } from '../lib/platform/job-window.js';
 import { renderJobPage } from '../pages/job-page.js';
 import { renderBlogIndex, renderArticlePage } from '../pages/blog.js';
 import { renderResourcesHub, renderInformationalPage } from '../pages/public-content.js';
@@ -169,7 +170,8 @@ export async function handlePagesRoute(url, request, env, base, ctx = null) {
     if (job.remote_type) orderBinds.push(job.remote_type);
     if (job.employment_type) orderBinds.push(job.employment_type);
     if (titleWord) orderBinds.push(`%${titleWord}%`);
-    const { results: related } = await env.DB.prepare(`SELECT * FROM jobs WHERE ${relatedWhere} ORDER BY ${orderBy} LIMIT 4`).bind(...relatedBinds, ...orderBinds).all();
+    // ROW-READ BUDGET: relevance-ranked over the latest 1,500 active jobs (1,500 rows), not the whole table.
+    const { results: related } = await env.DB.prepare(`SELECT * FROM ${windowedJobs(1500)} WHERE ${relatedWhere} ORDER BY ${orderBy} LIMIT 4`).bind(...relatedBinds, ...orderBinds).all();
     const jobResponse = new Response(await renderJobPage(job, related, base, env, user), {
       headers: { "Content-Type": "text/html; charset=utf-8", ...(jobCacheKey ? { "Cache-Control": CACHE_PRESETS.job } : {}) },
     });

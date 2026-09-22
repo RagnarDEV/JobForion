@@ -248,6 +248,57 @@ ok(cronErrors.length === 0, `scheduled tasks completed without errors (${JSON.st
   await DB.prepare("DELETE FROM jobs WHERE title LIKE 'Stale %'").run();
 }
 
+
+// ── REGRESSION: D1 free-tier row-read budget. A single cold homepage render
+// used to read ~70,000 rows (COUNT/GROUP BY/correlated-subquery scans over the
+// whole `jobs` table); a few hundred visits exhausted Cloudflare's 5M-rows/day
+// free-tier limit, after which EVERY query failed ("exceeded D1's free tier
+// daily row read limit") — job listings, admin login, everything. See
+// lib/platform/site-cache.js. This seeds a large catalogue, refreshes the
+// precomputed aggregates, and asserts the homepage and the public directory
+// pages stay cheap regardless of catalogue size. ──
+{
+  const budgetDb = new D1Shim();
+  const { schemaState } = await import('../src/db/schema/state.js');
+  Object.assign(schemaState, { core: false, ai: false, account: false, versionConfirmed: false, ensurePromise: null });
+  mem.clear();
+  const budgetWorker = (await import('../src/index.js?budget')).default;
+  const budgetEnv = { DB: budgetDb, ADMIN_PASSWORD: 'test-admin-pass-123', CSRF_SECRET: 'csrf-secret-test-value-xyz' };
+  for (let i = 0; i < 60; i++) {
+    await budgetWorker.fetch(new Request(`${BASE}/privacy`), { ...budgetEnv }, ctx);
+    if (await budgetDb.prepare("SELECT v FROM _schema_meta WHERE k='version'").first().catch(() => null)) break;
+  }
+  const N = 3000;
+  for (let i = 0; i < N; i++) {
+    await budgetDb.prepare(
+      `INSERT INTO jobs (title,company,location,url,description,salary,remote_type,skills,status,created_at,updated_at,expires_at,source)
+       VALUES (?,?,?,?,?,?,?,?, 'active', datetime('now','-' || ? || ' day'), datetime('now'), datetime('now','+30 day'), 'test')`
+    ).bind(`Engineer ${i}`, `Company ${i % 200}`, i % 2 ? 'Remote' : 'Berlin, Germany', `https://example.com/${i}`, 'd'.repeat(200), i % 3 ? '$90k - $130k' : '', i % 2 ? 'fully_remote' : 'hybrid', '["Python","SQL"]', i % 20).run();
+  }
+  const { refreshSiteCache } = await import('../src/lib/platform/site-cache.js');
+  await refreshSiteCache({ ...budgetEnv });
+
+  const measure = async (path) => {
+    budgetDb.startRequest(0);
+    const before = budgetDb.calls;
+    const res = await budgetWorker.fetch(new Request(BASE + path, { headers: { 'CF-Connecting-IP': '203.0.113.77' } }), { ...budgetEnv }, ctx);
+    await res.text();
+    return { status: res.status, calls: budgetDb.calls - before };
+  };
+  // A generous ceiling — a bounded, index-driven page issues a handful of D1
+  // *calls* (not rows: this simple shim counts calls, not scanned rows, but a
+  // page that regresses back to a live COUNT(*)/GROUP BY/correlated-subquery
+  // scan of the whole table typically balloons the call count too, since the
+  // old code paths issued one query per aggregate rather than reading one
+  // site_cache row). The real per-request ROW cost is covered by manual
+  // profiling (see the row-cost harness used during development); this test's
+  // job is to catch a full regression back to "query 5-8+ live aggregates every load".
+  for (const path of ['/', '/jobs', '/companies', '/categories/developer', '/skills/python', '/countries/germany']) {
+    const m = await measure(path);
+    ok(m.status === 200 && m.calls <= 25, `${path}: bounded D1 call count with a ${N}-job catalogue (${m.calls} calls)`);
+  }
+}
+
 // ── sanitizer ──
 ok(sanitizeRichHtml('<p onclick="x()">a<script>1</script><img src=x onerror=1><a href="javascript:1">l</a></p>') === '<p>a<a>l</a></p>', 'sanitizer strips script/handlers/javascript:');
 

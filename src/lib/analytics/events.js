@@ -4,6 +4,8 @@
 
 import { sha256Hex } from '../accounts/tokens.js';
 import { reportOperationalError } from '../platform/observability.js';
+import { getSiteStats } from '../platform/site-cache.js';
+import { cappedCount } from '../platform/job-window.js';
 
 export const ANALYTICS_EVENT_TYPES = Object.freeze([
   'page_view', 'job_impression', 'job_view', 'job_apply_click', 'job_favorite',
@@ -298,7 +300,16 @@ export async function getAnalyticsOverview(env, input = {}) {
     const [events, previousEvents, jobs, companies, revenue, refunds, health] = await Promise.all([
       env.DB.prepare(`SELECT event_type, SUM(event_count) events, SUM(unique_count) uniques FROM analytics_daily WHERE ${w.sql} GROUP BY event_type`).bind(...w.binds).all(),
       previous ? env.DB.prepare(`SELECT event_type, SUM(event_count) events, SUM(unique_count) uniques FROM analytics_daily WHERE metric_date >= ? AND metric_date <= ? GROUP BY event_type`).bind(previous.from, previous.to).all() : { results: [] },
-      env.DB.prepare(`SELECT COUNT(*) total, SUM(CASE WHEN status='active' THEN 1 ELSE 0 END) active, SUM(CASE WHEN created_at >= ? AND created_at <= ? THEN 1 ELSE 0 END) new_jobs FROM jobs`).bind(`${range.from} 00:00:00`, `${range.to} 23:59:59`).all(),
+      // ROW-READ BUDGET (D1 free tier: 5M rows/day): total/active come from the
+      // precomputed stats row (0 rows); new_jobs uses the created_at index (only
+      // the matching rows are read) instead of an unindexed full-table scan.
+      (async () => {
+        const stats = await getSiteStats(env);
+        const { results } = await env.DB.prepare(`SELECT COUNT(*) c FROM jobs WHERE created_at >= ? AND created_at <= ?`).bind(`${range.from} 00:00:00`, `${range.to} 23:59:59`).all();
+        const total = stats ? Number(stats.totalAll || 0) : await cappedCount(env, 'jobs', '', [], 20000);
+        const active = stats ? Number(stats.totalActive || 0) : await cappedCount(env, 'jobs', "status = 'active'", [], 20000);
+        return { results: [{ total, active, new_jobs: results?.[0]?.c || 0 }] };
+      })(),
       env.DB.prepare(`SELECT COUNT(*) total, SUM(CASE WHEN status='active' THEN 1 ELSE 0 END) active, SUM(CASE WHEN created_at >= ? AND created_at <= ? THEN 1 ELSE 0 END) new_companies FROM companies`).bind(`${range.from} 00:00:00`, `${range.to} 23:59:59`).all(),
       env.DB.prepare(`SELECT currency, SUM(CASE WHEN status='succeeded' THEN gross_amount_minor ELSE 0 END) gross_minor, SUM(CASE WHEN status='succeeded' THEN net_amount_minor ELSE 0 END) net_minor, SUM(CASE WHEN status='succeeded' THEN provider_fee_minor ELSE 0 END) payment_fees_minor, SUM(CASE WHEN status='succeeded' THEN 1 ELSE 0 END) successful_payments, SUM(CASE WHEN status='failed' THEN 1 ELSE 0 END) failed_payments, AVG(CASE WHEN status='succeeded' THEN gross_amount_minor END) average_order_minor FROM monetization_transactions WHERE created_at >= ? AND created_at <= ? GROUP BY currency`).bind(`${range.from} 00:00:00`, `${range.to} 23:59:59`).all(),
       env.DB.prepare(`SELECT currency,SUM(amount_minor) refunds_minor FROM monetization_refunds WHERE status IN ('processed','succeeded','completed') AND created_at >= ? AND created_at <= ? GROUP BY currency`).bind(`${range.from} 00:00:00`, `${range.to} 23:59:59`).all(),

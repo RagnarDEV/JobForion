@@ -19,7 +19,10 @@ import { JOB_MANUAL_PIN_SORT_SQL, PUBLIC_JOB_STATUS_SQL, JOB_LISTING_COLUMNS } f
 // PUBLIC_JOB_STATUS_SQL is baked in here (not left to each caller) since
 // every current consumer of this constant is public-facing (the company
 // profile page) — a paused/closed/expired job must not show there either.
-export const COMPANY_JOB_MATCH_SQL = `(jobs.company_id = ? OR (jobs.company_id IS NULL AND LOWER(jobs.company) = LOWER(?))) AND ${PUBLIC_JOB_STATUS_SQL}`;
+// Two INDEXED lookups (company_id, and exact company name for provider rows) joined with
+// UNION. An `a OR b` form made SQLite pick the low-selectivity status index and scan every
+// active job per company — see lib/platform/site-cache.js for the row-read budget.
+export const COMPANY_JOB_MATCH_SQL = `jobs.id IN (SELECT j2.id FROM jobs j2 WHERE j2.company_id = ? AND j2.status = 'active' UNION SELECT j3.id FROM jobs j3 WHERE j3.company_id IS NULL AND j3.company = ? AND j3.status = 'active')`;
 
 function cleanCompanyImageUrl(value) {
   const url = String(value || '').trim().slice(0, 500);
@@ -175,10 +178,13 @@ export async function listPublicCompanies(env, { q = '', country = '', industry 
   const whereSql = where.join(' AND ');
 
   try {
+    // ROW-READ BUDGET (D1 free tier: 5M rows/day, scanned rows count): job_count /
+    // remote_job_count are denormalized onto `companies` (see
+    // lib/platform/site-cache.js's refresh) instead of computed here with a
+    // correlated subquery per row — with ORDER BY job_count DESC that meant every
+    // company in the table (not just the page shown) had its jobs scanned.
     const { results } = await env.DB.prepare(
-      `SELECT c.*,
-         (SELECT COUNT(*) FROM jobs WHERE (jobs.company_id = c.id OR (jobs.company_id IS NULL AND LOWER(jobs.company) = LOWER(c.name))) AND ${PUBLIC_JOB_STATUS_SQL}) as job_count,
-         (SELECT COUNT(*) FROM jobs WHERE (jobs.company_id = c.id OR (jobs.company_id IS NULL AND LOWER(jobs.company) = LOWER(c.name))) AND jobs.remote_type IN ('fully_remote', 'hybrid') AND ${PUBLIC_JOB_STATUS_SQL}) as remote_job_count
+      `SELECT c.*, COALESCE(c.job_count, 0) AS job_count, COALESCE(c.remote_job_count, 0) AS remote_job
        FROM companies c WHERE ${whereSql}
        ORDER BY c.featured DESC, c.verified DESC, job_count DESC, c.name ASC
        LIMIT ? OFFSET ?`

@@ -28,6 +28,8 @@
 // pause/resume actions do the same — so a provider hiccup that briefly
 // drops a job from its feed doesn't strand it in 'expired' forever.
 
+import { getSiteStats } from '../lib/platform/site-cache.js';
+import { cappedCount } from '../lib/platform/job-window.js';
 import { ensureTable, ensureAccountTables } from './schema.js';
 import { BASE_URL } from '../config/constants.js';
 import { JOBS_PER_SITEMAP } from '../lib/seo/sitemap.js';
@@ -70,6 +72,11 @@ export async function cleanupStaleJobs(env) {
 
   const breakdown = { expired: 0, archived: 0, deleted: 0 };
   let totalDeleted = 0;
+  // Used only for the (non-critical) sitemap-cache invalidation further down —
+  // a stale/approximate number there just means a chunk boundary is briefly off
+  // by a few jobs, not a real problem. Read once, unconditionally (0 D1 rows on
+  // a warm cache), including on the "skipped" early-return path below.
+  const cachedStatsForSitemap = await getSiteStats(env);
 
   try {
     // ── SAFETY VALVE (added after a production incident) ─────────────────
@@ -110,7 +117,12 @@ export async function cleanupStaleJobs(env) {
          OR ((expires_at IS NULL OR expires_at >= datetime('now')) AND (updated_at IS NULL OR updated_at < datetime('now','-30 day')) AND created_at < datetime('now','-30 day'))
        )`
     ).all();
-    const activeTotal = Number((await env.DB.prepare(`SELECT COUNT(*) AS c FROM jobs WHERE status = 'active'`).first())?.c || 0);
+    // Deliberately a LIVE (but capped) count, not the precomputed cache: this
+    // number gates a potentially destructive mass-expiry decision and must
+    // reflect the database as it actually is right now, not an aggregate that
+    // may be hours stale — the exact condition (something has gone wrong) this
+    // safety valve exists to catch. Capped at 20,000 rows, once a day from cron.
+    const activeTotal = await cappedCount(env, 'jobs', "status = 'active'", [], 20000);
     if (activeTotal >= 200 && (toExpire || []).length > activeTotal * 0.5) {
       breakdown.skipped = `mass_expiry_blocked (${(toExpire || []).length}/${activeTotal})`;
       throw new CleanupSkipped();
@@ -173,8 +185,10 @@ export async function cleanupStaleJobs(env) {
   try {
     const cache = caches.default;
     await cache.delete(new Request(`${BASE_URL}/sitemap.xml`));
-    const { results: cntRows } = await env.DB.prepare("SELECT COUNT(*) c FROM jobs WHERE status = 'active'").all();
-    const jobCount = cntRows?.[0]?.c || 0;
+    // ROW-READ BUDGET: reuse the same stats read from the safety valve above
+    // (0 extra D1 rows) instead of a second live COUNT(*) over every active job.
+    const jobCount = cachedStatsForSitemap ? Number(cachedStatsForSitemap.totalActive || 0)
+      : Number((await env.DB.prepare("SELECT COUNT(*) c FROM jobs WHERE status = 'active'").first())?.c || 0);
     const chunks = Math.max(1, Math.ceil(jobCount / JOBS_PER_SITEMAP));
     for (let i = 1; i <= chunks; i++) {
       await cache.delete(new Request(`${BASE_URL}/sitemap-jobs-${i}.xml`));

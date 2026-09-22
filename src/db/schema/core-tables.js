@@ -241,6 +241,22 @@ export async function ensureTable(env) {
     )
   `).run();
 
+  // ── Precomputed aggregates (D1 FREE-TIER ROW-READ BUDGET) ──────────
+  // D1's free plan allows 5M ROWS READ per day, and every scanned row counts
+  // (not just returned rows). Live COUNT(*)/GROUP BY/LIKE queries over a
+  // catalogue of thousands of jobs cost thousands of rows EACH — one cold
+  // homepage render read ~70,000 rows, so ~70 renders exhausted the day and
+  // every query then failed with "exceeded D1's free tier daily row read
+  // limit". Aggregates are therefore computed ONCE per refresh (a single
+  // pass, see lib/platform/site-cache.js) and read back as one row.
+  await env.DB.prepare(`
+    CREATE TABLE IF NOT EXISTS site_cache (
+      cache_key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `).run();
+
   // ── Homepage Sections Builder (Admin Dashboard V2, Phase 4) ────────
   // The original table mirrors ad_slots: a FIXED set of section keys defined
   // in code (see lib/content/homepage-sections.js), with admin-controlled visibility

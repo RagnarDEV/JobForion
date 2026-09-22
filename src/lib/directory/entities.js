@@ -13,7 +13,9 @@
 // pages, but flagged for a future proper geo-normalization pass.
 // ════════════════════════════════════════════════════════════════
 
-import { JOB_MANUAL_PIN_SORT_SQL, PUBLIC_JOB_STATUS_SQL, JOB_LISTING_COLUMNS } from '../../config/constants.js';
+import { readSiteCache } from '../platform/site-cache.js';
+import { windowedJobs } from '../platform/job-window.js';
+import { JOB_MANUAL_PIN_SORT_SQL, PUBLIC_JOB_STATUS_SQL, PUBLIC_JOB_STATUS_NOINDEX_SQL, JOB_LISTING_COLUMNS } from '../../config/constants.js';
 import { getOverrides, applyDirectoryOverrides } from './directory-overrides.js';
 import { canonicalizeRegion } from './geo-data.js';
 
@@ -119,14 +121,24 @@ export function safeExternalUrl(value) {
 // jobs in the last 8000 postings isn't meaningfully "active" anyway.
 export async function listCompanies(env, { limit = 200 } = {}) {
   try {
-    const { results } = await env.DB.prepare(
-      `SELECT company, COUNT(*) c FROM (
-         SELECT company FROM jobs WHERE company IS NOT NULL AND company != '' AND ${PUBLIC_JOB_STATUS_SQL} ORDER BY id DESC LIMIT 8000
-       )
-       WHERE LOWER(TRIM(company)) NOT IN (SELECT LOWER(TRIM(company_lower)) FROM hidden_companies)
-       GROUP BY company ORDER BY c DESC LIMIT ?`
-    ).bind(limit).all();
-    return (results || []).map(r => ({ name: r.company, slug: slugify(r.company), count: r.c }));
+    let list = await readSiteCache(env, 'dir:companies');
+    if (!list) {
+      // No precomputed directory yet (first run after a deploy): bounded fallback
+      // over the most recent DIRECTORY_WINDOW jobs — never the whole table.
+      const { results } = await env.DB.prepare(
+        `SELECT company AS name, COUNT(*) AS count FROM ${windowedJobs()} WHERE company IS NOT NULL AND company != '' GROUP BY company ORDER BY count DESC LIMIT 600`
+      ).all();
+      list = results || [];
+    }
+    let hidden = new Set();
+    try {
+      const { results } = await env.DB.prepare('SELECT company_lower FROM hidden_companies').all();
+      hidden = new Set((results || []).map(r => String(r.company_lower || '').trim().toLowerCase()));
+    } catch (e) { /* table not migrated yet */ }
+    return list
+      .filter(r => r && r.name && !hidden.has(String(r.name).trim().toLowerCase()))
+      .slice(0, limit)
+      .map(r => ({ name: r.name, slug: slugify(r.name), count: r.count }));
   } catch (e) { return []; }
 }
 
@@ -138,7 +150,7 @@ export async function findCompanyBySlug(env, slug) {
 export async function jobsByCompany(env, companyName, { limit = 100 } = {}) {
   try {
     const { results } = await env.DB.prepare(
-      `SELECT ${JOB_LISTING_COLUMNS} FROM jobs WHERE company = ? AND ${PUBLIC_JOB_STATUS_SQL} ORDER BY ${JOB_MANUAL_PIN_SORT_SQL} LIMIT ?`
+      `SELECT ${JOB_LISTING_COLUMNS} FROM jobs WHERE company = ? AND ${PUBLIC_JOB_STATUS_NOINDEX_SQL} ORDER BY ${JOB_MANUAL_PIN_SORT_SQL} LIMIT ?`
     ).bind(companyName, limit).all();
     return results || [];
   } catch (e) { return []; }
@@ -174,11 +186,20 @@ function splitLocation(location) {
 // (plus the sitemap builders), so a transient or migration-in-progress
 // missing column/table must degrade to an empty directory, never an
 // uncaught crash.
+// Raw (location, count) groups. Read from the precomputed `dir:locations` row;
+// bounded window fallback until the first cache refresh has run.
+async function loadLocationGroups(env) {
+  const cached = await readSiteCache(env, 'dir:locations');
+  if (cached) return cached;
+  const { results } = await env.DB.prepare(
+    `SELECT location, COUNT(*) AS c FROM ${windowedJobs()} WHERE location IS NOT NULL AND location != '' GROUP BY location`
+  ).all();
+  return results || [];
+}
+
 export async function listCountriesRaw(env) {
   try {
-    const { results } = await env.DB.prepare(
-      `SELECT location, COUNT(*) c FROM jobs WHERE location IS NOT NULL AND location != '' AND ${PUBLIC_JOB_STATUS_SQL} GROUP BY location`
-    ).all();
+    const results = await loadLocationGroups(env);
     const map = new Map();
     for (const row of results || []) {
       const { region } = splitLocation(row.location);
@@ -215,7 +236,7 @@ export async function jobsByRegion(env, regionNames, { limit = 100, offset = 0 }
     const conditions = names.map(() => '(location = ? OR location LIKE ?)').join(' OR ');
     const binds = names.flatMap(n => [n, `%, ${n}`]);
     const { results } = await env.DB.prepare(
-      `SELECT ${JOB_LISTING_COLUMNS} FROM jobs WHERE (${conditions}) AND ${PUBLIC_JOB_STATUS_SQL} ORDER BY ${JOB_MANUAL_PIN_SORT_SQL} LIMIT ? OFFSET ?`
+      `SELECT ${JOB_LISTING_COLUMNS} FROM ${windowedJobs()} WHERE (${conditions}) ORDER BY ${JOB_MANUAL_PIN_SORT_SQL} LIMIT ? OFFSET ?`
     ).bind(...binds, limit, offset).all();
     return results || [];
   } catch (e) { return []; }
@@ -225,18 +246,24 @@ export async function countJobsByRegion(env, regionNames) {
   const names = (Array.isArray(regionNames) ? regionNames : [regionNames]).filter(Boolean);
   if (!names.length) return 0;
   try {
+    // ROW-READ BUDGET: exact count from the precomputed location groups (0 D1 rows);
+    // bounded window count only until the first cache refresh has run.
+    const cached = await readSiteCache(env, 'dir:locations');
+    if (cached) {
+      let sum = 0;
+      for (const g of cached) if (names.some(n => g.location === n || String(g.location).endsWith(`, ${n}`))) sum += Number(g.c || 0);
+      return sum;
+    }
     const conditions = names.map(() => '(location = ? OR location LIKE ?)').join(' OR ');
     const binds = names.flatMap(n => [n, `%, ${n}`]);
-    const { results } = await env.DB.prepare(`SELECT COUNT(*) AS c FROM jobs WHERE (${conditions}) AND ${PUBLIC_JOB_STATUS_SQL}`).bind(...binds).all();
+    const { results } = await env.DB.prepare(`SELECT COUNT(*) AS c FROM ${windowedJobs()} WHERE (${conditions})`).bind(...binds).all();
     return Number(results?.[0]?.c || 0);
   } catch (e) { return 0; }
 }
 
 export async function listCitiesRaw(env) {
   try {
-    const { results } = await env.DB.prepare(
-      `SELECT location, COUNT(*) c FROM jobs WHERE location IS NOT NULL AND location != '' AND ${PUBLIC_JOB_STATUS_SQL} GROUP BY location`
-    ).all();
+    const results = await loadLocationGroups(env);
     const map = new Map();
     for (const row of results || []) {
       const { city } = splitLocation(row.location);
@@ -264,7 +291,7 @@ export async function jobsByCity(env, cityNames, { limit = 100 } = {}) {
     const conditions = names.map(() => '(location = ? OR location LIKE ?)').join(' OR ');
     const binds = names.flatMap(n => [n, `${n},%`]);
     const { results } = await env.DB.prepare(
-      `SELECT ${JOB_LISTING_COLUMNS} FROM jobs WHERE (${conditions}) AND ${PUBLIC_JOB_STATUS_SQL} ORDER BY ${JOB_MANUAL_PIN_SORT_SQL} LIMIT ?`
+      `SELECT ${JOB_LISTING_COLUMNS} FROM ${windowedJobs()} WHERE (${conditions}) ORDER BY ${JOB_MANUAL_PIN_SORT_SQL} LIMIT ?`
     ).bind(...binds, limit).all();
     return results || [];
   } catch (e) { return []; }
@@ -279,9 +306,11 @@ export async function jobsByCity(env, cityNames, { limit = 100 } = {}) {
 // dashboard's skill-count estimate) keeps it fast at any table size.
 export async function listSkillsRaw(env) {
   try {
+    const cached = await readSiteCache(env, 'dir:skills');
+    if (cached) return cached.map(r => ({ name: r.name, slug: slugify(r.name), count: r.count })).filter(s => s.name);
     const { results } = await env.DB.prepare(
       `SELECT value AS skill, COUNT(*) c FROM (
-         SELECT skills FROM jobs WHERE skills IS NOT NULL AND skills != '' AND skills != '[]' AND ${PUBLIC_JOB_STATUS_SQL} ORDER BY id DESC LIMIT 5000
+         SELECT skills FROM jobs WHERE skills IS NOT NULL AND skills != '' AND skills != '[]' AND ${PUBLIC_JOB_STATUS_SQL} ORDER BY id DESC LIMIT 1500
        ), json_each(skills)
        GROUP BY value ORDER BY c DESC`
     ).all();
@@ -309,8 +338,8 @@ export async function jobsBySkill(env, skillNames, { limit = 100, offset = 0 } =
   try {
     const placeholders = names.map(() => '?').join(',');
     const { results } = await env.DB.prepare(
-      `SELECT ${JOB_LISTING_COLUMNS.split(',').map(column => `jobs.${column}`).join(',')} FROM jobs, json_each(jobs.skills)
-       WHERE json_each.value IN (${placeholders}) AND ${PUBLIC_JOB_STATUS_SQL} ORDER BY ${JOB_MANUAL_PIN_SORT_SQL.replace(/\bid\b/g, 'jobs.id')} LIMIT ? OFFSET ?` ).bind(...names, limit, offset).all();
+      `SELECT ${JOB_LISTING_COLUMNS.split(',').map(column => `jobs.${column}`).join(',')} FROM ${windowedJobs()}, json_each(jobs.skills)
+       WHERE json_each.value IN (${placeholders}) ORDER BY ${JOB_MANUAL_PIN_SORT_SQL.replace(/\bid\b/g, 'jobs.id')} LIMIT ? OFFSET ?` ).bind(...names, limit, offset).all();
     return results || [];
   } catch (e) {
     return [];
@@ -321,8 +350,10 @@ export async function countJobsBySkill(env, skillNames) {
   const names = (Array.isArray(skillNames) ? skillNames : [skillNames]).filter(Boolean);
   if (!names.length) return 0;
   try {
+    const cached = await readSiteCache(env, 'dir:skills');
+    if (cached) return cached.filter(r => names.includes(r.name)).reduce((n, r) => n + Number(r.count || 0), 0);
     const placeholders = names.map(() => '?').join(',');
-    const { results } = await env.DB.prepare(`SELECT COUNT(DISTINCT jobs.id) AS c FROM jobs, json_each(jobs.skills) WHERE json_each.value IN (${placeholders}) AND ${PUBLIC_JOB_STATUS_SQL}`).bind(...names).all();
+    const { results } = await env.DB.prepare(`SELECT COUNT(DISTINCT jobs.id) AS c FROM ${windowedJobs()}, json_each(jobs.skills) WHERE json_each.value IN (${placeholders})`).bind(...names).all();
     return Number(results?.[0]?.c || 0);
   } catch (e) {
     return 0;
@@ -340,26 +371,11 @@ export function parseSalaryRange(salary) {
 }
 
 export async function salaryBandsByCategory(env, categoryOrder, categoryMeta) {
-  const bands = [];
-  for (const key of categoryOrder) {
-    try {
-      const { results } = await env.DB.prepare(
-        `SELECT salary FROM jobs WHERE LOWER(title) LIKE ? AND salary IS NOT NULL AND salary != '' AND ${PUBLIC_JOB_STATUS_SQL}`
-      ).bind(`%${key}%`).all();
-      const ranges = (results || []).map(r => parseSalaryRange(r.salary)).filter(Boolean);
-      if (!ranges.length) { bands.push({ key, label: categoryMeta[key].label, count: 0 }); continue; }
-      const mins = ranges.map(r => r.min), maxs = ranges.map(r => r.max);
-      const avg = arr => Math.round(arr.reduce((a, b) => a + b, 0) / arr.length);
-      bands.push({
-        key, label: categoryMeta[key].label, count: ranges.length,
-        avgMin: avg(mins), avgMax: avg(maxs),
-        low: Math.min(...mins), high: Math.max(...maxs)
-      });
-    } catch (e) {
-      bands.push({ key, label: categoryMeta[key].label, count: 0 });
-    }
-  }
-  return bands;
+  const cached = await readSiteCache(env, 'salary:bands');
+  return categoryOrder.map(key => {
+    const b = cached?.[String(key).toLowerCase()];
+    return b && b.count ? { key, label: categoryMeta[key].label, ...b } : { key, label: categoryMeta[key].label, count: 0 };
+  });
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -380,16 +396,9 @@ export async function salaryBandsByCategory(env, categoryOrder, categoryMeta) {
 // listSkills() elsewhere in this file for performance at scale.
 export async function categorySalaryStats(env, categoryKey) {
   try {
-    const { results } = await env.DB.prepare(
-      `SELECT salary FROM (
-         SELECT salary FROM jobs WHERE LOWER(title) LIKE ? AND salary IS NOT NULL AND salary != '' AND ${PUBLIC_JOB_STATUS_SQL} ORDER BY id DESC LIMIT 3000
-       )`
-    ).bind(`%${categoryKey}%`).all();
-    const ranges = (results || []).map(r => parseSalaryRange(r.salary)).filter(Boolean);
-    if (!ranges.length) return null;
-    const mins = ranges.map(r => r.min), maxs = ranges.map(r => r.max);
-    const avg = arr => Math.round(arr.reduce((a, b) => a + b, 0) / arr.length);
-    return { count: ranges.length, avgMin: avg(mins), avgMax: avg(maxs), low: Math.min(...mins), high: Math.max(...maxs) };
+    const cached = await readSiteCache(env, 'salary:bands');
+    const b = cached?.[String(categoryKey).toLowerCase()];
+    return b && b.count ? b : null;
   } catch (e) { return null; }
 }
 
@@ -399,7 +408,7 @@ export async function categorySalaryStats(env, categoryKey) {
 export async function companySnapshot(env, companyName) {
   try {
     const { results } = await env.DB.prepare(
-      `SELECT COUNT(*) c, MIN(created_at) first_seen FROM jobs WHERE company = ? AND ${PUBLIC_JOB_STATUS_SQL}`
+      `SELECT COUNT(*) c, MIN(created_at) first_seen FROM jobs WHERE company = ? AND ${PUBLIC_JOB_STATUS_NOINDEX_SQL}`
     ).bind(companyName).all();
     const row = results?.[0];
     return { openPositions: row?.c || 0, firstSeen: row?.first_seen || null };

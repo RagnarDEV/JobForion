@@ -1,6 +1,8 @@
 // src/pages/seo/jobs.js
 // /jobs (filterable listing) and /remote-jobs landing.
 
+import { getSiteStats, readSiteCache } from '../../lib/platform/site-cache.js';
+import { windowedJobs, cappedCount } from '../../lib/platform/job-window.js';
 import { baseLayout } from '../../layout/base-layout.js';
 import { escapeHtml, MIN_JOBS_FOR_INDEXING } from '../../lib/directory/entities.js';
 import { collectionPageSchema, ldJsonTag } from '../../lib/seo/jsonld.js';
@@ -73,16 +75,38 @@ export async function renderJobsIndex(env, base, user = null, filters = {}) {
     orderBySql = `CASE WHEN LOWER(title) LIKE ? THEN 0 WHEN EXISTS (SELECT 1 FROM json_each(jobs.skills) je2 WHERE LOWER(je2.value) LIKE ?) THEN 1 WHEN LOWER(company) LIKE ? THEN 2 ELSE 3 END ASC, ${orderBySql}`;
     orderParams.push(like, like, like);
   }
-  let countRows, jobs;
+  // ROW-READ BUDGET (D1 free tier: 5M rows/day, scanned rows count):
+  //  • no filters       → index-driven `featured DESC, id DESC` (reads ~20 rows);
+  //                       total comes from the precomputed stats row; deep pages capped.
+  //  • company only     → company index.
+  //  • any other filter → evaluated over the most recent JOBS_FILTER_WINDOW active
+  //                       jobs, so cost stays bounded however large the catalogue is.
+  const JOBS_FILTER_WINDOW = 2000;
+  const onlyCompany = conditions.length === 2 && !!company;
+  const unfiltered = conditions.length === 1;
+  const fromSql = (unfiltered || onlyCompany) ? 'jobs' : windowedJobs(JOBS_FILTER_WINDOW);
+  let countRows, jobs, windowPageRows = null;
   try {
-    ({ results: countRows } = await env.DB.prepare(`SELECT COUNT(*) AS c FROM jobs${where}`).bind(...binds).all());
+    if (unfiltered) {
+      const stats = await getSiteStats(env);
+      countRows = [{ c: stats ? Math.min(Number(stats.totalActive || 0), 2000) : await cappedCount(env, 'jobs', PUBLIC_JOB_STATUS_SQL, [], 2000) }];
+    } else if (onlyCompany) {
+      countRows = [{ c: await cappedCount(env, 'jobs', conditions.join(' AND '), binds, 2000) }];
+    } else {
+      // ONE pass over the window: rows for the requested page + the total number of
+      // matches (COUNT(*) OVER ()) — half the reads of separate COUNT + SELECT queries.
+      const { results: pageRows } = await env.DB.prepare(`SELECT ${JOB_LISTING_COLUMNS}, COUNT(*) OVER () AS jf_total FROM ${fromSql}${where} ORDER BY ${orderBySql} LIMIT ${pageSize} OFFSET ${(requestedPage - 1) * pageSize}`).bind(...binds, ...orderParams).all();
+      countRows = [{ c: pageRows?.[0]?.jf_total || 0 }];
+      if (pageRows?.length) windowPageRows = pageRows.map(({ jf_total, ...row }) => row);
+    }
   } catch (e) { countRows = [{ c: 0 }]; }
   const total = Number(countRows?.[0]?.c || 0);
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const page = Math.min(requestedPage, totalPages);
   const offset = (page - 1) * pageSize;
-  try {
-    ({ results: jobs } = await env.DB.prepare(`SELECT ${JOB_LISTING_COLUMNS} FROM jobs${where} ORDER BY ${orderBySql} LIMIT ${pageSize} OFFSET ${offset}`).bind(...binds, ...orderParams).all());
+  if (windowPageRows && page === requestedPage) jobs = windowPageRows;
+  else try {
+    ({ results: jobs } = await env.DB.prepare(`SELECT ${JOB_LISTING_COLUMNS} FROM ${fromSql}${where} ORDER BY ${orderBySql} LIMIT ${pageSize} OFFSET ${offset}`).bind(...binds, ...orderParams).all());
   } catch (e) { jobs = []; }
   const safe = value => escapeHtml(String(value || ''));
   const paramNames = ['q','category','remote_type','employment_type','seniority','country','skill','company','salary_min','salary_max','days','source_type','sort'];
@@ -150,21 +174,26 @@ export async function renderJobsIndex(env, base, user = null, filters = {}) {
 // ── /remote-jobs ──
 export async function renderRemoteJobsLanding(env, base, user = null, filters = {}) {
   const { settings, categories, categoryMap, categoryOrder, cardStyles, categoryBundle, footerPages, menuPages, navButtons } = await loadPageContext(env);
-  const remoteWhere = `${PUBLIC_JOB_STATUS_SQL} AND remote_type = ?`;
   const pageSize = 12;
   const requestedPage = Math.max(1, Math.min(500, parseInt(filters.page || '1', 10) || 1));
   let countRows, companyRows, jobs;
+  // ROW-READ BUDGET: precomputed remote total + top remote companies (1 row each);
+  // the list itself is served from the most recent REMOTE_WINDOW active jobs.
+  const REMOTE_WINDOW = 5000;
   try {
-    ({ results: countRows } = await env.DB.prepare(`SELECT COUNT(*) AS c FROM jobs WHERE ${remoteWhere}`).bind('fully_remote').all());
+    const stats = await getSiteStats(env);
+    countRows = [{ c: stats ? Math.min(Number(stats.remote || 0), REMOTE_WINDOW) : await cappedCount(env, windowedJobs(REMOTE_WINDOW), 'remote_type = ?', ['fully_remote'], REMOTE_WINDOW) }];
   } catch (e) { countRows = [{ c: 0 }]; }
   try {
-    ({ results: companyRows } = await env.DB.prepare(`SELECT company, COUNT(*) AS c FROM jobs WHERE ${remoteWhere} AND company IS NOT NULL AND company != '' GROUP BY company ORDER BY c DESC, company ASC LIMIT 6`).bind('fully_remote').all());
+    const cachedCompanies = await readSiteCache(env, 'dir:remote_companies');
+    if (cachedCompanies) companyRows = cachedCompanies.slice(0, 6);
+    else ({ results: companyRows } = await env.DB.prepare(`SELECT company, COUNT(*) AS c FROM ${windowedJobs(REMOTE_WINDOW)} WHERE remote_type = ? AND company IS NOT NULL AND company != '' GROUP BY company ORDER BY c DESC, company ASC LIMIT 6`).bind('fully_remote').all());
   } catch (e) { companyRows = []; }
   const total = Number(countRows?.[0]?.c || 0);
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const page = Math.min(requestedPage, totalPages);
   try {
-    ({ results: jobs } = await env.DB.prepare(`SELECT ${JOB_LISTING_COLUMNS} FROM jobs WHERE ${remoteWhere} ORDER BY ${JOB_MANUAL_PIN_SORT_SQL} LIMIT ? OFFSET ?`).bind('fully_remote', pageSize, (page - 1) * pageSize).all());
+    ({ results: jobs } = await env.DB.prepare(`SELECT ${JOB_LISTING_COLUMNS} FROM ${windowedJobs(REMOTE_WINDOW)} WHERE remote_type = ? ORDER BY ${JOB_MANUAL_PIN_SORT_SQL} LIMIT ? OFFSET ?`).bind('fully_remote', pageSize, (page - 1) * pageSize).all());
   } catch (e) { jobs = []; }
   const jobsHtml = await jobsListHtml(env, jobs || [], categoryMap, categoryOrder, cardStyles, `<div class="empty"><div class="e-icon">${iconInbox({ size: 44 })}</div><h3>No fully remote jobs available</h3><p>Try the full Jobs directory to explore hybrid and on-site roles as well.</p><a class="public-primary-link" href="/jobs">Browse all jobs </a></div>`);
   const pageLink = n => `/remote-jobs${n > 1 ? `?page=${n}` : ''}`;

@@ -12,13 +12,19 @@
 
 import { escapeHtml } from '../../lib/directory/entities.js';
 import { getCategoriesRaw } from '../../lib/content/categories.js';
+import { readSiteCache } from '../../lib/platform/site-cache.js';
+import { windowedJobs } from '../../lib/platform/job-window.js';
 
 import { iconFolder, iconTag } from '../../assets/icons.js';
+// ROW-READ BUDGET: read from the precomputed per-category counts (1 row) instead
+// of a LIKE scan of the whole jobs table per category (13 categories x full scan).
 async function categoryJobCounts(env, keys) {
+  const cached = await readSiteCache(env, 'cat:counts');
+  if (cached) return Object.fromEntries(keys.map(k => [k, Number(cached[String(k).toLowerCase()] || 0)]));
   const out = {};
   await Promise.all(keys.map(async (key) => {
     try {
-      const { results } = await env.DB.prepare("SELECT COUNT(*) c FROM jobs WHERE LOWER(title) LIKE ?").bind(`%${key}%`).all();
+      const { results } = await env.DB.prepare(`SELECT COUNT(*) c FROM ${windowedJobs()} WHERE LOWER(title) LIKE ?`).bind(`%${key}%`).all();
       out[key] = results[0]?.c || 0;
     } catch (e) { out[key] = 0; }
   }));

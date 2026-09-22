@@ -3,6 +3,8 @@
 // copy-link, preview, duplicate-detection (manual review, never auto-delete),
 // and stale-job cleanup (configurable age threshold, confirmed before running).
 
+import { getSiteStats, readSiteCache } from '../../lib/platform/site-cache.js';
+import { cappedCount } from '../../lib/platform/job-window.js';
 import { BASE_URL, JOB_TYPE_META, JOB_TYPE_ORDER, JOB_STATUS_META, JOB_STATUS_ORDER, JOB_SORT_OPTIONS } from '../../config/constants.js';
 import { getCategories } from '../../lib/content/categories.js';
 import { ensureTable } from '../../db/schema.js';
@@ -101,12 +103,29 @@ export async function renderJobsListContent(env, params) {
   const qsString = params.toString();
   const redirectTarget = qsString ? `/admin/jobs?${qsString}` : '/admin/jobs';
 
-  const [{ results: rows }, { results: countRows }, { results: sourceRows }] = await Promise.all([
-    env.DB.prepare(`SELECT * FROM jobs ${whereSql} ORDER BY ${SORT_OPTIONS[sortKey].sql} LIMIT ${PAGE_SIZE} OFFSET ${offset}`).bind(...binds).all(),
-    env.DB.prepare(`SELECT COUNT(*) c FROM jobs ${whereSql}`).bind(...binds).all(),
-    env.DB.prepare(`SELECT DISTINCT source FROM jobs WHERE source IS NOT NULL AND source != '' ORDER BY source ASC`).all(),
+  // ROW-READ BUDGET (D1 free tier: 5M rows/day, scanned rows count):
+  //  • no filters → index-driven (idx_jobs_featured_id); total from the precomputed stats row.
+  //  • filtered   → one pass over the table (admin search legitimately needs to scan for a
+  //                 match), but list + total are read together via COUNT(*) OVER() instead
+  //                 of two separate full scans.
+  const unfiltered = !whereSql;
+  const cachedSources = await readSiteCache(env, 'admin:sources');
+  const [listResult, { results: sourceRows }] = await Promise.all([
+    unfiltered
+      ? env.DB.prepare(`SELECT * FROM jobs ORDER BY ${SORT_OPTIONS[sortKey].sql} LIMIT ${PAGE_SIZE} OFFSET ${offset}`).all()
+      : env.DB.prepare(`SELECT *, COUNT(*) OVER () AS jf_total FROM jobs ${whereSql} ORDER BY ${SORT_OPTIONS[sortKey].sql} LIMIT ${PAGE_SIZE} OFFSET ${offset}`).bind(...binds).all(),
+    cachedSources ? Promise.resolve({ results: cachedSources.map(r => ({ source: r.s })).sort((a, b) => String(a.source).localeCompare(String(b.source))) })
+      : env.DB.prepare(`SELECT DISTINCT source FROM jobs WHERE source IS NOT NULL AND source != '' ORDER BY source ASC`).all(),
   ]);
-  const total = countRows[0]?.c || 0;
+  let rows = listResult.results || [];
+  let total;
+  if (unfiltered) {
+    const stats = await getSiteStats(env);
+    total = stats ? Number(stats.totalAll || 0) : (await cappedCount(env, 'jobs', '', [], 20000));
+  } else {
+    total = rows[0]?.jf_total || 0;
+    rows = rows.map(({ jf_total, ...row }) => row);
+  }
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   const { results: staleCountRows } = await env.DB.prepare(
@@ -114,10 +133,11 @@ export async function renderJobsListContent(env, params) {
   ).all();
   const staleCount = staleCountRows[0]?.c || 0;
 
-  const { results: unbackfilledRows } = await env.DB.prepare(
-    "SELECT COUNT(*) c FROM jobs WHERE salary IS NOT NULL AND salary != '' AND salary_min_usd IS NULL"
-  ).all();
-  const unbackfilledCount = unbackfilledRows[0]?.c || 0;
+  // ROW-READ BUDGET: no index covers this combination (a plain "SCAN jobs" —
+  // unlike staleCount just above, which uses idx_jobs_created_at), and this runs
+  // on every /admin/jobs page view regardless of filters. Capped: exact past a
+  // few thousand isn't needed for a "needs backfill" badge.
+  const unbackfilledCount = await cappedCount(env, 'jobs', "salary IS NOT NULL AND salary != '' AND salary_min_usd IS NULL", [], 5000);
 
   const rowsHtml = (rows || []).map(j => jobRow(j, categoryOrder, categoryMap)).join('').replaceAll('__REDIRECT__', escapeHtml(redirectTarget));
 

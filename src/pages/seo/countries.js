@@ -35,7 +35,9 @@ export async function renderCountryDetail(env, base, slug, user = null, filters 
   const requestedPage = Math.max(1, Math.min(500, parseInt(filters.page || '1', 10) || 1));
   const rawNames = country.rawNames || country.name;
   const total = await countJobsByRegion(env, rawNames);
-  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  // Only the most recent DIRECTORY_WINDOW jobs are browsable here (D1 row-read budget), so paginate
+  // over at most 200 results; the header still shows the exact precomputed total.
+  const totalPages = Math.max(1, Math.ceil(Math.min(total, 200) / pageSize));
   const page = Math.min(requestedPage, totalPages);
   const jobs = await jobsByRegion(env, rawNames, { limit: pageSize, offset: (page - 1) * pageSize });
   const { html: bc, jsonLd: bcSchema } = buildBreadcrumb(base, [{ name: 'Countries', path: '/countries' }, { name: country.name, path: `/countries/${slug}` }]);

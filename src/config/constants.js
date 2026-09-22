@@ -161,3 +161,18 @@ export const REJECTION_REASONS = [
   'Other',
 ];
 
+// Jobs per /sitemap-jobs-N.xml file. Kept small: every URL in a chunk is a row read on a cache miss.
+export const JOBS_PER_SITEMAP = 5000;
+
+// D1 FREE-TIER ROW-READ BUDGET (5M rows/day; scanned rows count, not returned rows).
+// Queries that cannot use an index (LIKE, json_each, multi-filter) run over the
+// most recent DIRECTORY_WINDOW active jobs instead of the whole table, so their
+// cost is bounded no matter how large the catalogue grows.
+export const DIRECTORY_WINDOW = 1500;
+// COUNT(*) is capped at this many rows (shown as "N+").
+export const COUNT_CAP = 5000;
+
+// `+` disables index use on that term (SQLite): without table statistics the planner would pick the
+// low-selectivity (status, featured, id) index for `WHERE company = ? AND status = 'active'` and scan
+// every active job instead of seeking the company index. Use in company-scoped lookups.
+export const PUBLIC_JOB_STATUS_NOINDEX_SQL = "+jobs.status = 'active'";

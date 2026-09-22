@@ -1,12 +1,14 @@
 // src/pages/seo/categories.js
 // /categories index and /categories/:key detail.
 
+import { readSiteCache } from '../../lib/platform/site-cache.js';
+import { windowedJobs } from '../../lib/platform/job-window.js';
 import { baseLayout } from '../../layout/base-layout.js';
 import { escapeHtml, MIN_JOBS_FOR_INDEXING } from '../../lib/directory/entities.js';
 import { collectionPageSchema, itemListSchema, ldJsonTag } from '../../lib/seo/jsonld.js';
 import { buildBreadcrumb } from '../../lib/seo/breadcrumbs.js';
 import { truncateDescription } from '../../lib/seo/meta.js';
-import { JOB_MANUAL_PIN_SORT_SQL, PUBLIC_JOB_STATUS_SQL, JOB_LISTING_COLUMNS } from '../../config/constants.js';
+import { JOB_MANUAL_PIN_SORT_SQL, JOB_LISTING_COLUMNS } from '../../config/constants.js';
 import { PUBLIC_PAGE_CSS, publicPageHeader, publicCard } from '../../components/public-page.js';
 import { loadPageContext, jobsListHtml } from './shared.js';
 
@@ -36,13 +38,17 @@ export async function renderCategoryDetail(env, base, key, user = null, filters 
   const categoryLike = `%${key.toLowerCase()}%`;
   let countRows, jobs;
   try {
-    ({ results: countRows } = await env.DB.prepare(`SELECT COUNT(*) AS c FROM jobs WHERE LOWER(title) LIKE ? AND ${PUBLIC_JOB_STATUS_SQL}`).bind(categoryLike).all());
+    // ROW-READ BUDGET: exact total from the precomputed category counts (1 row).
+    const cachedCounts = await readSiteCache(env, 'cat:counts');
+    if (cachedCounts && cachedCounts[key.toLowerCase()] !== undefined) countRows = [{ c: cachedCounts[key.toLowerCase()] }];
+    else ({ results: countRows } = await env.DB.prepare(`SELECT COUNT(*) AS c FROM ${windowedJobs()} WHERE LOWER(title) LIKE ?`).bind(categoryLike).all());
   } catch (e) { countRows = [{ c: 0 }]; }
   const total = Number(countRows?.[0]?.c || 0);
-  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  // Only the most recent DIRECTORY_WINDOW jobs are browsable here (D1 row-read budget).
+  const totalPages = Math.max(1, Math.ceil(Math.min(total, 200) / pageSize));
   const page = Math.min(requestedPage, totalPages);
   try {
-    ({ results: jobs } = await env.DB.prepare(`SELECT ${JOB_LISTING_COLUMNS} FROM jobs WHERE LOWER(title) LIKE ? AND ${PUBLIC_JOB_STATUS_SQL} ORDER BY ${JOB_MANUAL_PIN_SORT_SQL} LIMIT ${pageSize} OFFSET ${(page - 1) * pageSize}`).bind(categoryLike).all());
+    ({ results: jobs } = await env.DB.prepare(`SELECT ${JOB_LISTING_COLUMNS} FROM ${windowedJobs()} WHERE LOWER(title) LIKE ? ORDER BY ${JOB_MANUAL_PIN_SORT_SQL} LIMIT ${pageSize} OFFSET ${(page - 1) * pageSize}`).bind(categoryLike).all());
   } catch (e) { jobs = []; }
   const { html: bc, jsonLd: bcSchema } = buildBreadcrumb(base, [{ name: 'Categories', path: '/categories' }, { name: meta.label, path: `/categories/${key}` }]);
   const jobsHtml = await jobsListHtml(env, jobs, categoryMap, categoryOrder, cardStyles, `<div class="empty"><div class="e-icon">${iconInbox({ size: 44 })}</div><h3>No jobs in this category yet</h3><p>Browse the full Jobs directory to explore other active roles.</p><a class="public-primary-link" href="/jobs?category=${encodeURIComponent(key)}">Browse all jobs </a></div>`);
