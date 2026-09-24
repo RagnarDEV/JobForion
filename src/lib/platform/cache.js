@@ -5,13 +5,21 @@
 // queries). Never used for /admin, /api/*, or anything personalized.
 // ════════════════════════════════════════════════════════════════
 
+// ROW-READ BUDGET: the underlying content (site_cache) only refreshes every
+// SITE_CACHE_MAX_AGE_MINUTES (~6.5h) anyway — serving a cached RESPONSE for
+// nearly that long costs nothing in freshness the visitor doesn't already
+// lack, and it is the difference between a repeat visit / crawler re-crawl
+// costing 0 D1 rows (cache hit) or a full recompute (cache miss) every 5-10
+// minutes. A short TTL here was undermining the whole point of the bounded
+// queries below it: a page that costs "only" ~3,000-5,000 rows on a miss is
+// still expensive when a crawler or popular page causes many misses per day.
 export const CACHE_PRESETS = {
-  directory: "public, max-age=300, s-maxage=1800",   // companies/countries/cities/skills lists
-  entity: "public, max-age=120, s-maxage=600",        // a single company/country/skill/category page
-  job: "public, max-age=60, s-maxage=300",            // a single job page (anonymous visitors only)
-  search: "public, max-age=60, s-maxage=300",         // /search/:q and /jobs listings (anonymous visitors only)
-  feed: "public, max-age=900, s-maxage=1800",         // sitemap.xml / feed.rss
-  static: "public, max-age=86400, s-maxage=604800",   // favicons, manifest
+  directory: "public, max-age=1800, s-maxage=21600",  // companies/countries/cities/skills lists (6h edge)
+  entity: "public, max-age=1800, s-maxage=21600",      // a single company/country/skill/category page (6h edge)
+  job: "public, max-age=300, s-maxage=3600",           // a single job page (anonymous visitors only) — 1h edge
+  search: "public, max-age=300, s-maxage=3600",        // /search/:q and /jobs listings (anonymous visitors only) — 1h edge
+  feed: "public, max-age=900, s-maxage=1800",          // sitemap.xml / feed.rss
+  static: "public, max-age=86400, s-maxage=604800",    // favicons, manifest
 };
 
 async function weakEtag(text) {

@@ -335,6 +335,38 @@ export async function findSkillBySlug(env, slug) {
 export async function jobsBySkill(env, skillNames, { limit = 100, offset = 0 } = {}) {
   const names = (Array.isArray(skillNames) ? skillNames : [skillNames]).filter(Boolean);
   if (!names.length) return [];
+  // ROW-READ BUDGET (crawler-breadth): skills are the highest-cardinality public
+  // directory entity (free-text, effectively unbounded) — a search-engine crawler
+  // visiting every unique /skills/:slug URL in the sitemap once each turns a
+  // "bounded per page" cost into a large total, since each is a cache MISS the
+  // first time regardless of TTL. Precomputed id-lists (lib/platform/site-cache.js)
+  // make this an indexed `WHERE id IN (...)` lookup instead — cheap on every hit,
+  // not just repeat hits. Falls back to the live bounded query when the cache is
+  // cold, a name isn't tracked (long tail beyond TRACKED_SKILL_IDS), or the
+  // requested page reaches past the cached id-list's length (rare, deep pagination).
+  try {
+    const cachedIdsByName = await readSiteCache(env, 'dir:skill_jobs');
+    if (cachedIdsByName) {
+      const ids = [...new Set(names.flatMap((n) => cachedIdsByName[n] || []))].sort((a, b) => b - a);
+      if (ids.length) {
+        // D1 rejects a query with more than 100 bound parameters; a normal page
+        // (limit=20-30) never gets close, but an admin-configurable "jobs per
+        // article" setting or several merged directory-override names combined
+        // could in theory. Capped defensively; the (rare) remainder falls
+        // through to the live query below rather than the request failing.
+        const page = ids.slice(offset, offset + Math.min(limit, 100));
+        if (page.length) {
+          const placeholders = page.map(() => '?').join(',');
+          const { results } = await env.DB.prepare(
+            `SELECT ${JOB_LISTING_COLUMNS} FROM jobs WHERE id IN (${placeholders}) ORDER BY ${JOB_MANUAL_PIN_SORT_SQL}`
+          ).bind(...page).all();
+          return results || [];
+        }
+        // page is empty only when offset >= ids.length: deep pagination past
+        // what was cached — fall through to the live (bounded) query below.
+      }
+    }
+  } catch (e) { /* fall through to the live query */ }
   try {
     const placeholders = names.map(() => '?').join(',');
     const { results } = await env.DB.prepare(

@@ -299,6 +299,54 @@ ok(cronErrors.length === 0, `scheduled tasks completed without errors (${JSON.st
   }
 }
 
+
+// ── REGRESSION: crawler-breadth row-read budget. A bounded window keeps any ONE
+// page cheap, but a search-engine crawler that systematically visits every
+// unique /skills/:slug URL in the sitemap turns "cheap per page" into "still
+// huge in total" for high-cardinality entities like skills (effectively
+// unbounded, free-text). See lib/platform/site-cache.js's `dir:skill_jobs`
+// (precomputed per-skill job-ID lists) and lib/directory/entities.js's
+// jobsBySkill(). This seeds many distinct skills, visits each skill's detail
+// page ONCE (a crawler never revisiting the same URL — so a page-cache TTL
+// alone cannot help), and asserts both correctness and a bounded total cost. ──
+{
+  const crawlDb = new D1Shim();
+  const { schemaState } = await import('../src/db/schema/state.js');
+  Object.assign(schemaState, { core: false, ai: false, account: false, versionConfirmed: false, ensurePromise: null });
+  mem.clear();
+  const crawlWorker = (await import('../src/index.js?crawl')).default;
+  const crawlEnv = { DB: crawlDb, ADMIN_PASSWORD: 'test-admin-pass-123', CSRF_SECRET: 'csrf-secret-test-value-xyz' };
+  for (let i = 0; i < 60; i++) {
+    await crawlWorker.fetch(new Request(`${BASE}/privacy`), { ...crawlEnv }, ctx);
+    if (await crawlDb.prepare("SELECT v FROM _schema_meta WHERE k='version'").first().catch(() => null)) break;
+  }
+  const SKILLS = 120;
+  for (let i = 0; i < 1200; i++) {
+    const skills = JSON.stringify([`crawlskill-${i % SKILLS}`, `crawlskill-${(i + 17) % SKILLS}`]);
+    await crawlDb.prepare(
+      `INSERT INTO jobs (title,company,location,url,description,salary,remote_type,skills,status,created_at,updated_at,expires_at,source)
+       VALUES (?,?,?,?,?,?,?,?, 'active', datetime('now','-' || ? || ' day'), datetime('now'), datetime('now','+30 day'), 'test')`
+    ).bind(`Crawl Job ${i}`, `Co ${i % 80}`, 'Remote', `https://example.com/crawl/${i}`, 'd', '', 'fully_remote', skills, i % 20).run();
+  }
+  const { refreshSiteCache } = await import('../src/lib/platform/site-cache.js');
+  await refreshSiteCache({ ...crawlEnv });
+
+  let totalCalls = 0;
+  let sawJobsOnEveryPage = true;
+  for (let i = 0; i < SKILLS; i++) {
+    crawlDb.startRequest(0);
+    const before = crawlDb.calls;
+    const res = await crawlWorker.fetch(new Request(`${BASE}/skills/crawlskill-${i}`, { headers: { 'User-Agent': 'Googlebot/2.1', 'CF-Connecting-IP': `203.0.113.${i % 250}` } }), { ...crawlEnv }, ctx);
+    const html = await res.text();
+    await Promise.allSettled(pending.splice(0));
+    totalCalls += crawlDb.calls - before;
+    if (res.status !== 200 || !html.includes('Crawl Job')) sawJobsOnEveryPage = false;
+  }
+  ok(sawJobsOnEveryPage, 'every crawled skill page actually shows its jobs (cache path is correct, not just cheap)');
+  const avgCalls = totalCalls / SKILLS;
+  ok(avgCalls < 10, `crawling ${SKILLS} unique skill pages once each averages a bounded D1 call count (${avgCalls.toFixed(1)}/page) — must not scale with catalogue size`);
+}
+
 // ── sanitizer ──
 ok(sanitizeRichHtml('<p onclick="x()">a<script>1</script><img src=x onerror=1><a href="javascript:1">l</a></p>') === '<p>a<a>l</a></p>', 'sanitizer strips script/handlers/javascript:');
 

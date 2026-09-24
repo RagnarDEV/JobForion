@@ -96,6 +96,10 @@ async function upsertMany(env, entries) {
 
 const SCAN_PAGE = 4000;
 const SCAN_MAX_PAGES = 40; // hard ceiling: 160k jobs
+// Enough for ~2 pages of a skill's job listing (JOB_LISTING page size is 20);
+// pagination past this falls back to the bounded live query (jobsBySkill).
+const SKILL_ID_CAP = 60;
+const TRACKED_SKILL_IDS = 1500; // distinct skill names that get a cached id-list
 
 // Single keyset-paginated pass over the ACTIVE jobs → every aggregate at once.
 export async function refreshSiteCache(env) {
@@ -107,6 +111,16 @@ export async function refreshSiteCache(env) {
   const companyCounts = new Map();  // lower -> { name, count }
   const remoteCompanies = new Map();
   const skillCounts = new Map();    // lower -> { name, count }
+  // CRAWLER-BREADTH FIX: a bounded window (see lib/platform/job-window.js)
+  // keeps any ONE page cheap, but a search-engine crawler that systematically
+  // visits every unique /skills/:slug URL in the sitemap turns "cheap per page"
+  // into "still huge in total" — thousands of distinct skills x a few thousand
+  // rows each. Skills are the highest-cardinality entity on the site (free-text,
+  // effectively unbounded), so recent job IDs per skill are captured here (id
+  // DESC order, capped) and detail pages become an indexed `WHERE id IN (...)`
+  // lookup (lib/directory/entities.js's jobsBySkill) instead of a scan+filter —
+  // cheap on EVERY hit, not just repeat hits within the cache TTL.
+  const skillJobIds = new Map();    // name -> number[] (capped at SKILL_ID_CAP)
   const locationCounts = new Map(); // raw location -> count
   const catCounts = Object.fromEntries(catKeys.map(k => [k, 0]));
   const salaryAgg = Object.fromEntries(catKeys.map(k => [k, { mins: [], maxs: [] }]));
@@ -137,9 +151,12 @@ export async function refreshSiteCache(env) {
       if (j.location) locationCounts.set(j.location, (locationCounts.get(j.location) || 0) + 1);
       if (j.skills && j.skills !== '[]') {
         try {
-          for (const s of JSON.parse(j.skills)) {
-            const name = String(s || '').trim(); if (!name) continue;
+          for (const skillName of JSON.parse(j.skills)) {
+            const name = String(skillName || '').trim(); if (!name) continue;
             const e = skillCounts.get(name) || { name, count: 0 }; e.count++; skillCounts.set(name, e);
+            const ids = skillJobIds.get(name);
+            if (ids) { if (ids.length < SKILL_ID_CAP) ids.push(j.id); }
+            else skillJobIds.set(name, [j.id]);
           }
         } catch (e) { /* malformed skills JSON */ }
       }
@@ -198,7 +215,15 @@ export async function refreshSiteCache(env) {
   await upsertMany(env, [
     ['stats', stats],
     ['dir:companies', top(companyCounts, 600).map(c => ({ name: c.name, count: c.count }))],
-    ['dir:skills', top(skillCounts, 600).map(s => ({ name: s.name, count: s.count }))],
+    ['dir:skills', top(skillCounts, TRACKED_SKILL_IDS).map(s => ({ name: s.name, count: s.count }))],
+    // Only the top TRACKED_SKILL_IDS by frequency get an id-list (bounds the
+    // JSON payload size); the rest fall back to the live bounded query, same as
+    // before this cache existed — no regression, just no speedup for the very
+    // long tail (which is also the lowest-traffic tail).
+    ['dir:skill_jobs', Object.fromEntries(
+      [...skillCounts.entries()].sort((a, b) => b[1].count - a[1].count).slice(0, TRACKED_SKILL_IDS)
+        .map(([lower, meta]) => [meta.name, skillJobIds.get(meta.name) || []])
+    )],
     ['dir:locations', locations],
     ['dir:remote_companies', [...remoteCompanies.entries()].sort((a, b) => b[1] - a[1]).slice(0, 24).map(([company, c]) => ({ company, c }))],
     ['salary:bands', bands],
