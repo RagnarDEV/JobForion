@@ -383,6 +383,16 @@ export async function ensureAccountTables(env) {
   // Company pages / related jobs: `WHERE company = ? AND status = 'active' ORDER BY featured DESC, id DESC`
   await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_jobs_company_status_id ON jobs(company, status, id DESC)`).run();
   await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_jobs_status_salary_tier ON jobs(status, salary_tier, created_at DESC)`).run();
+  // ROW-READ BUDGET (severe): backfillSalaryUsd() (db/sync.js) selects its next
+  // batch via `WHERE salary_tier IS NULL ORDER BY id ASC LIMIT 300`. Without a
+  // matching index this is "SCAN jobs" in id order — on a catalogue where
+  // already-backfilled jobs have LOW ids and only recent ones are still NULL,
+  // EVERY call re-scans the entire already-done portion of the table just to
+  // reach its next 300-row batch (one click could scan hundreds of thousands of
+  // rows). A partial index containing ONLY the pending rows makes this and the
+  // matching "remaining" count both a direct index scan of just the remaining
+  // work, however large the table is.
+  await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_jobs_salary_tier_pending ON jobs(id) WHERE salary_tier IS NULL`).run();
 
   // Retain only the minimum tombstone needed to return an accurate 410 for a
   // URL that really existed and was later hard-deleted. This is additive and

@@ -347,6 +347,53 @@ ok(cronErrors.length === 0, `scheduled tasks completed without errors (${JSON.st
   ok(avgCalls < 10, `crawling ${SKILLS} unique skill pages once each averages a bounded D1 call count (${avgCalls.toFixed(1)}/page) — must not scale with catalogue size`);
 }
 
+// ── REGRESSION (severe): backfillSalaryUsd()'s batch-selection query used to be
+// `WHERE salary_tier IS NULL ORDER BY id ASC LIMIT n` with NO matching index. On
+// a catalogue where already-processed jobs have LOW ids and only recent ones are
+// still pending, this scanned almost the ENTIRE table on every single click —
+// confirmed by direct SQLite timing: 24.5ms at 1M rows vs 0.18ms with the fix
+// (flat regardless of table size). This is very likely what caused "4,000,000
+// rows read in 30 minutes from only 832 queries" in production. See the
+// idx_jobs_salary_tier_pending partial index (db/schema/account-tables.js). ──
+{
+  const bfDb = new D1Shim();
+  const { schemaState } = await import('../src/db/schema/state.js');
+  Object.assign(schemaState, { core: false, ai: false, account: false, versionConfirmed: false, ensurePromise: null });
+  mem.clear();
+  const bfWorker = (await import('../src/index.js?backfill')).default;
+  const bfEnv = { DB: bfDb, ADMIN_PASSWORD: 'test-admin-pass-123', CSRF_SECRET: 'csrf-secret-test-value-xyz' };
+  for (let i = 0; i < 60; i++) {
+    await bfWorker.fetch(new Request(`${BASE}/privacy`), { ...bfEnv }, ctx);
+    if (await bfDb.prepare("SELECT v FROM _schema_meta WHERE k='version'").first().catch(() => null)) break;
+  }
+  const OLD = 6000, PENDING = 50;
+  bfDb.db.exec('BEGIN');
+  const ins = bfDb.db.prepare(`INSERT INTO jobs (title,company,location,url,description,salary,remote_type,skills,status,salary_tier,salary_min_usd,salary_max_usd,created_at,updated_at,expires_at,source) VALUES (?,?,?,?,?,?,?,?, 'active', ?, ?, ?, datetime('now'), datetime('now'), datetime('now','+30 day'), 'test')`);
+  for (let i = 0; i < OLD; i++) ins.run(`Old ${i}`, 'Co', 'Remote', `https://example.com/old${i}`, 'd', '$90k', 'fully_remote', '[]', 'GOOD', 90000, 90000);
+  for (let i = 0; i < PENDING; i++) ins.run(`Pending ${i}`, 'Co', 'Remote', `https://example.com/pending${i}`, 'd', '$90k', 'fully_remote', '[]', null, null, null);
+  bfDb.db.exec('COMMIT');
+
+  // A probe SQL function is invoked once per row the storage engine actually
+  // visits while filtering — the reliable way to measure "rows scanned", since
+  // wall-clock timing is too noisy at this small a scale and D1's own row-read
+  // metric isn't observable outside production. Wraps `id` (not `salary_tier`
+  // itself) so it never interferes with the partial index's own predicate.
+  let probeCount = 0;
+  bfDb.db.function('probe', { deterministic: false }, (id) => { probeCount++; return 1; });
+  bfDb.startRequest(0);
+  probeCount = 0;
+  const patched = bfDb.prepare;
+  bfDb.prepare = (sql) => patched.call(bfDb, sql.includes('salary_tier IS NULL') && sql.includes('ORDER BY id ASC') ? sql.replace('WHERE salary_tier IS NULL', 'WHERE salary_tier IS NULL AND probe(id) = 1') : sql);
+
+  const { backfillSalaryUsd } = await import('../src/db/sync.js');
+  const result = await backfillSalaryUsd({ ...bfEnv }, { batchSize: 30 });
+  bfDb.prepare = patched;
+
+  ok(result.processed === 30, `backfill processes a full batch (${result.processed}/30)`);
+  ok(probeCount <= 100, `batch-selection query touches a bounded number of rows regardless of catalogue size (${probeCount} rows touched, ${OLD} already-processed jobs precede the pending ones by id)`);
+}
+
+
 // ── sanitizer ──
 ok(sanitizeRichHtml('<p onclick="x()">a<script>1</script><img src=x onerror=1><a href="javascript:1">l</a></p>') === '<p>a<a>l</a></p>', 'sanitizer strips script/handlers/javascript:');
 

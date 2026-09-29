@@ -12,6 +12,7 @@ import { getSettings } from '../lib/platform/settings.js';
 import { parseSalary, extractSalaryFromDescription } from '../lib/jobs/salary.js';
 import { classifySalaryFromParsed, salaryClassificationForJob } from '../lib/jobs/salary-tier.js';
 import { extractSkillsFromText } from '../lib/jobs/skill-extraction.js';
+import { cappedCount } from '../lib/platform/job-window.js';
 
 // QUERIES only applies to a future keyword-search provider (ignoresQuery ===
 // false) — every provider currently registered is a per-company/tenant ATS
@@ -603,13 +604,30 @@ export async function backfillSalaryUsd(env, { batchSize = 300 } = {}) {
   await ensureTable(env);
   const safeBatchSize = Math.max(1, Math.min(300, Number.isFinite(Number(batchSize)) ? Math.floor(Number(batchSize)) : 300));
   const settings = await getSettings(env);
-  const { results: rows } = await env.DB.prepare(
-    `SELECT id, salary, description, salary_min_usd, salary_max_usd
-       FROM jobs
-      WHERE salary_tier IS NULL
-      ORDER BY id ASC
-      LIMIT ?`
-  ).bind(safeBatchSize).all();
+  // ROW-READ BUDGET (severe, see the idx_jobs_salary_tier_pending migration in
+  // db/schema/account-tables.js for the full explanation): explicitly forced
+  // to the partial index so this NEVER silently regresses back to scanning
+  // every already-backfilled row before reaching the next pending batch.
+  let rows;
+  try {
+    ({ results: rows } = await env.DB.prepare(
+      `SELECT id, salary, description, salary_min_usd, salary_max_usd
+         FROM jobs INDEXED BY idx_jobs_salary_tier_pending
+        WHERE salary_tier IS NULL
+        ORDER BY id ASC
+        LIMIT ?`
+    ).bind(safeBatchSize).all());
+  } catch (e) {
+    // Narrow post-deploy window before the resumable migration has reached
+    // this index yet — fall back rather than fail the whole request.
+    ({ results: rows } = await env.DB.prepare(
+      `SELECT id, salary, description, salary_min_usd, salary_max_usd
+         FROM jobs
+        WHERE salary_tier IS NULL
+        ORDER BY id ASC
+        LIMIT ?`
+    ).bind(safeBatchSize).all());
+  }
 
   const stats = { processed: 0, high: 0, good: 0, standard: 0, unknown: 0, errors: 0 };
   if (rows && rows.length) {
@@ -642,8 +660,14 @@ export async function backfillSalaryUsd(env, { batchSize = 300 } = {}) {
     }
   }
 
-  const { results: remainingRows } = await env.DB.prepare(
-    `SELECT COUNT(*) c FROM jobs WHERE salary_tier IS NULL`
-  ).all();
-  return { ...stats, remaining: Number(remainingRows?.[0]?.c || 0) };
+  // ROW-READ BUDGET: this used to be an UNBOUNDED `COUNT(*) WHERE salary_tier
+  // IS NULL` — on a catalogue where most jobs haven't been backfilled yet (e.g.
+  // right after this feature shipped, or after a large sync), that is hundreds
+  // of thousands of rows, on EVERY click of "Backfill Salary Data". This is
+  // exactly the kind of unbounded live aggregate the rest of this project's D1
+  // row-read-budget work eliminated everywhere else — this one was missed.
+  // Capped: "20,000+ remaining" is exactly as actionable as an exact count for
+  // a progress indicator, at a small fraction of the cost.
+  const remaining = await cappedCount(env, 'jobs', 'salary_tier IS NULL', [], 20000, 'idx_jobs_salary_tier_pending');
+  return { ...stats, remaining };
 }
