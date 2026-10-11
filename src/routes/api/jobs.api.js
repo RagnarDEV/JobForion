@@ -14,8 +14,14 @@ import { attachCompanyLogos } from '../../lib/companies/company-logos.js';
 import { hydrateHotPay } from '../../lib/jobs/hot-pay.js';
 import { enqueueAnalyticsEvents } from '../../lib/analytics/events.js';
 
+// Whitelisted params only: arbitrary extra query strings must never create new
+// cache entries (each one would be a fresh, full D1 query).
+const JOBS_CACHE_PARAMS = ['page', 'category', 'search', 'q', 'remote_type', 'employment_type', 'seniority', 'salary_min', 'salary_max', 'salary_tier', 'days', 'source_type', 'sort', 'country', 'skill', 'company'];
 function publicJobsCacheKey(url) {
-  return new Request(url.toString(), { method: 'GET' });
+  const params = new URLSearchParams();
+  for (const name of [...JOBS_CACHE_PARAMS].sort()) { const v = url.searchParams.get(name); if (v) params.set(name, v.slice(0, 200)); }
+  const qs = params.toString();
+  return new Request(`${url.origin}${url.pathname}${qs ? `?${qs}` : ''}`, { method: 'GET' });
 }
 
 async function getPublicJobsCache(url, request) {
@@ -44,6 +50,10 @@ export async function handleJobsApi(url, request, env, ctx) {
     // normal pagination/filter-clicking speed) because this also backs
     // legitimate in-page search-as-you-type; it exists to blunt
     // scraping/DoS, not to throttle real visitors.
+    // Cache hits cost ZERO D1 rows/writes: look up the edge cache BEFORE the
+    // (D1-backed) rate limiter, which only needs to guard cache misses.
+    const cachedJobs = await getPublicJobsCache(url, request);
+    if (cachedJobs) return cachedJobs;
     const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
     const rl = await checkRateLimit(env, `api-jobs:${ip}`, { maxRequests: 60, windowMinutes: 1 });
     if (!rl.allowed) {
@@ -52,8 +62,6 @@ export async function handleJobsApi(url, request, env, ctx) {
         headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*", "Retry-After": String((rl.retryAfterMinutes || 1) * 60) },
       });
     }
-    const cachedJobs = await getPublicJobsCache(url, request);
-    if (cachedJobs) return cachedJobs;
     // Page Size (plan §11/§26) — `limit` is a fixed constant, never read
     // from the query string at all, so a crafted `?limit=999999` has
     // nothing to attach to. `page` IS user-controlled and must be

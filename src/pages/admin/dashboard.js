@@ -141,12 +141,25 @@ export async function renderDashboardContent(env) {
     rows(cached['admin:tiers']),
   ]);
 
-  const [{ results: totalVisitsR }, { results: visitsTodayR }, { results: visits7dR }, { results: uniqCountriesR }] = await Promise.all([
-    capped('visits', 20000),
-    capped("visits WHERE created_at >= datetime('now','-1 day')", 20000),
-    capped("visits WHERE created_at >= datetime('now','-7 day')", 20000),
-    q("SELECT COUNT(DISTINCT country) c FROM (SELECT country FROM visits WHERE created_at >= datetime('now','-7 day') LIMIT 20000)"),
+  // ROW-READ BUDGET: `visits` has no created_at index, so every `created_at >= …`
+  // filter used to walk the table from its OLDEST row. All visit widgets now come
+  // from ONE read of the newest VISIT_SAMPLE rows (id DESC = primary-key order),
+  // aggregated in JS. Total visits = MAX(id) (autoincrement), a 1-row lookup.
+  const VISIT_SAMPLE = 5000;
+  const [{ results: visitSampleR }, { results: maxVisitR }] = await Promise.all([
+    q(`SELECT path, country, created_at FROM visits ORDER BY id DESC LIMIT ${VISIT_SAMPLE}`),
+    q('SELECT MAX(id) c FROM visits'),
   ]);
+  const visitRows = visitSampleR || [];
+  const cut1 = new Date(Date.now() - 86400000).toISOString().slice(0, 19).replace('T', ' ');
+  const cut7 = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 19).replace('T', ' ');
+  const cut14 = new Date(Date.now() - 14 * 86400000).toISOString().slice(0, 19).replace('T', ' ');
+  const v7 = visitRows.filter(r => String(r.created_at || '') >= cut7);
+  const totalVisitsR = [{ c: Number(maxVisitR?.[0]?.c || 0) }];
+  const visitsTodayR = [{ c: visitRows.filter(r => String(r.created_at || '') >= cut1).length }];
+  const visits7dR = [{ c: v7.length }];
+  const uniqCountriesR = [{ c: new Set(v7.map(r => r.country)).size }];
+  const tally = (rowsIn, key) => { const m = new Map(); for (const r of rowsIn) m.set(r[key], (m.get(r[key]) || 0) + 1); return [...m.entries()].sort((x, y) => y[1] - x[1]).slice(0, 8).map(([k, c]) => ({ [key]: k, c })); };
 
   const aiActivityCount = (aiActivityR || []).length;
   const aiFailureCount = (aiActivityR || []).filter(row => /failed|error/i.test(String(row.metadata || ''))).length;
@@ -176,9 +189,7 @@ export async function renderDashboardContent(env) {
   const { results: cleanupLogs } = await q("SELECT * FROM cleanup_logs ORDER BY id DESC LIMIT 6");
   const { results: lastCleanupR } = await q("SELECT created_at FROM cleanup_logs ORDER BY id DESC LIMIT 1");
 
-  const { results: dailyVisits } = await q(
-    "SELECT date(created_at) d, COUNT(*) c FROM (SELECT created_at FROM visits WHERE created_at >= datetime('now','-14 day') ORDER BY id DESC LIMIT 20000) GROUP BY d ORDER BY d ASC"
-  );
+  const dailyVisits = (() => { const m = new Map(); for (const r of visitRows) { if (String(r.created_at || '') < cut14) continue; const d = String(r.created_at).slice(0, 10); m.set(d, (m.get(d) || 0) + 1); } return [...m.entries()].map(([d, c]) => ({ d, c })); })();
   const dailyMap = Object.fromEntries((dailyVisits || []).map(r => [r.d, r.c]));
   const days = [];
   for (let i = 13; i >= 0; i--) {
@@ -187,12 +198,8 @@ export async function renderDashboardContent(env) {
   }
   const maxDaily = Math.max(1, ...days.map(d => d.count));
 
-  const { results: topPages } = await q(
-    "SELECT path, COUNT(*) c FROM (SELECT path FROM visits WHERE created_at >= datetime('now','-7 day') ORDER BY id DESC LIMIT 20000) GROUP BY path ORDER BY c DESC LIMIT 8"
-  );
-  const { results: topCountries } = await q(
-    "SELECT country, COUNT(*) c FROM (SELECT country FROM visits WHERE created_at >= datetime('now','-7 day') ORDER BY id DESC LIMIT 20000) GROUP BY country ORDER BY c DESC LIMIT 8"
-  );
+  const topPages = tally(v7, 'path');
+  const topCountries = tally(v7, 'country');
 
   const categories = await getCategories(env);
   const catCounts = categories.map(cat => ({ label: cat.label, count: Number(cached['cat:counts']?.[String(cat.key).toLowerCase()] || 0) }));

@@ -39,14 +39,14 @@ jobforion/
    │  ├─ seo/                   ← shared · jobs · categories · companies · countries · skills · search
    │  └─ job-page · blog · auth · pricing · user-dashboard · company-dashboard · admin/ (21)
    └─ lib/                      ← مقسّمة حسب النطاق
-      ├─ jobs/        salary · salary-tier · hot-pay · skill-extraction · saved-jobs · applications · job-alerts · job-card-styles
+      ├─ jobs/        related-jobs (وظائف مشابهة محدودة الكلفة) · salary · salary-tier · hot-pay · skill-extraction · saved-jobs · applications · job-alerts · job-card-styles
       ├─ directory/   entities · directory-overrides · geo-data · country-flags
       ├─ companies/   companies · company-logos · logo-proxy
       ├─ content/     blog-cms · pages-cms · homepage-* · nav-buttons · categories · category-icons · ad-slots · blog-automation/
       ├─ ai/          ai-service · ai-control-center · admin/career/content/job-intelligence · matching
       ├─ analytics/   events · tracker · tag
       ├─ seo/         jsonld · meta · breadcrumbs · sitemap
-      ├─ platform/    settings · cache · rate-limit · observability · activity-log · html-sanitizer · search-utils ·
+      ├─ platform/    config-memo · settings · cache · rate-limit · observability · activity-log · html-sanitizer · search-utils ·
       │               site-cache (طبقة التجميع المحسوبة مسبقاً — راجع docs/CHANGELOG.md) · job-window (استعلامات مقيَّدة)
       ├─ accounts/    session · csrf · password · permissions · tokens · email · users
       └─ monetization/core.js

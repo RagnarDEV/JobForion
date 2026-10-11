@@ -1,3 +1,4 @@
+import { memoConfig } from '../platform/config-memo.js';
 // src/lib/content/pages-cms.js
 // ════════════════════════════════════════════════════════════════
 // STATIC PAGES CMS — single source of truth is Cloudflare D1 (the
@@ -69,6 +70,10 @@ export async function getPages(env, { includeUnpublished = false } = {}) {
 }
 
 export async function getFooterPages(env) {
+  return memoConfig('footer_pages', () => load_getFooterPages(env));
+}
+
+async function load_getFooterPages(env) {
   try {
     const { results } = await env.DB.prepare(
       `SELECT slug, title FROM pages WHERE ${EFFECTIVE_STATUS_SQL} AND show_in_footer = 1 ORDER BY sort_order ASC, title ASC`
@@ -81,6 +86,10 @@ export async function getFooterPages(env) {
 // see the show_in_menu column added in db/schema.js. A page can appear in
 // the footer, the menu, both, or neither, independently.
 export async function getMenuPages(env) {
+  return memoConfig('menu_pages', () => load_getMenuPages(env));
+}
+
+async function load_getMenuPages(env) {
   try {
     const { results } = await env.DB.prepare(
       `SELECT slug, title FROM pages WHERE ${EFFECTIVE_STATUS_SQL} AND show_in_menu = 1 ORDER BY sort_order ASC, title ASC`

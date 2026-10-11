@@ -1,3 +1,4 @@
+import { memoConfig } from '../platform/config-memo.js';
 // src/lib/content/nav-buttons.js
 // ════════════════════════════════════════════════════════════════
 // CUSTOM MENU BUTTONS — arbitrary extra links/buttons an admin can add
@@ -15,6 +16,10 @@
 // ════════════════════════════════════════════════════════════════
 
 export async function getNavButtons(env) {
+  return memoConfig('nav_buttons', () => loadNavButtons(env));
+}
+
+async function loadNavButtons(env) {
   try {
     const { results } = await env.DB.prepare(
       'SELECT * FROM nav_buttons WHERE active = 1 ORDER BY sort_order ASC, id ASC'

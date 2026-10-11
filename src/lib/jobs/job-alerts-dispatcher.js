@@ -33,9 +33,9 @@ import { BASE_URL } from '../../config/constants.js';
 const MAX_JOBS_PER_EMAIL = 10;
 const DUE_WINDOW = { daily: 1, instant: 1, weekly: 7 };
 
-function buildMatchQuery(alert, sinceIso) {
-  const conditions = [`j.created_at > ?`, `j.status = 'active'`];
-  const params = [sinceIso];
+function buildMatchQuery(alert, sinceIso, minId = 0) {
+  const conditions = [`j.created_at > ?`, `j.status = 'active'`, `j.id >= ?`];
+  const params = [sinceIso, minId];
 
   if (alert.keywords) {
     conditions.push(`(LOWER(j.title) LIKE ? OR LOWER(j.company) LIKE ?)`);
@@ -110,7 +110,13 @@ export async function runJobAlertsDispatch(env) {
       }
 
       const sinceIso = alert.last_notified_at || new Date(Date.now() - windowDays * 86400000).toISOString();
-      const { sql, params } = buildMatchQuery(alert, sinceIso);
+      // ROW-READ BUDGET: first job newer than `since` via the created_at index (1 row).
+      // No such job -> nothing to match; otherwise the id lower bound keeps the
+      // ORDER BY id DESC LIMIT scan inside the new-jobs window instead of walking
+      // the whole table when the alert's filters match rarely.
+      const startRow = await env.DB.prepare(`SELECT id FROM jobs WHERE created_at > ? ORDER BY created_at ASC LIMIT 1`).bind(sinceIso).first();
+      if (!startRow) { skipped++; continue; }
+      const { sql, params } = buildMatchQuery(alert, sinceIso, Number(startRow.id) || 0);
       const { results: jobs } = await env.DB.prepare(sql).bind(...params).all();
 
       if (!jobs || !jobs.length) { skipped++; continue; } // no new matches — last_notified_at NOT touched, see file header

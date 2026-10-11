@@ -1,3 +1,4 @@
+import { memoConfig } from '../platform/config-memo.js';
 // Admin-created Homepage Sections. Unlike the fixed built-in sections in
 // homepage-sections.js, these records are intentionally content-driven. Their
 // HTML/CSS/JavaScript is only ever rendered through pageCodeFrameHtml(), which
@@ -33,6 +34,10 @@ function validateTitle(value) {
 // (getEnabledHomepageCustomSections calls it, admin CRUD functions below
 // are reached only via /admin, which already has its own error page).
 export async function getAllHomepageCustomSections(env) {
+  return memoConfig('homepage_custom_sections', () => loadAllHomepageCustomSections(env));
+}
+
+async function loadAllHomepageCustomSections(env) {
   try {
     const { results } = await env.DB.prepare(
       'SELECT * FROM homepage_custom_sections ORDER BY sort_order ASC, id ASC'

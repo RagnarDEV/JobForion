@@ -23,7 +23,7 @@
 import { CATEGORY_META as LEGACY_CATEGORY_META } from '../../config/constants.js';
 
 const KEY_PATTERN = /^[a-z][a-z0-9]{1,19}$/;
-const TTL_MS = 60000;
+const TTL_MS = 300000;
 let cache = null; // { rows: [...], loadedAt: number }
 
 function validateKey(key) {

@@ -438,13 +438,23 @@ export async function categorySalaryStats(env, categoryKey) {
 // how long they've been posting here — both factual, verifiable, and
 // specific to this site (not present in the scraped listing itself).
 export async function companySnapshot(env, companyName) {
+  // ROW-READ BUDGET: the old `COUNT(*), MIN(created_at)` read EVERY job of the
+  // company on EVERY job-page render (a large employer has hundreds). The count
+  // now stops at COMPANY_COUNT_CAP rows and the "first seen" date is a single
+  // index lookup of the company's oldest listing (≈ 1 row).
+  const COMPANY_COUNT_CAP = 200;
   try {
-    const { results } = await env.DB.prepare(
-      `SELECT COUNT(*) c, MIN(created_at) first_seen FROM jobs WHERE company = ? AND ${PUBLIC_JOB_STATUS_NOINDEX_SQL}`
-    ).bind(companyName).all();
-    const row = results?.[0];
-    return { openPositions: row?.c || 0, firstSeen: row?.first_seen || null };
+    const [countRes, firstRow] = await Promise.all([
+      env.DB.prepare(
+        `SELECT COUNT(*) c FROM (SELECT 1 FROM jobs WHERE company = ? AND ${PUBLIC_JOB_STATUS_NOINDEX_SQL} LIMIT ${COMPANY_COUNT_CAP})`
+      ).bind(companyName).all(),
+      env.DB.prepare(
+        `SELECT created_at FROM jobs WHERE company = ? AND ${PUBLIC_JOB_STATUS_NOINDEX_SQL} ORDER BY id ASC LIMIT 1`
+      ).bind(companyName).first(),
+    ]);
+    const count = Number(countRes?.results?.[0]?.c || 0);
+    return { openPositions: count, capped: count >= COMPANY_COUNT_CAP, firstSeen: firstRow?.created_at || null };
   } catch (e) {
-    return { openPositions: 0, firstSeen: null };
+    return { openPositions: 0, capped: false, firstSeen: null };
   }
 }

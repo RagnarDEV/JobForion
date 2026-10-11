@@ -21,6 +21,7 @@
 // section it belongs to (or add a new one here, one line) — never grow
 // this file itself.
 
+import { clearConfigMemo } from '../lib/platform/config-memo.js';
 import { handleAdminAuthRoute } from './admin/auth.router.js';
 import { handleAdminJobsRoute } from './admin/jobs.router.js';
 import { handleAdminCompaniesRoute } from './admin/companies.router.js';
@@ -97,6 +98,7 @@ export async function handleAdminRoute(url, request, env, base) {
   for (const subRouter of ADMIN_SUB_ROUTERS) {
     const response = await subRouter(url, request, env, base);
     if (response) {
+      if (request.method === 'POST') clearConfigMemo(); // admin mutation: drop memoised config reads on this isolate
       if (request.method === 'GET' && isAuthenticated) {
         const headers = new Headers(response.headers);
         const token = await getAdminCsrfToken(env, cookie);

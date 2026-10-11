@@ -56,10 +56,12 @@ async function getSyncGovernorConfig(env) {
   };
 }
 
-async function getTotalJobsCount(env) {
+// ROW-READ BUDGET: the warm-up governor only needs to know whether the catalogue
+// has reached `cap` jobs — never the exact total. The count stops at `cap` rows
+// (default 150) instead of scanning every job on each sync.
+async function getTotalJobsCount(env, cap) {
   try {
-    const { results } = await env.DB.prepare('SELECT COUNT(*) c FROM jobs').all();
-    return results?.[0]?.c || 0;
+    return await cappedCount(env, 'jobs', '', [], Math.max(1, cap || 150));
   } catch (e) {
     return 0; // fail safe toward warm-up (throttled), never toward an unbounded first run
   }
@@ -480,7 +482,7 @@ export async function syncJobs(env, { onlyProvider = null } = {}) {
   // See "WARM-UP GOVERNOR" note above — this is the one place the cap is
   // actually applied, right before jobs from a provider get saved.
   const governor = await getSyncGovernorConfig(env);
-  const totalJobsBefore = await getTotalJobsCount(env);
+  const totalJobsBefore = await getTotalJobsCount(env, governor.warmupThreshold);
   const warmupActive = totalJobsBefore < governor.warmupThreshold;
   const perRunCap = warmupActive ? governor.warmupCapPerProvider : governor.hardCapPerProvider;
   subrequestsUsed = 0; // reset per invocation — this module can be reused across a warm isolate

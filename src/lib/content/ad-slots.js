@@ -60,7 +60,7 @@ export const DEFAULT_AD_CONFIG = {
   'blog-article-footer': { code: ADSTERRA_300x250, enabled: true, width: 300, height: 250 },
 };
 
-const TTL_MS = 60000;
+const TTL_MS = 300000;
 let cache = null; // { config: {...}, loadedAt }
 
 async function loadFromDb(env) {

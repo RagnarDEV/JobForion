@@ -40,7 +40,7 @@ const LEGACY_SECTION_ALIASES = Object.freeze({
 export const HOMEPAGE_SECTION_CODE_LIMITS = Object.freeze({ html: 120000, css: 60000, js: 60000 });
 const cleanCode = (value, limit) => typeof value === 'string' ? value.slice(0, limit) : '';
 
-const TTL_MS = 60000; // same 60s per-isolate cache convention as lib/content/ad-slots.js and lib/platform/settings.js
+const TTL_MS = 300000; // same 60s per-isolate cache convention as lib/content/ad-slots.js and lib/platform/settings.js
 let cache = null; // { sections, loadedAt }
 
 async function loadFromDb(env) {

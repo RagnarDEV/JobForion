@@ -23,7 +23,9 @@ import { getCategories } from '../content/categories.js';
 
 const MEMO_MS = 5 * 60 * 1000;
 const memo = new Map(); // key -> { at, value }
-export const SITE_CACHE_MAX_AGE_MINUTES = 6 * 60 + 30;
+// 12.5h: the refresh costs ~2x the catalogue in rows read, jobs sync every 6h and
+// pages are edge-cached for hours anyway — twice a day is plenty.
+export const SITE_CACHE_MAX_AGE_MINUTES = 12 * 60 + 30;
 
 export function clearSiteCacheMemo() { memo.clear(); }
 
@@ -70,6 +72,20 @@ export async function siteCacheAgeMinutes(env) {
     const row = await env.DB.prepare(`SELECT (julianday('now') - julianday(updated_at)) * 1440 AS age FROM site_cache WHERE cache_key = 'stats'`).first();
     return row && row.age != null ? Number(row.age) : Infinity;
   } catch (e) { return Infinity; }
+}
+
+// Cool-down guard: a refresh that fails half-way never advances the `stats` row,
+// which used to make cron retry (and re-pay the full scan) every single hour.
+// Only one attempt per cooldown window can claim the right to refresh.
+export async function claimSiteCacheRefresh(env, cooldownMinutes = 180) {
+  try {
+    const r = await env.DB.prepare(
+      `INSERT INTO site_cache (cache_key, value, updated_at) VALUES ('_refresh_attempt', '1', CURRENT_TIMESTAMP)
+       ON CONFLICT(cache_key) DO UPDATE SET updated_at = CURRENT_TIMESTAMP
+       WHERE updated_at < datetime('now', '-' || ? || ' minutes')`
+    ).bind(String(cooldownMinutes)).run();
+    return Number(r?.meta?.changes || 0) > 0;
+  } catch (e) { return true; }
 }
 
 function isoDaysAgo(days) {
@@ -183,12 +199,28 @@ export async function refreshSiteCache(env) {
   }
 
   // Lifecycle / source breakdown for the admin dashboards (one grouped pass each).
-  let statusRows = [], sourceRows = [];
-  try { ({ results: statusRows } = await env.DB.prepare(`SELECT COALESCE(NULLIF(status,''),'(empty)') AS s, COUNT(*) AS c FROM jobs GROUP BY s ORDER BY c DESC`).all()); } catch (e) {}
-  try { ({ results: sourceRows } = await env.DB.prepare(`SELECT COALESCE(source,'unknown') AS s, COUNT(*) AS c FROM jobs GROUP BY s ORDER BY c DESC LIMIT 20`).all()); } catch (e) {}
-  let tierRows = [], sourceTypeRows = [];
-  try { ({ results: tierRows } = await env.DB.prepare(`SELECT COALESCE(salary_tier,'UNKNOWN') AS tier, COUNT(*) AS c FROM jobs GROUP BY COALESCE(salary_tier,'UNKNOWN')`).all()); } catch (e) {}
-  try { ({ results: sourceTypeRows } = await env.DB.prepare(`SELECT COALESCE(source_type,'provider') AS s, COUNT(*) AS c FROM jobs GROUP BY s`).all()); } catch (e) {}
+  // ONE grouped scan of the table (was four separate full scans = 4x the rows).
+  let statusRows = [], sourceRows = [], tierRows = [], sourceTypeRows = [];
+  try {
+    const { results: grouped } = await env.DB.prepare(
+      `SELECT COALESCE(NULLIF(status,''),'(empty)') AS s, COALESCE(source,'unknown') AS src, COALESCE(salary_tier,'UNKNOWN') AS tier, COALESCE(source_type,'provider') AS st, COUNT(*) AS c
+         FROM jobs GROUP BY s, src, tier, st`
+    ).all();
+    const roll = (keyFn, label) => {
+      const m = new Map();
+      for (const r of grouped || []) { const k = keyFn(r); m.set(k, (m.get(k) || 0) + Number(r.c || 0)); }
+      return [...m.entries()].sort((a, b) => b[1] - a[1]).map(([k, c]) => ({ [label]: k, c }));
+    };
+    statusRows = roll(r => r.s, 's');
+    sourceRows = roll(r => r.src, 's').slice(0, 20);
+    tierRows = roll(r => r.tier, 'tier');
+    sourceTypeRows = roll(r => r.st, 's');
+  } catch (e) {
+    // A column added by a still-pending migration is missing: fall back to the
+    // per-breakdown queries (each degrades independently, as before).
+    try { ({ results: statusRows } = await env.DB.prepare(`SELECT COALESCE(NULLIF(status,''),'(empty)') AS s, COUNT(*) AS c FROM jobs GROUP BY s ORDER BY c DESC`).all()); } catch (e2) {}
+    try { ({ results: sourceRows } = await env.DB.prepare(`SELECT COALESCE(source,'unknown') AS s, COUNT(*) AS c FROM jobs GROUP BY s ORDER BY c DESC LIMIT 20`).all()); } catch (e2) {}
+  }
   stats.totalAll = (statusRows || []).reduce((n, r) => n + Number(r.c || 0), 0);
   stats.hot = Number((tierRows || []).find(r => r.tier === 'HIGH')?.c || 0);
 

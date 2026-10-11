@@ -7,6 +7,18 @@ function normalizeCompanyName(value) {
   return String(value || '').trim().toLowerCase();
 }
 
+// ROW-READ BUDGET (D1 free tier, 5M rows/day): resolveCompanyLogos() used to hit
+// `companies` (+ `company_logos`) on EVERY card list / job page, and its
+// `LOWER(TRIM(name)) IN (...)` predicate could not use a plain index — each call
+// scanned the whole companies table. Results are now memoised per isolate
+// (positive AND negative hits) so a repeat company costs 0 rows for LOGO_MEMO_TTL_MS,
+// and only the names/ids not already known are sent to D1. The memo is cleared
+// on every logo/company write made through this isolate.
+const LOGO_MEMO_TTL_MS = 120000;
+const LOGO_MEMO_MAX = 4000;
+let logoMemo = new Map(); // 'n:<lower name>' | 'i:<id>' -> { at, logo, website }
+export function clearCompanyLogoMemo() { logoMemo = new Map(); }
+
 export function isSafeCompanyImageUrl(value) {
   const raw = String(value || '').trim();
   if (!raw || raw.startsWith('//')) return false;
@@ -18,12 +30,28 @@ export function isSafeCompanyImageUrl(value) {
 }
 
 async function resolveCompanyLogos(env, { names = [], ids = [] } = {}) {
-  const uniqueNames = [...new Set((names || []).map(normalizeCompanyName).filter(Boolean))];
-  const uniqueIds = [...new Set((ids || []).map(value => String(value || '').trim()).filter(value => /^\d+$/.test(value)))];
+  const allNames = [...new Set((names || []).map(normalizeCompanyName).filter(Boolean))];
+  const allIds = [...new Set((ids || []).map(value => String(value || '').trim()).filter(value => /^\d+$/.test(value)))];
   const byName = {};
   const byId = {};
   const websiteByName = {};
   const websiteById = {};
+  if (!allNames.length && !allIds.length) return { byName, byId, websiteByName, websiteById };
+
+  // Serve whatever is already memoised; only the misses go to D1.
+  const now = Date.now();
+  const uniqueNames = [];
+  const uniqueIds = [];
+  for (const n of allNames) {
+    const m = logoMemo.get(`n:${n}`);
+    if (m && now - m.at < LOGO_MEMO_TTL_MS) { if (m.logo) byName[n] = m.logo; if (m.website) websiteByName[n] = m.website; }
+    else uniqueNames.push(n);
+  }
+  for (const i of allIds) {
+    const m = logoMemo.get(`i:${i}`);
+    if (m && now - m.at < LOGO_MEMO_TTL_MS) { if (m.logo) byId[i] = m.logo; if (m.website) websiteById[i] = m.website; }
+    else uniqueIds.push(i);
+  }
   if (!uniqueNames.length && !uniqueIds.length) return { byName, byId, websiteByName, websiteById };
 
   const companyConditions = [];
@@ -37,9 +65,12 @@ async function resolveCompanyLogos(env, { names = [], ids = [] } = {}) {
     companyBinds.push(...uniqueIds);
   }
 
+  let queriesOk = true;
   // `companies.logo_url` is the source of truth for active, user/admin-managed
   // company records. Matching by both canonical id and normalized name keeps
   // provider jobs with a company_id and older name-only jobs on one path.
+  // (idx_companies_name_norm — an expression index on LOWER(TRIM(name)) — makes
+  // the name branch an index SEARCH instead of a full-table SCAN.)
   try {
     const { results } = await env.DB.prepare(
       `SELECT id, name, logo_url, website
@@ -65,7 +96,7 @@ async function resolveCompanyLogos(env, { names = [], ids = [] } = {}) {
       if (id) websiteById[id] = website;
       if (name) websiteByName[name] = website;
     }
-  } catch (e) {}
+  } catch (e) { queriesOk = false; }
 
   // Compatibility path for imported/provider-only company names and legacy
   // admin corrections. TRIM + LOWER makes old mixed-case/space-padded rows
@@ -81,7 +112,15 @@ async function resolveCompanyLogos(env, { names = [], ids = [] } = {}) {
         const key = normalizeCompanyName(row.company_lower);
         if (key && row.logo_url && !byName[key] && isSafeCompanyImageUrl(row.logo_url)) byName[key] = String(row.logo_url).trim();
       }
-    } catch (e) {}
+    } catch (e) { queriesOk = false; }
+  }
+
+  // Memoise only when every lookup succeeded — a transient D1 error must never
+  // be remembered as "this company has no logo".
+  if (queriesOk) {
+    if (logoMemo.size > LOGO_MEMO_MAX) logoMemo = new Map();
+    for (const n of uniqueNames) logoMemo.set(`n:${n}`, { at: now, logo: byName[n] || null, website: websiteByName[n] || null });
+    for (const i of uniqueIds) logoMemo.set(`i:${i}`, { at: now, logo: byId[i] || null, website: websiteById[i] || null });
   }
   return { byName, byId, websiteByName, websiteById };
 }
@@ -120,10 +159,12 @@ export async function setCompanyLogo(env, companyName, logoUrl) {
     `INSERT INTO company_logos (company_lower, logo_url, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)
      ON CONFLICT(company_lower) DO UPDATE SET logo_url = excluded.logo_url, updated_at = CURRENT_TIMESTAMP`
   ).bind(lower, url).run();
+  clearCompanyLogoMemo();
 }
 
 export async function removeCompanyLogo(env, companyName) {
   const lower = normalizeCompanyName(companyName);
   if (!lower) return;
   await env.DB.prepare('DELETE FROM company_logos WHERE company_lower = ?').bind(lower).run();
+  clearCompanyLogoMemo();
 }

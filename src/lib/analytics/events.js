@@ -236,19 +236,70 @@ export async function aggregateAnalytics(env, limit = 300) {
   } catch (e) { result.errors = 1; return result; }
 }
 
+// ROW-READ BUDGET: `visits` has NO created_at index (and adding one on a large
+// table would itself cost one row-write per row), so the old hourly
+// `DELETE FROM visits WHERE created_at < ...` scanned the WHOLE table 24x/day.
+// ids are monotonic with time, so expired rows are always the lowest ids:
+// look at the single oldest row (1 read) and only if it is expired delete a
+// bounded id-ordered slice. Cost: ~2 reads when nothing is expired.
+const PRUNE_BATCH = 500;
+const PRUNE_MAX_BATCHES = 5;
+async function pruneOldestVisits(env, days) {
+  const cutoff = new Date(Date.now() - days * 86400000).toISOString().slice(0, 19).replace('T', ' ');
+  let deleted = 0;
+  for (let i = 0; i < PRUNE_MAX_BATCHES; i++) {
+    const oldest = await env.DB.prepare('SELECT created_at FROM visits ORDER BY id ASC LIMIT 1').first();
+    if (!oldest) break;
+    if (oldest.created_at && String(oldest.created_at) >= cutoff) break;
+    const r = await env.DB.prepare('DELETE FROM visits WHERE id IN (SELECT id FROM visits ORDER BY id ASC LIMIT ?) AND (created_at IS NULL OR created_at < ?)').bind(PRUNE_BATCH, cutoff).run();
+    const n = Number(r?.meta?.changes || 0);
+    deleted += n;
+    if (n < PRUNE_BATCH) break;
+  }
+  return deleted;
+}
+
+// Same idea for the queue (indexed by created_at, but deletes are bounded so a
+// large backlog can never blow the daily rows-written quota in one run).
+async function pruneQueue(env, days) {
+  const cutoff = new Date(Date.now() - days * 86400000).toISOString();
+  let deleted = 0;
+  for (let i = 0; i < PRUNE_MAX_BATCHES; i++) {
+    const r = await env.DB.prepare('DELETE FROM analytics_event_queue WHERE id IN (SELECT id FROM analytics_event_queue WHERE created_at < ? ORDER BY created_at ASC LIMIT ?)').bind(cutoff, PRUNE_BATCH * 2).run();
+    const n = Number(r?.meta?.changes || 0);
+    deleted += n;
+    if (n < PRUNE_BATCH * 2) break;
+  }
+  return deleted;
+}
+
+// Runs ONCE PER DAY from cron (see app/cron.js), not hourly.
 export async function cleanupAnalytics(env, retention = '90') {
   if (retention === 'unlimited') return { deleted: 0, unlimited: true };
   const days = [30, 60, 90, 180, 365].includes(Number(retention)) ? Number(retention) : 90;
   try {
-    const queue = await env.DB.prepare("DELETE FROM analytics_event_queue WHERE created_at < datetime('now', '-' || ? || ' days')").bind(days).run();
-    const visits = await env.DB.prepare("DELETE FROM visits WHERE created_at < datetime('now', '-' || ? || ' days')").bind(days).run();
+    let deleted = 0;
+    deleted += await pruneQueue(env, days);
+    deleted += await pruneOldestVisits(env, days);
     const daily = await env.DB.prepare("DELETE FROM analytics_daily WHERE metric_date < date('now', '-' || ? || ' days')").bind(days).run();
     const searches = await env.DB.prepare("DELETE FROM analytics_search_daily WHERE metric_date < date('now', '-' || ? || ' days')").bind(days).run();
     const filters = await env.DB.prepare("DELETE FROM analytics_filter_daily WHERE metric_date < date('now', '-' || ? || ' days')").bind(days).run();
     const uniques = await env.DB.prepare("DELETE FROM analytics_daily_uniques WHERE metric_date < date('now', '-' || ? || ' days')").bind(days).run();
     const alerts = await env.DB.prepare("DELETE FROM analytics_alerts WHERE status='resolved' AND created_at < datetime('now', '-' || ? || ' days')").bind(days).run();
-    return { deleted: [queue, visits, daily, searches, filters, uniques, alerts].reduce((sum, item) => sum + Number(item.meta?.changes || 0), 0), retention: days };
+    deleted += [daily, searches, filters, uniques, alerts].reduce((sum, item) => sum + Number(item.meta?.changes || 0), 0);
+    return { deleted, retention: days };
   } catch (e) { return { deleted: 0, error: 'analytics_cleanup_failed' }; }
+}
+
+// Bounded queue health: pending count stops at 5,000 rows (idx on processed_at),
+// the two timestamps are single index lookups. Replaces a full-table SUM/MAX scan.
+async function queueHealth(env) {
+  const [queued, lp, le] = await Promise.all([
+    cappedCount(env, 'analytics_event_queue', 'processed_at IS NULL', [], 5000),
+    env.DB.prepare('SELECT processed_at FROM analytics_event_queue WHERE processed_at IS NOT NULL ORDER BY processed_at DESC LIMIT 1').first(),
+    env.DB.prepare('SELECT created_at FROM analytics_event_queue ORDER BY id DESC LIMIT 1').first(),
+  ]);
+  return { queued, processed_last_at: lp?.processed_at || null, last_event_at: le?.created_at || null };
 }
 
 function validDate(date) { return /^\d{4}-\d{2}-\d{2}$/.test(String(date || '')); }
@@ -305,7 +356,7 @@ export async function getAnalyticsOverview(env, input = {}) {
       // the matching rows are read) instead of an unindexed full-table scan.
       (async () => {
         const stats = await getSiteStats(env);
-        const { results } = await env.DB.prepare(`SELECT COUNT(*) c FROM jobs WHERE created_at >= ? AND created_at <= ?`).bind(`${range.from} 00:00:00`, `${range.to} 23:59:59`).all();
+        const results = [{ c: await cappedCount(env, 'jobs', 'created_at >= ? AND created_at <= ?', [`${range.from} 00:00:00`, `${range.to} 23:59:59`], 20000) }];
         const total = stats ? Number(stats.totalAll || 0) : await cappedCount(env, 'jobs', '', [], 20000);
         const active = stats ? Number(stats.totalActive || 0) : await cappedCount(env, 'jobs', "status = 'active'", [], 20000);
         return { results: [{ total, active, new_jobs: results?.[0]?.c || 0 }] };
@@ -313,7 +364,7 @@ export async function getAnalyticsOverview(env, input = {}) {
       env.DB.prepare(`SELECT COUNT(*) total, SUM(CASE WHEN status='active' THEN 1 ELSE 0 END) active, SUM(CASE WHEN created_at >= ? AND created_at <= ? THEN 1 ELSE 0 END) new_companies FROM companies`).bind(`${range.from} 00:00:00`, `${range.to} 23:59:59`).all(),
       env.DB.prepare(`SELECT currency, SUM(CASE WHEN status='succeeded' THEN gross_amount_minor ELSE 0 END) gross_minor, SUM(CASE WHEN status='succeeded' THEN net_amount_minor ELSE 0 END) net_minor, SUM(CASE WHEN status='succeeded' THEN provider_fee_minor ELSE 0 END) payment_fees_minor, SUM(CASE WHEN status='succeeded' THEN 1 ELSE 0 END) successful_payments, SUM(CASE WHEN status='failed' THEN 1 ELSE 0 END) failed_payments, AVG(CASE WHEN status='succeeded' THEN gross_amount_minor END) average_order_minor FROM monetization_transactions WHERE created_at >= ? AND created_at <= ? GROUP BY currency`).bind(`${range.from} 00:00:00`, `${range.to} 23:59:59`).all(),
       env.DB.prepare(`SELECT currency,SUM(amount_minor) refunds_minor FROM monetization_refunds WHERE status IN ('processed','succeeded','completed') AND created_at >= ? AND created_at <= ? GROUP BY currency`).bind(`${range.from} 00:00:00`, `${range.to} 23:59:59`).all(),
-      env.DB.prepare('SELECT SUM(CASE WHEN processed_at IS NULL THEN 1 ELSE 0 END) queued, MAX(processed_at) processed_last_at FROM analytics_event_queue').all(),
+      queueHealth(env).then(h => ({ results: [h] })),
     ]);
     const map = Object.fromEntries((events.results || []).map(row => [row.event_type, { events: Number(row.events || 0), uniques: Number(row.uniques || 0) }]));
     const previousMap = Object.fromEntries((previousEvents?.results || []).map(row => [row.event_type, { events: Number(row.events || 0), uniques: Number(row.uniques || 0) }]));
@@ -353,7 +404,7 @@ export async function getAnalyticsReport(env, type, input = {}) {
 export async function getAnalyticsFunnel(env, input = {}) { const overview = await getAnalyticsOverview(env, input); return { range: overview.range, stages: overview.funnel.map((stage, i, all) => ({ ...stage, conversion: i === 0 || !all[i - 1].count ? (i === 0 ? 100 : 0) : Number((stage.count / all[i - 1].count * 100).toFixed(2)), dropoff: i === 0 || !all[i - 1].count ? 0 : Number((100 - stage.count / all[i - 1].count * 100).toFixed(2)) })) }; }
 
 export async function getAnalyticsHealth(env) {
-  try { const { results } = await env.DB.prepare('SELECT SUM(CASE WHEN processed_at IS NULL THEN 1 ELSE 0 END) queued, MAX(created_at) last_event_at, MAX(processed_at) last_processed_at FROM analytics_event_queue').all(); return results?.[0] || { queued: 0 }; } catch (e) { return { queued: 0, error: 'health_unavailable' }; }
+  try { const h = await queueHealth(env); return { queued: h.queued, last_event_at: h.last_event_at, last_processed_at: h.processed_last_at }; } catch (e) { return { queued: 0, error: 'health_unavailable' }; }
 }
 
 export function csvEscape(value) { const raw = String(value ?? ''); return /[",\n]/.test(raw) ? `"${raw.replace(/"/g, '""')}"` : raw; }

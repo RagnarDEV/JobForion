@@ -407,7 +407,7 @@ export const WEEKDAY_OPTIONS = [
   { value: 6, label: 'Saturday' },
 ];
 
-const TTL_MS = 60000;
+const TTL_MS = 300000; // 5 min: this read costs every site_settings row per isolate; admin writes clear the local cache
 let cache = null; // { values: {...}, loadedAt: number }
 
 async function loadFromDb(env) {

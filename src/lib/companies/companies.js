@@ -6,7 +6,7 @@
 // an orphaned, unmanageable row.
 
 import { slugify } from '../directory/entities.js';
-import { isSafeCompanyImageUrl } from './company-logos.js';
+import { isSafeCompanyImageUrl, clearCompanyLogoMemo } from './company-logos.js';
 import { JOB_MANUAL_PIN_SORT_SQL, PUBLIC_JOB_STATUS_SQL, JOB_LISTING_COLUMNS } from '../../config/constants.js';
 
 // Job-matching condition shared by every "jobs that belong to this real
@@ -109,11 +109,13 @@ export async function updateCompanyProfile(env, companyId, {
     String(twitter_url || '').slice(0, 300), String(facebook_url || '').slice(0, 300),
     companyId
   ).run();
+  clearCompanyLogoMemo(); // profile logo/website/name changed — drop memoised logo lookups on this isolate
 }
 
 // ── Admin verification workflow (plan §14, §22) ────────────────────
 export async function setCompanyStatus(env, companyId, status) {
   await env.DB.prepare(`UPDATE companies SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`).bind(status, companyId).run();
+  clearCompanyLogoMemo();
   invalidateVerifiedCache(); // a suspended/rejected company must lose its badge without waiting out the full 60s TTL on THIS isolate
 }
 export async function setCompanyVerified(env, companyId, verified) {
@@ -263,7 +265,7 @@ export async function jobsForCompanyEntity(env, company, { limit = 100, offset =
 // D1 round trip per request while still going live within a minute.
 let verifiedCache = null;
 let verifiedCacheAt = 0;
-const VERIFIED_CACHE_TTL_MS = 60_000;
+const VERIFIED_CACHE_TTL_MS = 300_000;
 
 function invalidateVerifiedCache() { verifiedCache = null; verifiedCacheAt = 0; }
 

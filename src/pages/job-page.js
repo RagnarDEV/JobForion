@@ -103,7 +103,7 @@ function companySnapshotHtml(job, snapshot, siteName) {
     : null;
   return `<div class="insight-card">
     <div class="insight-card-title">${iconBuilding({ size: 15 })} About ${escapeHtml(job.company)} on ${escapeHtml(siteName)}</div>
-    <div class="insight-card-body">${escapeHtml(job.company)} currently has <strong>${snapshot.openPositions} open position${snapshot.openPositions === 1 ? '' : 's'}</strong> listed on ${escapeHtml(siteName)}${since ? `, hiring here since ${since}` : ''}. <a href="/companies/${slugify(job.company)}">View all openings</a></div>
+    <div class="insight-card-body">${escapeHtml(job.company)} currently has <strong>${snapshot.openPositions}${snapshot.capped ? '+' : ''} open position${snapshot.openPositions === 1 && !snapshot.capped ? '' : 's'}</strong> listed on ${escapeHtml(siteName)}${since ? `, hiring here since ${since}` : ''}. <a href="/companies/${slugify(job.company)}">View all openings</a></div>
   </div>`;
 }
 

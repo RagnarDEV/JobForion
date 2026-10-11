@@ -87,7 +87,7 @@ export async function handleSystemApi(url, request, env, ctx) {
     // one-line health check for whoever IS logged in.
     const ok = await verifyAdminCookie(env, request.headers.get('Cookie'));
     if (!ok) return new Response('Not found', { status: 404 });
-    const { results } = await env.DB.prepare("SELECT COUNT(*) as count FROM jobs").all();
+    const { results } = await env.DB.prepare("SELECT COUNT(*) as count FROM (SELECT 1 FROM jobs LIMIT 20000)").all();
     return new Response(JSON.stringify({ jobs_in_db: results[0]?.count || 0 }), { headers: { "Content-Type": "application/json" } });
   }
   return null;

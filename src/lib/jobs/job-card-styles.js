@@ -78,7 +78,7 @@ const SHADOWS = {
 const HOVER_EFFECTS = Object.freeze({ none: 'none', lift: 'lift', glow: 'glow' });
 
 const HEX_PATTERN = /^#[0-9a-fA-F]{6}$/;
-const TTL_MS = 60000;
+const TTL_MS = 300000;
 let cache = null; // { styles: {Free:{...},...}, loadedAt }
 
 function clamp(n, min, max, fallback) {

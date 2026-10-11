@@ -520,5 +520,12 @@ export async function ensureAccountTables(env) {
   await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_analytics_alerts_status ON analytics_alerts(status, created_at DESC)`).run();
 
   await ensureAiTables(env);
+
+  // ── D1 row-read budget (2026-10-11) — appended LAST so no earlier migration
+  // unit changes position. Both tables are small, so building the indexes is cheap.
+  // Expression indexes matching company-logos.js's `LOWER(TRIM(...)) IN (...)` predicates:
+  // turn a full-table SCAN of `companies` / `company_logos` into an index SEARCH.
+  await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_companies_name_norm ON companies(LOWER(TRIM(name)))`).run();
+  await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_company_logos_norm ON company_logos(LOWER(TRIM(company_lower)))`).run();
   schemaState.account = true;
 }
