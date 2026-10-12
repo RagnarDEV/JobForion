@@ -1,3 +1,4 @@
+import { resolveAdFrameOrigin } from '../lib/content/ad-origin.js';
 // src/app/security-headers.js
 // Site-wide security headers (CSP, HSTS, nosniff, ...). Extracted verbatim from
 // src/index.js so the entry point stays thin — this is the single place these
@@ -58,13 +59,20 @@ export function withSecurityHeaders(response, env = null) {
   // /ad-frame/* documents carry their own (ad-network friendly, sandboxed) CSP — see routes/ad-frame.router.js.
   if (headers.get('X-Ad-Frame')) {
     headers.delete('X-Ad-Frame');
-    for (const [name, value] of Object.entries(SECURITY_HEADERS)) if (name !== 'Content-Security-Policy') headers.set(name, value);
+    // X-Frame-Options is skipped too: framing is governed by this route's CSP frame-ancestors
+    // (the document may be served from the dedicated ad origin and framed by the main site).
+    for (const [name, value] of Object.entries(SECURITY_HEADERS)) if (name !== 'Content-Security-Policy' && name !== 'X-Frame-Options') headers.set(name, value);
     return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
   }
   for (const [name, value] of Object.entries(SECURITY_HEADERS)) headers.set(name, value);
   // Uploaded logos may use the configured public R2 domain instead of the
   // Worker proxy. Add only that validated origin to img-src; never widen the
   // policy to arbitrary external image hosts.
+  const adOrigin = resolveAdFrameOrigin(env);
+  if (adOrigin) {
+    const csp = headers.get('Content-Security-Policy') || '';
+    headers.set('Content-Security-Policy', csp.replace("frame-src 'self'", `frame-src 'self' ${adOrigin}`));
+  }
   const publicBase = String(env?.R2_PUBLIC_BASE_URL || '').trim();
   if (publicBase) {
     try {

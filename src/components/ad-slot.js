@@ -14,6 +14,7 @@
 //   'blog-article-footer'    — src/pages/blog.js, after each article body
 
 import { DEFAULT_AD_CONFIG } from '../lib/content/ad-slots.js';
+import { getAdFrameOrigin } from '../lib/content/ad-origin.js';
 
 // RELIABILITY — root cause: Adsterra's invoke.js renders the ad via
 // document.write(). Chrome (and Chromium-based mobile browsers) actively
@@ -76,10 +77,15 @@ export function adSlot(id, style = '', config = DEFAULT_AD_CONFIG, globalAdsEnab
     const boxStyle = `width:${slot.width}px;height:${slot.height}px;max-width:100%;margin:16px auto;${style}`;
     // The ad runs from /ad-frame/<id> (own CSP, opaque-origin sandbox) — never `srcdoc`,
     // which would inherit the strict site CSP and block the ad network's resources.
+    // With a dedicated ad origin (AD_FRAME_ORIGIN) the frame may safely keep its
+    // own origin (`allow-same-origin`) — it is cross-origin to the site. Without
+    // one it stays an opaque-origin sandbox (strictest, may not suit every network).
+    const adOrigin = getAdFrameOrigin();
+    const sandbox = 'allow-scripts allow-popups allow-popups-to-escape-sandbox allow-top-navigation-by-user-activation' + (adOrigin ? ' allow-same-origin' : '');
     return `<div class="ad-slot ad-slot-live" style="${boxStyle}">` +
-      `<iframe title="Advertisement" src="/ad-frame/${id}" loading="lazy" scrolling="no" ` +
+      `<iframe title="Advertisement" src="${adOrigin}/ad-frame/${id}" loading="lazy" scrolling="no" ` +
       `style="width:100%;height:100%;border:0;display:block" ` +
-      `sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox allow-top-navigation-by-user-activation"></iframe>` +
+      `sandbox="${sandbox}"></iframe>` +
       `</div>`;
   }
   const styleAttr = style ? ` style="${style}"` : '';

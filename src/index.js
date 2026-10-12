@@ -35,6 +35,7 @@ import { handleSeoPagesRoute } from './routes/seo-pages.router.js';
 import { handlePagesRoute, getCachedHomepage } from './routes/pages.router.js';
 import { handleApiRoute } from './routes/api.router.js';
 import { handleAdFrameRoute, AD_FRAME_PREFIX } from './routes/ad-frame.router.js';
+import { configureAdFrame, getAdFrameOrigin } from './lib/content/ad-origin.js';
 
 const NON_TRACKED_STATIC_PATHS = new Set([...ASSET_PATHS, '/feed.rss']);
 const LOGO_PROXY_PREFIX = '/logo/';
@@ -80,6 +81,15 @@ async function routeRequest(request, env, ctx, state) {
   // Retired domain? Redirect permanently before touching D1 or anything
   // else — this must work even if the database is having a bad day.
   if (RETIRED_HOSTS.has(url.hostname)) {
+    return Response.redirect(`${BASE_URL}${url.pathname}${url.search}`, 301);
+  }
+
+  // Dedicated ad origin (optional AD_FRAME_ORIGIN): it serves ONLY /ad-frame/*;
+  // anything else on that host goes to the canonical site, so it can never be
+  // used as a second copy of the site (cookies there are separate anyway).
+  configureAdFrame(env);
+  const adOrigin = getAdFrameOrigin();
+  if (adOrigin && url.origin === adOrigin && !url.pathname.startsWith(AD_FRAME_PREFIX)) {
     return Response.redirect(`${BASE_URL}${url.pathname}${url.search}`, 301);
   }
 

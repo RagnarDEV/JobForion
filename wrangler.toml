@@ -62,6 +62,14 @@ remote = true
 # /admin. If an API_KEY secret still exists from a previous deployment it
 # is simply ignored and safe to remove.
 
+# ── Optional dedicated ad origin ──
+# If an ad network renders an EMPTY box inside the default (opaque-origin) ad
+# sandbox: add a Custom Domain (Workers & Pages -> jobforion -> Settings ->
+# Domains & Routes) such as ads.jobforion.com, then uncomment the next two
+# lines and redeploy. It must be a sub-domain of the site (https only).
+# [vars]
+# AD_FRAME_ORIGIN = "https://ads.jobforion.com"
+
 # ── Scheduled tasks ──
 # ONE trigger only. Cloudflare's free plan allows 5 Cron Triggers per ACCOUNT,
 # so every job is dispatched by UTC time inside src/app/cron.js instead:
