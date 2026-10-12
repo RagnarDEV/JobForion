@@ -46,7 +46,7 @@ export const SECURITY_HEADERS = {
     "font-src 'self' https://fonts.gstatic.com",
     "img-src 'self' https://www.google-analytics.com https://*.r2.dev",
     "connect-src 'self' https://www.google-analytics.com https://analytics.google.com",
-    "frame-src https://www.highperformanceformat.com",
+    "frame-src 'self' https://www.highperformanceformat.com",
     "object-src 'none'",
     "frame-ancestors 'self'",
     "base-uri 'self'",
@@ -55,6 +55,12 @@ export const SECURITY_HEADERS = {
 
 export function withSecurityHeaders(response, env = null) {
   const headers = new Headers(response.headers);
+  // /ad-frame/* documents carry their own (ad-network friendly, sandboxed) CSP — see routes/ad-frame.router.js.
+  if (headers.get('X-Ad-Frame')) {
+    headers.delete('X-Ad-Frame');
+    for (const [name, value] of Object.entries(SECURITY_HEADERS)) if (name !== 'Content-Security-Policy') headers.set(name, value);
+    return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+  }
   for (const [name, value] of Object.entries(SECURITY_HEADERS)) headers.set(name, value);
   // Uploaded logos may use the configured public R2 domain instead of the
   // Worker proxy. Add only that validated origin to img-src; never widen the

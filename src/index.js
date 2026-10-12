@@ -34,6 +34,7 @@ import { handleCompanyRoute } from './routes/company.router.js';
 import { handleSeoPagesRoute } from './routes/seo-pages.router.js';
 import { handlePagesRoute, getCachedHomepage } from './routes/pages.router.js';
 import { handleApiRoute } from './routes/api.router.js';
+import { handleAdFrameRoute, AD_FRAME_PREFIX } from './routes/ad-frame.router.js';
 
 const NON_TRACKED_STATIC_PATHS = new Set([...ASSET_PATHS, '/feed.rss']);
 const LOGO_PROXY_PREFIX = '/logo/';
@@ -141,7 +142,11 @@ async function routeRequest(request, env, ctx, state) {
     !url.pathname.startsWith('/api/') && !url.pathname.startsWith('/admin') &&
     !url.pathname.startsWith('/sitemap') && !url.pathname.startsWith('/r2-asset/') &&
     !url.pathname.startsWith(LOGO_PROXY_PREFIX) &&
+    !url.pathname.startsWith(AD_FRAME_PREFIX) &&
     !NON_TRACKED_STATIC_PATHS.has(url.pathname);
+
+  // ── ad iframe documents (own CSP, sandboxed) — never tracked as page views ──
+  if (url.pathname.startsWith(AD_FRAME_PREFIX)) return withSecurityHeaders(await handleAdFrameRoute(url, request, env), env);
 
   // ── JSON API — dispatched early: API calls (including every analytics
   // beacon) never need to walk through the page routers below ──

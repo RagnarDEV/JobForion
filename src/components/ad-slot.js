@@ -55,14 +55,6 @@ function safeJsForScriptTag(str) {
   return JSON.stringify(str).replace(/</g, '\\u003c');
 }
 
-function adFrameScript(uid, code) {
-  return `<script>(function(){
-  var f=document.getElementById(${JSON.stringify(uid)});
-  if(!f)return;
-  try{f.srcdoc=${safeJsForScriptTag(code)};}catch(e){}
-})();</script>`;
-}
-
 // `config` (optional) is the resolved {slotId: {code,enabled,width,height}}
 // object from lib/content/ad-slots.js — defaults to DEFAULT_AD_CONFIG (the site's
 // hardcoded Adsterra setup) so any caller not yet passing dynamic config
@@ -81,13 +73,13 @@ export function adSlot(id, style = '', config = DEFAULT_AD_CONFIG, globalAdsEnab
   const slot = config[id] || DEFAULT_AD_CONFIG[id];
   if (!slot || !slot.enabled) return '';
   if (slot.code) {
-    const uid = `adf_${id.replace(/[^a-z0-9]/gi, '')}`;
     const boxStyle = `width:${slot.width}px;height:${slot.height}px;max-width:100%;margin:16px auto;${style}`;
+    // The ad runs from /ad-frame/<id> (own CSP, opaque-origin sandbox) — never `srcdoc`,
+    // which would inherit the strict site CSP and block the ad network's resources.
     return `<div class="ad-slot ad-slot-live" style="${boxStyle}">` +
-      `<iframe id="${uid}" title="Advertisement" scrolling="no" ` +
+      `<iframe title="Advertisement" src="/ad-frame/${id}" loading="lazy" scrolling="no" ` +
       `style="width:100%;height:100%;border:0;display:block" ` +
-      `sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox"></iframe>` +
-      adFrameScript(uid, slot.code) +
+      `sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox allow-top-navigation-by-user-activation"></iframe>` +
       `</div>`;
   }
   const styleAttr = style ? ` style="${style}"` : '';
