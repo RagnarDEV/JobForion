@@ -156,7 +156,7 @@ async function routeRequest(request, env, ctx, state) {
     !NON_TRACKED_STATIC_PATHS.has(url.pathname);
 
   // ── ad iframe documents (own CSP, sandboxed) — never tracked as page views ──
-  if (url.pathname.startsWith(AD_FRAME_PREFIX)) return withSecurityHeaders(await handleAdFrameRoute(url, request, env), env);
+  if (url.pathname.startsWith(AD_FRAME_PREFIX)) return handleAdFrameRoute(url, request, env); // the outer fetch() wraps EVERY response with withSecurityHeaders exactly once — wrapping here too would overwrite this route's own CSP
 
   // ── JSON API — dispatched early: API calls (including every analytics
   // beacon) never need to walk through the page routers below ──

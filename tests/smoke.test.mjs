@@ -397,4 +397,22 @@ ok(cronErrors.length === 0, `scheduled tasks completed without errors (${JSON.st
 // ── sanitizer ──
 ok(sanitizeRichHtml('<p onclick="x()">a<script>1</script><img src=x onerror=1><a href="javascript:1">l</a></p>') === '<p>a<a>l</a></p>', 'sanitizer strips script/handlers/javascript:');
 
+// ── Ad iframe documents: the route's OWN csp/framing headers must survive the full
+// worker pipeline (index.js wraps every response with withSecurityHeaders once;
+// a second wrap used to overwrite them with the strict site CSP + X-Frame-Options,
+// which silently blocked every ad). ──
+{
+  const res = await call('/ad-frame/homepage-results-top');
+  const csp = res.headers.get('Content-Security-Policy') || '';
+  ok(res.status === 200, 'ad-frame route answers 200');
+  ok(csp.includes('sandbox') && csp.includes('default-src *'), 'ad-frame keeps its own ad-network CSP end-to-end');
+  ok(!res.headers.get('X-Frame-Options'), 'ad-frame is not blocked by X-Frame-Options');
+  ok(res.headers.get('X-Ad-Frame') === null, 'internal marker header is not leaked');
+  const evil = await call('/ad-frame/not-a-slot');
+  ok(evil.status === 404, 'unknown ad slot id is a 404');
+  const home = await call('/');
+  ok((home.headers.get('Content-Security-Policy') || '').includes("default-src 'self'"), 'normal pages keep the strict site CSP');
+  ok(home.headers.get('X-Frame-Options') === 'SAMEORIGIN', 'normal pages keep X-Frame-Options');
+}
+
 console.log(`smoke tests: ${passed} assertions passed`);
