@@ -136,7 +136,7 @@ function showToast(msg,type='success'){
 const VIEWS=['vJobs','vSaved'];
 function showView(id){
   VIEWS.forEach(v=>{const el=document.getElementById(v);if(el)el.style.display=v===id?'block':'none';});
-  window.scrollTo({top:0,behavior:'smooth'});
+  window.scrollTo(0,0);
 }
 function goView(v){
   if(v==='jobs'){showView('vJobs');return;}
@@ -173,7 +173,7 @@ function renderJobsList(){
     const meta=CAT_META[k];
     const bg=pastelFor(j);
     const jts=jtStyleFor(j.job_type);
-    return\`<article class="job-card\${jobTypeCardClass(j.job_type)}" style="--cat-color:\${meta.color};\${jtCardStyleAttr(j.job_type,bg)};animation:fadeInUp .3s ease \${Math.min(idx,6)*.04}s both">
+    return\`<article class="job-card\${jobTypeCardClass(j.job_type)}" style="--cat-color:\${meta.color};\${jtCardStyleAttr(j.job_type,bg)}">
       <div class="card-inner" style="padding:\${jts.card_padding}px 16px;background:inherit">
         <a href="/job/\${j.id}" class="card-row1" aria-label="View \${esc(j.title)} at \${esc(j.company)}">
           \${logoHtml(j.company,jts.logo_size+'px',j.company_logo_url,j.company_website)}
@@ -360,7 +360,10 @@ function initHomepageReveal(){
   const root=document.documentElement;
   const sections=[...document.querySelectorAll('.homepage-reveal-section')];
   if(!sections.length)return;
-  root.classList.add('js-reveal-ready');
+  // Scroll-reveal is OFF by default (touch/scroll comfort + minimal motion pass): the
+  // js-reveal-ready class that arms the opacity/transform rules is only added when a
+  // page explicitly opts in with <html data-reveal="on">. Content is always visible.
+  if(root.getAttribute('data-reveal')==='on')root.classList.add('js-reveal-ready');
   const reduceMotion=window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   sections.forEach(section=>{
     section.querySelectorAll('.company-tile,.cg-item,.insight-tile').forEach((item,index)=>{
@@ -430,7 +433,7 @@ function clearFilters(){
   updateFiltersBadge();
   loadJobs();
 }
-function goPage(p){pg=p;loadJobs(true);window.scrollTo({top:0,behavior:'smooth'});}
+function goPage(p){pg=p;loadJobs(true);window.scrollTo(0,0);}
 
 function renderPagination(){
   const el=document.getElementById('pagination');

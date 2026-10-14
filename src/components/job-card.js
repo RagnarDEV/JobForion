@@ -53,7 +53,7 @@ export function jobLocationHtml(jobOrLocation, { compact = false, className = ''
   const location = typeof jobOrLocation === 'object' ? jobOrLocation?.location : jobOrLocation;
   const value = String(location || '').trim();
   if (!value) return '';
-  const compactStyle = compact ? ' style="font-size:11px;color:var(--ink3);max-width:180px;overflow:hidden;text-overflow:ellipsis"' : '';
+  const compactStyle = compact ? ' style="font-size:12.5px;color:var(--ink3);max-width:180px;overflow:hidden;text-overflow:ellipsis"' : '';
   return `<span class="job-location job-location-v2${compact ? ' job-location-compact' : ''}${className ? ` ${escapeHtml(className)}` : ''}" title="Job location"${compactStyle}>${iconMapPin({ size: compact ? 10 : 11 })} ${escapeHtml(value)}</span>`;
 }
 
@@ -95,16 +95,16 @@ export function jobRowMini(job, logoOverrides = {}, settings = {}, cardStyles = 
   return `<a href="/job/${job.id}" class="related-card${jobTypeCardClass(job.job_type, jtStyle)}" style="display:flex;align-items:center;gap:14px;${buildCardStyleAttr(jtStyle)};border-radius:12px;padding:13px 16px;text-decoration:none">
     <div style="flex-shrink:0;display:flex">${logoImgHtml(job.company, '40px', 'related-logo', logoOverride, job.company_website)}</div>
     <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:4px">
-      <div style="display:flex;align-items:center;font-size:13.5px;font-weight:700;color:var(--card-title-color,var(--ink));white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${tierIcon}${escapeHtml(job.title)}</div>
+      <div style="display:flex;align-items:center;font-size:14px;font-weight:700;color:var(--card-title-color,var(--ink));white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${tierIcon}${escapeHtml(job.title)}</div>
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0">
-        <span style="font-size:12px;font-weight:600;color:var(--card-company-color,var(--brand));white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:160px">${escapeHtml(job.company)}</span>
+        <span style="font-size:13px;font-weight:600;color:var(--card-company-color,var(--brand));white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:160px">${escapeHtml(job.company)}</span>
         ${jobLocationHtml(job, { compact: true })}
         ${remoteBadge}
         ${salaryTierBadgeHtml(job, settings)}
       </div>
     </div>
     <div style="flex-shrink:0;display:flex;align-items:center;gap:12px">
-      ${job.salary ? `<span style="font-family:var(--font-mono,inherit);font-size:12px;font-weight:700;color:var(--card-salary-color,var(--salary));white-space:nowrap">${escapeHtml(job.salary)}</span>` : ''}
+      ${job.salary ? `<span style="font-family:var(--font-mono,inherit);font-size:13px;font-weight:700;color:var(--card-salary-color,var(--salary));white-space:nowrap">${escapeHtml(job.salary)}</span>` : ''}
     </div>
   </a>`;
 }
@@ -254,7 +254,7 @@ export function jobCardSSR(job, idx, categoryMap = CATEGORY_META, categoryOrder 
   let skillsList = [];
   try { skillsList = JSON.parse(job.skills || '[]'); } catch (e) {}
   const skillsTagsHtml = skillsList.slice(0, 3).map(s => `<span class="tag tag-type">${escapeHtml(s)}</span>`).join('');
-  return `<article class="job-card${jobTypeCardClass(job.job_type, jtStyle)}" style="--cat-color:${meta.color};${cardStyleAttr};animation:fadeInUp .3s ease ${Math.min(idx, 6) * .04}s both">
+  return `<article class="job-card${jobTypeCardClass(job.job_type, jtStyle)}" style="--cat-color:${meta.color};${cardStyleAttr}">
     <div class="card-inner" style="padding:${jtStyle.card_padding}px 16px;background:inherit">
       <a href="/job/${job.id}" class="card-row1" aria-label="View ${escapeHtml(job.title)} at ${escapeHtml(job.company)}">
         ${logoImgHtml(job.company, `${jtStyle.logo_size}px`, 'co-logo', logoOverride, job.company_website)}

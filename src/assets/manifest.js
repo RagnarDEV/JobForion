@@ -3,7 +3,7 @@ export function manifestJson(base) {
   return JSON.stringify({
     name: "JobForion — Remote Jobs",
     short_name: "JobForion",
-    description: "Curated remote job board updated hourly.",
+    description: "Curated remote job board, refreshed every 3 hours.",
     start_url: "/",
     display: "standalone",
     background_color: "#F1F5F9",

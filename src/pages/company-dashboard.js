@@ -45,7 +45,7 @@ export async function renderNoCompanyPage(user, ctx) {
   const content = `<div class="dash-card" style="text-align:center;padding:40px 24px">
     <div style="font-size:40px;margin-bottom:10px">${iconBuilding({ size: 15 })}</div>
     <div style="font-size:16px;font-weight:800;color:var(--ink);margin-bottom:8px">You're not part of a company yet</div>
-    <div style="font-size:13px;color:var(--ink2);margin-bottom:18px">Create a company profile to post jobs and manage applicants on JobForion.</div>
+    <div style="font-size:14px;color:var(--ink2);margin-bottom:18px">Create a company profile to post jobs and manage applicants on JobForion.</div>
     <a href="/company/create" class="dash-btn dash-btn-primary">Create Company Profile </a>
   </div>`;
   const html = dashboardShell({ activeId: '', navItems: [], title: 'Hire Talent', content });
@@ -72,7 +72,7 @@ export async function renderCreateCompanyPage(user, ctx, { csrfToken, error } = 
         <div class="pj-group"><label class="pj-label">Description</label><textarea class="pj-textarea" name="description" placeholder="What does your company do?"></textarea></div>
         <button class="pj-submit" type="submit">Create Company </button>
       </form>
-      <p style="font-size:11px;color:var(--ink3);margin-top:10px">Your company will be reviewed before job postings go live. You'll be the Company Admin.</p>
+      <p style="font-size:12.5px;color:var(--ink3);margin-top:10px">Your company will be reviewed before job postings go live. You'll be the Company Admin.</p>
     </div>`;
   const html = dashboardShell({ activeId: '', navItems: [], title: 'Create Company Profile', content });
   return baseLayout('Create Company — JobForion', 'Create a company profile on JobForion.', `${BASE_URL}/company/create`, '', html, '', 'noindex, follow', ctx?.settings, ctx?.categories, null, null, null, user);
@@ -92,8 +92,8 @@ export async function renderCompanyOverview(env, user, company, ctx) {
   const content = `
     ${companySwitcher(ctx.companies, company.id)}
     ${company.status !== 'active' ? `<div class="dash-card" style="border-color:rgba(245,166,35,.35);background:rgba(245,166,35,.06)">
-      <div style="font-size:13px;font-weight:700;color:var(--ink)">${iconClock({ size: 15 })} Verification pending</div>
-      <div style="font-size:12px;color:var(--ink2);margin-top:4px">An admin will review ${escapeHtml(company.name)} shortly. Job postings stay pending until your company is verified.</div>
+      <div style="font-size:14px;font-weight:700;color:var(--ink)">${iconClock({ size: 15 })} Verification pending</div>
+      <div style="font-size:13px;color:var(--ink2);margin-top:4px">An admin will review ${escapeHtml(company.name)} shortly. Job postings stay pending until your company is verified.</div>
     </div>` : ''}
     <div class="dash-kpi-grid">
       <div class="dash-kpi"><div class="dash-kpi-label">Published Jobs</div><div class="dash-kpi-val">${active}</div></div>
@@ -123,25 +123,25 @@ export async function renderCompanyProfilePage(user, company, ctx, { csrfToken, 
       <div class="dash-card-title">Logo &amp; Cover Image</div>
       <div style="display:flex;gap:20px;flex-wrap:wrap">
         <div>
-          <div style="font-size:11px;font-weight:700;color:var(--ink3);text-transform:uppercase;margin-bottom:6px">Logo</div>
+          <div style="font-size:12.5px;font-weight:700;color:var(--ink3);text-transform:uppercase;margin-bottom:6px">Logo</div>
           ${company.logo_url ? `<img src="${escapeHtml(company.logo_url)}" alt="Logo" style="width:64px;height:64px;border-radius:12px;object-fit:contain;border:1px solid var(--border);margin-bottom:8px;display:block">` : ''}
           <form method="POST" action="/company/logo" enctype="multipart/form-data" style="display:flex;gap:6px;align-items:center">
             ${csrfField(csrfToken)}
-            <input type="file" name="file" accept="image/png,image/jpeg,image/webp" required style="font-size:11px;max-width:180px">
+            <input type="file" name="file" accept="image/png,image/jpeg,image/webp" required style="font-size:12.5px;max-width:180px">
             <button class="dash-btn dash-btn-sm" type="submit">Upload</button>
           </form>
         </div>
         <div>
-          <div style="font-size:11px;font-weight:700;color:var(--ink3);text-transform:uppercase;margin-bottom:6px">Cover Image</div>
+          <div style="font-size:12.5px;font-weight:700;color:var(--ink3);text-transform:uppercase;margin-bottom:6px">Cover Image</div>
           ${company.cover_image_url ? `<img src="${escapeHtml(company.cover_image_url)}" alt="Cover" style="width:140px;height:56px;border-radius:8px;object-fit:cover;border:1px solid var(--border);margin-bottom:8px;display:block">` : ''}
           <form method="POST" action="/company/cover" enctype="multipart/form-data" style="display:flex;gap:6px;align-items:center">
             ${csrfField(csrfToken)}
-            <input type="file" name="file" accept="image/png,image/jpeg,image/webp" required style="font-size:11px;max-width:180px">
+            <input type="file" name="file" accept="image/png,image/jpeg,image/webp" required style="font-size:12.5px;max-width:180px">
             <button class="dash-btn dash-btn-sm" type="submit">Upload</button>
           </form>
         </div>
       </div>
-      <p style="font-size:11px;color:var(--ink3);margin-top:10px">PNG, JPEG or WebP, up to 2MB. Alternatively, paste a hosted image URL directly into the Logo URL field in your profile form below.</p>
+      <p style="font-size:12.5px;color:var(--ink3);margin-top:10px">PNG, JPEG or WebP, up to 2MB. Alternatively, paste a hosted image URL directly into the Logo URL field in your profile form below.</p>
     </div>` : ''}
     <form method="POST" action="/company/profile" class="dash-card">
       ${csrfField(csrfToken)}
@@ -175,7 +175,7 @@ export async function renderCompanyProfilePage(user, company, ctx, { csrfToken, 
       </div>
       <div class="pj-group"><label class="pj-label">Facebook URL</label><input class="pj-input" type="url" name="facebook_url" value="${escapeHtml(company.facebook_url || '')}" ${canEdit ? '' : 'disabled'}></div>
       <div class="pj-group"><label class="pj-label">Description</label><textarea class="pj-textarea" name="description" ${canEdit ? '' : 'disabled'}>${escapeHtml(company.description || '')}</textarea></div>
-      ${canEdit ? `<button class="pj-submit" type="submit" style="max-width:200px">Save Changes</button>` : `<div style="font-size:12px;color:var(--ink3)">Only Company Admins can edit the profile.</div>`}
+      ${canEdit ? `<button class="pj-submit" type="submit" style="max-width:200px">Save Changes</button>` : `<div style="font-size:13px;color:var(--ink3)">Only Company Admins can edit the profile.</div>`}
     </form>
     <div class="dash-card">
       <div class="dash-row"><span class="dash-row-main">Public page</span><a href="/companies/${escapeHtml(company.slug)}" class="dash-btn dash-btn-sm">View Public Profile </a></div>
@@ -243,7 +243,7 @@ export async function renderCompanyJobsPage(env, user, company, ctx, statusFilte
   }
 
   const tabsHtml = `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">
-    ${JOB_TAB_STATUSES.map(s => `<a href="/company/jobs${s ? '?status=' + s : ''}" class="dash-btn ${statusFilter === s ? 'dash-btn-primary' : ''}" style="padding:7px 14px;font-size:12.5px">${JOB_TAB_LABELS[s]}</a>`).join('')}
+    ${JOB_TAB_STATUSES.map(s => `<a href="/company/jobs${s ? '?status=' + s : ''}" class="dash-btn ${statusFilter === s ? 'dash-btn-primary' : ''}" style="padding:7px 14px;font-size:13.5px">${JOB_TAB_LABELS[s]}</a>`).join('')}
   </div>`;
   const jobActionsHtml = (j) => {
     const btn = (action, label) => `<form method="POST" action="/company/jobs/${j.id}/${action}" style="display:inline">${csrfField(csrfToken)}<button class="dash-btn-sm" type="submit">${label}</button></form>`;
@@ -259,7 +259,7 @@ export async function renderCompanyJobsPage(env, user, company, ctx, statusFilte
     const meta = JOB_STATUS_META[j.status] || { label: j.status, color: 'var(--ink3)' };
     return `<div class="dash-row" style="flex-wrap:wrap;gap:8px">
       <div style="flex:1;min-width:200px"><div class="dash-row-main">${escapeHtml(j.title)}</div><div class="dash-row-sub">${escapeHtml(j.location || 'Remote')}${j.salary ? ' · ' + escapeHtml(j.salary) : ''} · Updated ${new Date(j.updated_at || j.created_at).toLocaleDateString()}</div></div>
-      <div style="display:flex;align-items:center;gap:14px;font-size:11.5px;color:var(--ink3)">
+      <div style="display:flex;align-items:center;gap:14px;font-size:12.5px;color:var(--ink3)">
         <span>${iconEye({ size: 15 })} ${viewsByPath['/job/' + j.id] || 0} views</span>
         <span>${iconFileText({ size: 15 })} ${appsByJobId[j.id] || 0} applications</span>
         <span class="status-badge" style="background:${meta.color}22;color:${meta.color}">${meta.label}</span>
@@ -317,7 +317,7 @@ export async function renderCompanyPostJobPage(user, company, ctx, { csrfToken, 
     ${companySwitcher(ctx.companies, company.id)}
     ${submitted ? `<div class="auth-ok">Job submitted for review. It will go live once approved — usually within 24 hours.</div>` : ''}
     ${error ? `<div class="auth-err">${escapeHtml(error)}</div>` : ''}
-    ${!canPost ? `<div class="dash-card" style="border-color:rgba(255,92,122,.3)"><div style="font-size:13px;color:var(--coral);font-weight:700">You don't have permission to post jobs for this company.</div><div style="font-size:12px;color:var(--ink3);margin-top:4px">Ask a Company Admin to add you as a Recruiter or Admin.</div></div>` : `
+    ${!canPost ? `<div class="dash-card" style="border-color:rgba(255,92,122,.3)"><div style="font-size:14px;color:var(--coral);font-weight:700">You don't have permission to post jobs for this company.</div><div style="font-size:13px;color:var(--ink3);margin-top:4px">Ask a Company Admin to add you as a Recruiter or Admin.</div></div>` : `
     <form method="POST" action="/company/post-job" class="pj-pro-form" id="postJobForm">
       ${csrfField(csrfToken)}
       <div class="dash-card">
@@ -349,7 +349,7 @@ export async function renderCompanyPostJobPage(user, company, ctx, { csrfToken, 
       </div>
 
       <div class="dash-card">
-        <div class="dash-card-title">Compensation <span style="font-weight:400;color:var(--ink3);font-size:12px">(optional, but listings with salary get 2-3× more applicants)</span></div>
+        <div class="dash-card-title">Compensation <span style="font-weight:400;color:var(--ink3);font-size:13px">(optional, but listings with salary get 2-3× more applicants)</span></div>
         <div class="pj-row" style="grid-template-columns:80px 1fr 1fr 1fr">
           <div class="pj-group"><label class="pj-label">Currency</label>
             <select class="pj-select" name="salary_currency">${SALARY_CURRENCIES.map(c => `<option value="${c}" ${formValues.salary_currency === c ? 'selected' : ''}>${c}</option>`).join('')}</select></div>
@@ -358,19 +358,19 @@ export async function renderCompanyPostJobPage(user, company, ctx, { csrfToken, 
           <div class="pj-group"><label class="pj-label">Period</label>
             <select class="pj-select" name="salary_period">${SALARY_PERIODS.map(([val, lbl]) => `<option value="${val}" ${formValues.salary_period === val ? 'selected' : ''}>${lbl}</option>`).join('')}</select></div>
         </div>
-        <p style="font-size:11px;color:var(--ink3);margin-top:-6px">Leave Min/Max blank to post without a salary range.</p>
+        <p style="font-size:12.5px;color:var(--ink3);margin-top:-6px">Leave Min/Max blank to post without a salary range.</p>
       </div>
 
       <div class="dash-card">
         <div class="dash-card-title">Requirements</div>
         <div class="pj-group">
-          <label class="pj-label">Skills <span style="font-weight:400;color:var(--ink3);text-transform:none;letter-spacing:0;font-size:11px">(press Enter to add, up to 15)</span></label>
+          <label class="pj-label">Skills <span style="font-weight:400;color:var(--ink3);text-transform:none;letter-spacing:0;font-size:12.5px">(press Enter to add, up to 15)</span></label>
           <input class="pj-input" type="text" id="skillInput" placeholder="e.g. React, PostgreSQL, AWS...">
           <div id="skillsWrap" style="margin-top:8px"></div>
           <input type="hidden" name="skills" id="skillsHidden" value="${escapeHtml(JSON.stringify(skillsInitial))}">
         </div>
         <div class="pj-group"><label class="pj-label">Description</label><textarea class="pj-textarea" name="description" id="descInput" maxlength="4000" style="min-height:200px" placeholder="Responsibilities, requirements, benefits... Use blank lines between paragraphs — formatting is preserved.">${v('description')}</textarea>
-          <div id="descCounter" style="font-size:11px;color:var(--ink3);text-align:right;margin-top:4px">0 / 4000</div>
+          <div id="descCounter" style="font-size:12.5px;color:var(--ink3);text-align:right;margin-top:4px">0 / 4000</div>
         </div>
       </div>
 
@@ -378,7 +378,7 @@ export async function renderCompanyPostJobPage(user, company, ctx, { csrfToken, 
     </form>
     <style>
       .pj-pro-form .dash-card{margin-bottom:14px}
-      .skill-chip{display:inline-flex;align-items:center;gap:6px;background:var(--brand-soft);border:1px solid rgba(53,86,255,.2);color:var(--brand);padding:4px 10px;border-radius:20px;font-size:12px;font-weight:700;margin:0 6px 6px 0}
+      .skill-chip{display:inline-flex;align-items:center;gap:6px;background:var(--brand-soft);border:1px solid rgba(53,86,255,.2);color:var(--brand);padding:4px 10px;border-radius:20px;font-size:13px;font-weight:700;margin:0 6px 6px 0}
       .skill-chip button{background:none;border:none;color:var(--brand);cursor:pointer;font-size:14px;line-height:1;padding:0;opacity:.7}
       .skill-chip button:hover{opacity:1}
     </style>
@@ -431,7 +431,7 @@ export async function renderCompanyMembersPage(env, user, company, ctx, { csrfTo
         <select class="pj-select" name="role"><option value="member">Member</option><option value="recruiter">Recruiter</option><option value="admin">Company Admin</option></select>
         <button class="pj-submit" type="submit" style="max-width:160px">+ Add</button>
       </form>
-      <p style="font-size:11px;color:var(--ink3);margin-top:8px">The teammate must already have a JobForion account with this email.</p>
+      <p style="font-size:12.5px;color:var(--ink3);margin-top:8px">The teammate must already have a JobForion account with this email.</p>
     </div>` : ''}
     <div class="dash-card">
       <div class="dash-card-title">Team (${members.length})</div>

@@ -527,5 +527,19 @@ export async function ensureAccountTables(env) {
   // turn a full-table SCAN of `companies` / `company_logos` into an index SEARCH.
   await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_companies_name_norm ON companies(LOWER(TRIM(name)))`).run();
   await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_company_logos_norm ON company_logos(LOWER(TRIM(company_lower)))`).run();
+
+  // ── D1 rows-WRITTEN budget (2026-10-13) — appended LAST so no earlier unit moves.
+  // content_hash: fingerprint of a job's mutable fields as last written by the sync.
+  // An unchanged job is no longer rewritten on every run (it used to cost ~6
+  // written rows per job per sync); 'manual' marks a job edited by an admin so a
+  // later sync only refreshes its lifecycle dates and never overwrites the edit.
+  await ensureColumn(env, 'jobs', 'content_hash', 'TEXT');
+  // Every index is one extra written row on EVERY insert and delete of a job.
+  // These three are strict left-prefixes of composite indexes created above, so
+  // SQLite serves the same queries from the composites — dropping them removes 3
+  // written rows per job insert/delete (~18%) with no query-plan loss.
+  await env.DB.prepare(`DROP INDEX IF EXISTS idx_jobs_status`).run();
+  await env.DB.prepare(`DROP INDEX IF EXISTS idx_jobs_company`).run();
+  await env.DB.prepare(`DROP INDEX IF EXISTS idx_jobs_company_id`).run();
   schemaState.account = true;
 }

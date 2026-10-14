@@ -151,15 +151,19 @@ ok(!/ADMIN_PASSWORD/.test(idx), 'index.js never reads the admin password (no ?jf
 // ── cron dispatcher: ONE trigger fans out by UTC time ──
 const at = (h, m) => pickTasks({ cron: '*/30 * * * *', scheduledTime: Date.UTC(2026, 8, 20, h, m) });
 ok(JSON.stringify(at(1, 30)) === '["analytics"]', 'xx:30 → analytics');
-ok(JSON.stringify(at(6, 0)) === '["job-sync"]', '06:00 → sync');
-ok(JSON.stringify(at(3, 0)) === '["daily-maintenance"]', '03:00 → daily maintenance');
+for (const h of [0, 3, 6, 9, 12, 15, 18, 21]) ok(JSON.stringify(at(h, 0)) === '["job-sync"]', `${String(h).padStart(2, '0')}:00 → sync (every 3 hours)`);
+ok(at(1, 0).length === 0 && at(2, 0).length === 0 && at(4, 0).length === 0, 'non-sync hours at :00 → nothing due');
+ok(JSON.stringify(at(3, 30)) === '["daily-maintenance"]', '03:30 → daily maintenance (after the 03:00 sync)');
 ok(JSON.stringify(at(8, 0)) === '["job-alerts"]', '08:00 → alerts');
-ok(JSON.stringify(at(9, 0)) === '["blog-generation"]', '09:00 → blog generation');
-ok(at(1, 0).length === 0, '01:00 → nothing due');
+ok(JSON.stringify(at(9, 30)) === '["blog-generation"]', '09:30 → blog generation');
+ok(JSON.stringify(at(4, 30)) === '["analytics"]', '04:30 → analytics (+ daily retention)');
+let syncSlotsPerDay = 0;
+for (let h = 0; h < 24; h++) if (at(h, 0).includes('job-sync')) syncSlotsPerDay++;
+ok(syncSlotsPerDay === 8, 'exactly 8 sync runs per day');
 ok(JSON.stringify(pickTasks({ cron: '0 */6 * * *' })) === '["job-sync"]', 'legacy cron patterns still map to their old task');
 
 // ── scheduled handler: every task group actually runs without throwing ──
-for (const [h, m] of [[1, 30], [6, 0], [3, 0], [8, 0], [9, 0]]) {
+for (const [h, m] of [[1, 30], [6, 0], [3, 0], [3, 30], [8, 0], [9, 30]]) {
   await worker.scheduled({ cron: '*/30 * * * *', scheduledTime: Date.UTC(2026, 8, 20, h, m) }, { ...baseEnv }, ctx);
   await Promise.allSettled(pending.splice(0));
 }

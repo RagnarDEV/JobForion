@@ -13,6 +13,8 @@ import { JOB_TYPE_META } from '../../config/constants.js';
 import { getSettings } from '../../lib/platform/settings.js';
 import { logActivity } from '../../lib/platform/activity-log.js';
 import { errorPage } from './error-page.js';
+import { safeAdminRedirect } from '../../lib/platform/safe-redirect.js';
+import { safeExternalUrl } from '../../lib/directory/entities.js';
 import { salaryClassificationForJob } from '../../lib/jobs/salary-tier.js';
 
 export async function handleAdminJobsRoute(url, request, env, base) {
@@ -238,6 +240,9 @@ export async function handleAdminJobsRoute(url, request, env, base) {
       const skills = (form.get('skills') || '').toString().split(',').map(s => s.trim()).filter(Boolean);
       const submittedJobType = (form.get('job_type') || '').toString();
       const jobType = JOB_TYPE_META[submittedJobType] ? submittedJobType : 'Free';
+      // SECURITY: the apply URL is rendered in an href — only http(s) is ever stored.
+      const editedUrl = safeExternalUrl((form.get('url') || '').toString().slice(0, 500));
+      if (!editedUrl) return new Response(null, { status: 302, headers: { 'Location': `/admin/jobs/edit?id=${encodeURIComponent(id)}&flash=${encodeURIComponent('Apply URL must start with http:// or https://')}` } });
       const editedSalary = (form.get('salary') || '').toString().slice(0, 60);
       const editedDescription = (form.get('description') || '').toString().slice(0, 20000);
       const settings = await getSettings(env);
@@ -245,12 +250,12 @@ export async function handleAdminJobsRoute(url, request, env, base) {
       const parsedSalary = classification.parsed;
       const salaryTier = classification;
       await env.DB.prepare(
-        `UPDATE jobs SET title=?, company=?, location=?, url=?, salary=?, seniority=?, remote_type=?, employment_type=?, skills=?, description=?, salary_min_usd=?, salary_max_usd=?, salary_tier=?, salary_tier_confidence=?, featured=?, job_type=?, job_type_note=? WHERE id=?`
+        `UPDATE jobs SET title=?, company=?, location=?, url=?, salary=?, seniority=?, remote_type=?, employment_type=?, skills=?, description=?, salary_min_usd=?, salary_max_usd=?, salary_tier=?, salary_tier_confidence=?, featured=?, job_type=?, job_type_note=?, content_hash='manual' WHERE id=?`
       ).bind(
         (form.get('title') || '').toString().slice(0, 200),
         (form.get('company') || '').toString().slice(0, 200),
         (form.get('location') || '').toString().slice(0, 200),
-        (form.get('url') || '').toString().slice(0, 500),
+        editedUrl,
         editedSalary,
         (form.get('seniority') || '').toString().slice(0, 60),
         (form.get('remote_type') || '').toString(),
@@ -274,7 +279,7 @@ export async function handleAdminJobsRoute(url, request, env, base) {
       if (!ok) return new Response('Unauthorized', { status: 401 });
       const form = await request.formData();
       const id = form.get('id');
-      const redirect = (form.get('redirect') || '/admin/jobs').toString();
+      const redirect = safeAdminRedirect(form.get('redirect'));
       if (id) await env.DB.prepare('DELETE FROM jobs WHERE id = ?').bind(id).run();
       await logActivity(env, 'job_deleted', `job #${id}`);
       const sep = redirect.includes('?') ? '&' : '?';
@@ -295,7 +300,7 @@ export async function handleAdminJobsRoute(url, request, env, base) {
       }
       const form = await request.formData();
       const id = form.get('id');
-      const redirect = (form.get('redirect') || '/admin/jobs').toString();
+      const redirect = safeAdminRedirect(form.get('redirect'));
       if (id) await env.DB.prepare('UPDATE jobs SET featured = CASE WHEN featured = 1 THEN 0 ELSE 1 END WHERE id = ?').bind(id).run();
       await logActivity(env, 'job_featured_toggled', `job #${id}`);
       const sep = redirect.includes('?') ? '&' : '?';
@@ -316,7 +321,7 @@ export async function handleAdminJobsRoute(url, request, env, base) {
       if (!ok) return new Response('Unauthorized', { status: 401 });
       const form = await request.formData();
       const action = (form.get('bulk_action') || '').toString();
-      const redirect = (form.get('redirect') || '/admin/jobs').toString();
+      const redirect = safeAdminRedirect(form.get('redirect'));
       const sep = redirect.includes('?') ? '&' : '?';
       const ids = form.getAll('ids')
         .map(v => parseInt(v.toString(), 10))

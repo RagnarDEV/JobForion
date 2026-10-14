@@ -4,7 +4,7 @@
 import { CATEGORY_ORDER, CATEGORY_META } from '../config/constants.js';
 import { escapeHtml } from '../lib/directory/entities.js';
 
-import { iconMail, iconSparkle } from '../assets/icons.js';
+import { iconMail, iconSparkle, iconX } from '../assets/icons.js';
 // `categoryOrder`/`categoryMap` are optional — default to the static
 // CATEGORY_ORDER/CATEGORY_META import (unchanged behavior) for any
 // caller not yet passing dynamic categories (see lib/content/categories.js).
@@ -12,7 +12,7 @@ export function postJobModalHtml(categoryOrder = CATEGORY_ORDER, categoryMap = C
   return `
 <div class="pj-overlay" id="pjOverlay" onclick="if(event.target===this)closePostJobModal()">
   <div class="pj-modal">
-    <button class="pj-close" onclick="closePostJobModal()">✕</button>
+    <button class="pj-close" onclick="closePostJobModal()" aria-label="Close">${iconX({ size: 16 })}</button>
     <div id="pjFormWrap">
       <div class="pj-title">${iconMail({ size: 15 })} Post a Remote Job</div>
       <div class="pj-sub">Reach thousands of remote job seekers. We review every listing before it goes live.</div>

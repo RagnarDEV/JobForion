@@ -73,14 +73,15 @@ remote = true
 # ── Scheduled tasks ──
 # ONE trigger only. Cloudflare's free plan allows 5 Cron Triggers per ACCOUNT,
 # so every job is dispatched by UTC time inside src/app/cron.js instead:
-#   :30 every hour           -> analytics aggregation + retention + alerts
-#   :00, hour % 6 == 0       -> syncJobs()  (00/06/12/18 UTC, bounded rotating batch)
-#   :00, hour == 3           -> daily maintenance: cleanupStaleJobs() +
+#   :00, hour % 3 == 0       -> syncJobs()  (00/03/06/09/12/15/18/21 UTC — every 3 hours;
+#                               fair source rotation + daily D1 write budget, see db/sync.js)
+#   :30, hour == 3           -> daily maintenance: cleanupStaleJobs() +
 #                               runBlogExpirationCleanup() + expireMonetizationCampaigns()
 #   :00, hour == 8           -> runJobAlertsDispatch() (each alert's own frequency /
 #                               last_notified_at decides whether it is actually due)
-#   :00, hour == 9           -> runBlogGeneration() (D1 settings decide whether today
+#   :30, hour == 9           -> runBlogGeneration() (D1 settings decide whether today
 #                               is a publishing day and whether the weekly cap is hit)
+#   :30, every other hour    -> analytics aggregation + retention + alerts
 # One task group per invocation keeps the 50-subrequest free-plan budget
 # unshared. Failures are written to error_logs (visible in /admin/system).
 [triggers]

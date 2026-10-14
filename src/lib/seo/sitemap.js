@@ -88,7 +88,7 @@ ${entries.join('')}
 // other URLs below are real routes owned by the current Worker.
 export async function buildStaticSitemapXml(env, base, { categoryOrder = [] } = {}) {
   const urls = [];
-  urls.push(urlTag(`${base}/`, { changefreq: 'hourly', priority: '1.0' }));
+  urls.push(urlTag(`${base}/`, { changefreq: 'daily', priority: '1.0' }));
   urls.push(urlTag(`${base}/blog`, { changefreq: 'weekly', priority: '0.8' }));
   urls.push(urlTag(`${base}/resources`, { changefreq: 'weekly', priority: '0.7' }));
   urls.push(urlTag(`${base}/about`, { changefreq: 'monthly', priority: '0.4' }));

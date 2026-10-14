@@ -139,7 +139,7 @@ export async function renderBlogAutomationContent(env) {
         </div>
         <input type="hidden" id="scheduleDaysField" name="blog_auto_schedule_days" value="${escapeHtml(s.blog_auto_schedule_days || '')}">
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
-          ${field('Generation Check Hour (UTC)', 'blog_auto_schedule_hour', s.blog_auto_schedule_hour, { type: 'number', hint: 'Informational — the cron trigger itself runs daily at 09:00 UTC (wrangler.toml).' })}
+          ${field('Generation Check Hour (UTC)', 'blog_auto_schedule_hour', s.blog_auto_schedule_hour, { type: 'number', hint: 'Informational — the cron trigger itself runs daily at 09:30 UTC (see src/app/cron.js).' })}
           ${field('Timezone Label', 'blog_auto_timezone_label', s.blog_auto_timezone_label, { hint: 'Display only.' })}
         </div>
       </div>

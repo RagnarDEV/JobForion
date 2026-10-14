@@ -27,7 +27,7 @@ export async function logSync(env, result) {
 // pure noise, which slows down every dashboard query that reads from it.
 // None of it is a real visitor, so none of it belongs in analytics.
 const BOT_PROBE_PATTERN = /(^\/wp-|wp-admin|wp-includes|wp-login|wp-content|wlwmanifest\.xml|xmlrpc\.php|wordpress|phpmyadmin|pma\/|\.env$|\.git\/|administrator\/|\/cgi-bin\/|\.php$|\/vendor\/|\/config\.json$|\/actuator\/|\/\.aws\/)/i;
-const BOT_UA_PATTERN = /bot|crawler|spider|slurp|headless|uptime|monitor|curl|wget/i;
+const BOT_UA_PATTERN = /bot|crawler|spider|slurp|headless|uptime|monitor|curl|wget|lighthouse|pingdom|preview|facebookexternalhit|python|scrapy|go-http|okhttp|axios|node-fetch|semrush|ahrefs|mj12|dotbot|petalbot|bytespider|gptbot|claudebot|ccbot|amazonbot|applebot/i;
 
 export function isTrackableVisit(pathname) {
   return !BOT_PROBE_PATTERN.test(pathname);
@@ -37,7 +37,12 @@ export async function recordVisit(env, request, url, settings = {}) {
   if (settings.analytics_enabled === '0' || !isTrackableVisit(url.pathname)) return;
   try {
     const ua = (request.headers.get('User-Agent') || '').slice(0, 140);
-    if (BOT_UA_PATTERN.test(ua)) return;
+    if (!ua || BOT_UA_PATTERN.test(ua)) return;
+    // WRITE BUDGET: each stored visit costs ~3 written D1 rows (row + path index +
+    // PK). The same Settings → Analytics sample rate that throttles client events
+    // now throttles this server-side log too (default 50% → half the writes).
+    const rate = Math.min(100, Math.max(10, parseInt(settings.analytics_sample_rate, 10) || 100));
+    if (rate < 100 && Math.random() * 100 >= rate) return;
     const country = request.cf?.country || 'XX';
     const ref = (request.headers.get('Referer') || '').slice(0, 200);
     await env.DB.prepare(

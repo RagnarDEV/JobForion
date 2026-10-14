@@ -49,7 +49,7 @@ export function dashboardShell({ activeId, navItems, title, subtitle, content, h
   var host = document.getElementById('dash-toast-host');
   var el = document.createElement('div');
   el.textContent = flash;
-  el.style.cssText = 'background:var(--ink);color:#fff;font-size:13px;font-weight:600;padding:11px 16px;border-radius:10px;box-shadow:0 16px 40px rgba(18,22,43,.2);opacity:0;transform:translateY(8px);transition:all .25s;max-width:320px';
+  el.style.cssText = 'background:var(--ink);color:#fff;font-size:14px;font-weight:600;padding:11px 16px;border-radius:10px;box-shadow:0 16px 40px rgba(18,22,43,.2);opacity:0;transform:translateY(8px);transition:all .25s;max-width:320px';
   host.appendChild(el);
   requestAnimationFrame(function(){ el.style.opacity='1'; el.style.transform='translateY(0)'; });
   setTimeout(function(){ el.style.opacity='0'; }, 3200);

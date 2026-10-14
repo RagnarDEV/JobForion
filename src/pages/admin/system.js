@@ -14,6 +14,7 @@ import { isAiConfigured } from '../../lib/ai/ai-service.js';
 import { getAnalyticsHealth } from '../../lib/analytics/events.js';
 import { paymentProviderStatus } from '../../lib/monetization/core.js';
 import { escapeHtml } from '../../lib/directory/entities.js';
+import { loadSyncState, parseDailyBudget } from '../../lib/platform/write-budget.js';
 
 import { iconAlertTriangle, iconDatabase, iconMail, iconRefreshCw, iconServer, iconTrash2 } from '../../assets/icons.js';
 // Tables considered safe/useful to show a row count for. Deliberately an
@@ -103,6 +104,9 @@ export async function renderSystemContent(env) {
   const emailConfigured = Boolean(env.BREVO_API_KEY && env.EMAIL_FROM_ADDRESS);
   const storageConfigured = Boolean(env.COMPANY_ASSETS);
   const settings = await getSettings(env);
+  const syncState = await loadSyncState(env);
+  const syncBudget = parseDailyBudget(settings.sync_daily_write_budget);
+  const syncBudgetPct = Math.min(100, Math.round((syncState.used / syncBudget) * 100));
   const aiEnabled = settings.ai_enabled !== '0';
   const aiConfigured = isAiConfigured(env);
   const [analyticsHealth] = await Promise.all([getAnalyticsHealth(env)]);
@@ -117,7 +121,7 @@ export async function renderSystemContent(env) {
   // Nothing here is auto-fixed or deleted; an admin decides what (if
   // anything) to do about a nonzero count. All four are cheap: the first
   // two use idx_saved_jobs_job/idx_applications_job (already existed),
-  // the status breakdown uses idx_jobs_status, and NOT EXISTS avoids
+  // the status breakdown uses idx_jobs_status_id (prefix on status), and NOT EXISTS avoids
   // pulling any actual row data into memory just to count it.
   const [{ results: orphanSavedRows }, { results: orphanAppRows }] = await Promise.all([
     // Possible since Job Management's (Stage 5) 3-phase lifecycle can
@@ -150,10 +154,11 @@ export async function renderSystemContent(env) {
     <div class="adm-grid" style="margin-bottom:16px">
       <div class="adm-card">
         <div class="adm-card-title">Cron Jobs <span style="font-weight:400;color:var(--ink3);font-size:12px">— configured in wrangler.toml</span></div>
-        <div class="adm-row"><span class="adm-row-label">Job Sync</span><span class="adm-row-val">00 · 06 · 12 · 18 UTC</span></div>
-        <div class="adm-row"><span class="adm-row-label">Cleanup (stale jobs)</span><span class="adm-row-val">Daily · 03:00 UTC (blocked if sync unhealthy)</span></div>
+        <div class="adm-row"><span class="adm-row-label">Job Sync</span><span class="adm-row-val">Every 3 hours · 00 · 03 · 06 · 09 · 12 · 15 · 18 · 21 UTC</span></div>
+        <div class="adm-row"><span class="adm-row-label">Sync write budget today</span><span class="adm-row-val">~${syncState.used.toLocaleString('en-US')} / ${syncBudget.toLocaleString('en-US')} rows (${syncBudgetPct}%)</span></div>
+        <div class="adm-row"><span class="adm-row-label">Cleanup (stale jobs)</span><span class="adm-row-val">Daily · 03:30 UTC (blocked if sync unhealthy)</span></div>
         <div class="adm-row"><span class="adm-row-label">Job Alerts Dispatch</span><span class="adm-row-val">Daily · 08:00 UTC</span></div>
-        <div class="adm-row"><span class="adm-row-label">Analytics aggregation</span><span class="adm-row-val">Every hour · :30</span></div>
+        <div class="adm-row"><span class="adm-row-label">Analytics aggregation</span><span class="adm-row-val">Every hour · :30 (03:30 and 09:30 run maintenance / blog instead)</span></div>
         <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
           <form method="POST" action="/api/sync" onsubmit="return confirm('Run job sync now?')"><button class="adm-btn adm-btn-primary" type="submit">↻ Sync Now</button></form>
           <form method="POST" action="/admin/cleanup" onsubmit="return confirm('Run cleanup now? It advances expired jobs through the retention lifecycle; only archived jobs past retention are permanently deleted.')"><button class="adm-btn" type="submit" style="color:var(--coral);border-color:var(--coral)">${iconTrash2({ size: 15 })} Cleanup Now</button></form>

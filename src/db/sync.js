@@ -13,6 +13,8 @@ import { parseSalary, extractSalaryFromDescription } from '../lib/jobs/salary.js
 import { classifySalaryFromParsed, salaryClassificationForJob } from '../lib/jobs/salary-tier.js';
 import { extractSkillsFromText } from '../lib/jobs/skill-extraction.js';
 import { cappedCount } from '../lib/platform/job-window.js';
+import { syncSlot, pickRotatingWindow } from '../lib/platform/rotation.js';
+import { WRITE_COST, parseDailyBudget, runAllowance, loadSyncState, saveSyncState } from '../lib/platform/write-budget.js';
 
 // QUERIES only applies to a future keyword-search provider (ignoresQuery ===
 // false) — every provider currently registered is a per-company/tenant ATS
@@ -81,27 +83,31 @@ async function getTotalJobsCount(env, cap) {
 // cleanly with a clear log line instead of being cut off mid-write.
 // Remaining sources simply get their turn on the next cron run (every few
 // hours — see wrangler.toml) rather than being skipped forever.
-const SUBREQUEST_SAFETY_CEILING = 40; // stay well under the free plan's 50
-let subrequestsUsed = 0;
+// Free-plan ceiling is 50; overridable (env.SYNC_SUBREQUEST_CEILING) for the
+// paid plan, where Cloudflare allows 1000 and a run can cover far more sources.
+const DEFAULT_SUBREQUEST_CEILING = 40;
+// Calls every run makes AFTER the source loop: one batched health write, one
+// state write, one sync log and one batched lock release.
+const TAIL_SUBREQUESTS = 5;
 
-// Conservative estimate of subrequests one provider run could use: 1
-// fetch PER underlying identifier + up to 2 D1 batch() calls (insert +
-// update) per DB_BATCH_SIZE chunk of its capped job count.
+function subrequestCeiling(env) {
+  const n = parseInt(env && env.SYNC_SUBREQUEST_CEILING, 10);
+  return Number.isFinite(n) ? Math.min(900, Math.max(20, n)) : DEFAULT_SUBREQUEST_CEILING;
+}
+
+// Conservative estimate of the subrequests one source can use: one fetch per
+// identifier (retries included) + two D1 calls (read existing + write) per
+// SELECT_CHUNK chunk of its capped job count.
 //
-// "1 fetch" is only accurate for providers where api_key holds a single
-// company/tenant. Greenhouse (and any future provider following the same
-// pattern) supports comma-separated MULTIPLE board tokens in one source
-// row, fanning out to one real HTTP request per token internally (see
-// providers/greenhouse.js) — undercounting that here is exactly what let
-// a single 20-company Greenhouse source blow the budget silently. Counting
-// identifiers generically (split on comma) costs nothing for every other
-// provider, which always has exactly one identifier per source anyway.
-function estimateSubrequests(capForThisProvider, apiKey) {
-  const identifierCount = Math.max(1, String(apiKey || '').split(',').map(s => s.trim()).filter(Boolean).length);
-  const chunks = Math.ceil(capForThisProvider / DB_BATCH_SIZE);
-  // Worst-case budget includes the initial fetch plus every retry. This is
-  // intentionally conservative: a transiently failing source must not
-  // consume headroom reserved for later sources in the same invocation.
+// A provider that fans out over many identifiers in one source row but only
+// fetches a rotating subset per run (Greenhouse: MAX_BOARDS_PER_RUN) must be
+// costed by that subset. Costing ALL identifiers made a 20-board source look
+// like 60+ subrequests, so it was "deferred" on every single run and never synced.
+function estimateSubrequests(capForThisProvider, apiKey, provider) {
+  const listed = Math.max(1, String(apiKey || '').split(',').map(s => s.trim()).filter(Boolean).length);
+  const perRun = Number(provider && provider.MAX_BOARDS_PER_RUN) || Infinity;
+  const identifierCount = Math.min(listed, perRun);
+  const chunks = Math.ceil(capForThisProvider / SELECT_CHUNK);
   return identifierCount * (RETRIES + 1) + chunks * 2;
 }
 
@@ -190,8 +196,12 @@ async function acquireProviderLock(env, providerId) {
   }
 }
 
-async function releaseProviderLock(env, providerId) {
-  try { await env.DB.prepare(`DELETE FROM site_settings WHERE key = ?`).bind(`_sync_lock_${providerId}`).run(); } catch (e) {}
+async function releaseProviderLocks(env, providerIds) {
+  const ids = [...providerIds];
+  if (!ids.length) return;
+  try {
+    await env.DB.batch(ids.map((id) => env.DB.prepare(`DELETE FROM site_settings WHERE key = ?`).bind(`_sync_lock_${id}`)));
+  } catch (e) {}
 }
 
 // ────────────────────────────────────────────────────────────────
@@ -200,18 +210,18 @@ async function releaseProviderLock(env, providerId) {
 // current status instead of it having to be re-derived from the latest
 // sync_logs row on every dashboard render.
 // ────────────────────────────────────────────────────────────────
-async function recordSourceOutcome(env, sourceId, { success, errorType, errorMessage }) {
-  try {
-    if (success) {
-      await env.DB.prepare(
-        `UPDATE api_sources SET last_synced_at = CURRENT_TIMESTAMP, last_success_at = CURRENT_TIMESTAMP, last_error = NULL, last_error_type = NULL, consecutive_failures = 0 WHERE id = ?`
-      ).bind(sourceId).run();
-    } else {
-      await env.DB.prepare(
-        `UPDATE api_sources SET last_synced_at = CURRENT_TIMESTAMP, last_error = ?, last_error_type = ?, consecutive_failures = consecutive_failures + 1 WHERE id = ?`
-      ).bind((errorMessage || '').slice(0, 300), errorType || 'UNKNOWN', sourceId).run();
-    }
-  } catch (e) { /* health bookkeeping must never fail the actual sync */ }
+// Builds (does not run) the health UPDATE for one source. syncJobs() collects
+// them and flushes ALL of them in a single env.DB.batch() at the end of the run
+// — one subrequest instead of one per source.
+function sourceOutcomeStatement(env, sourceId, { success, errorType, errorMessage }) {
+  if (success) {
+    return env.DB.prepare(
+      `UPDATE api_sources SET last_synced_at = CURRENT_TIMESTAMP, last_success_at = CURRENT_TIMESTAMP, last_error = NULL, last_error_type = NULL, consecutive_failures = 0 WHERE id = ?`
+    ).bind(sourceId);
+  }
+  return env.DB.prepare(
+    `UPDATE api_sources SET last_synced_at = CURRENT_TIMESTAMP, last_error = ?, last_error_type = ?, consecutive_failures = consecutive_failures + 1 WHERE id = ?`
+  ).bind((errorMessage || '').slice(0, 300), errorType || 'UNKNOWN', sourceId);
 }
 
 // ────────────────────────────────────────────────────────────────
@@ -311,46 +321,56 @@ function createErrorLog() {
   };
 }
 
-// Dedup key is the unique `url` column. Saving now happens in two phases
-// per batch chunk instead of a single INSERT OR IGNORE:
-//   Phase 1 — INSERT OR IGNORE the jobs that are genuinely new. changes>0
-//   here is the ONLY source of the "inserted" counter, kept precise.
-//   Phase 2 — UPDATE every job in the chunk that phase 1 did NOT insert
-//   (i.e. it already existed) — refreshes mutable fields and, critically,
-//   bumps updated_at/expires_at and revives status back to 'active'. This
-//   is what makes the 30-day-stale cleanup job trustworthy: a job that's
-//   still being returned by its source keeps its clock reset on every
-//   sync, so only jobs the source has genuinely stopped sending age out.
+// ────────────────────────────────────────────────────────────────
+// SAVE — read-before-write, so unchanged jobs cost ZERO written rows.
 //
-// Both phases still use env.DB.batch() (one subrequest per chunk per
-// phase, regardless of chunk size) — Cloudflare Workers caps the total
-// number of subrequests per invocation, and one D1 call per individual
-// job would blow through that budget long before a provider finished.
-// D1's real per-QUERY limit is ~100 bound parameters in a single
-// statement — this batch size is about the NUMBER OF STATEMENTS sent
-// together in one env.DB.batch() call (each with its own small, fixed
-// param count, ~15), which is a completely different constraint. Cloudflare
-// counts one env.DB.batch() round-trip as ONE subrequest regardless of how
-// many statements are inside it — so a LARGER batch size directly means
-// FEWER subrequests per sync run. This was raised from 25 → 100 after a
-// production incident where several active sources in one sync run
-// collectively exceeded Cloudflare's "too many subrequests by a single
-// Worker invocation" ceiling (see SUBREQUEST_BUDGET below for the other
-// half of that fix).
-const DB_BATCH_SIZE = 100;
+// The old flow INSERT-OR-IGNOREd every fetched job and then UPDATEd every one
+// that already existed, rewriting the full row (description included) and its
+// ~14 index entries on EVERY run — roughly 6 written rows per job per sync,
+// which is what drained the 100k/day D1 write allowance.
+//
+// Now, per chunk of ≤ SELECT_CHUNK urls:
+//   1. ONE read: url, content_hash, status, "is the lifecycle stale?" (cheap —
+//      served by the unique url index, reads are a separate 5M/day allowance).
+//   2. Each job is classified:
+//        new                      → INSERT           (~15 written rows)
+//        changed content          → full UPDATE       (~6)
+//        same content, but stale
+//          or not 'active'        → TOUCH (dates only) (~4)
+//        same content, fresh      → nothing            (0)
+//        admin-edited ('manual')  → never overwritten; touch only
+//        legacy row (no hash yet) → "adopt": store the hash, touch if stale (~1-4)
+//   3. ONE env.DB.batch() carries every write of the chunk.
+// The daily write budget (lib/platform/write-budget.js) is charged per applied
+// statement; once exhausted, remaining NEW jobs are deferred to a later run (they
+// are still new then) instead of overshooting the plan limit.
+// ────────────────────────────────────────────────────────────────
+const SELECT_CHUNK = 90; // + 1 bound modifier ≤ D1's 100 parameters per statement
 
-// ROOT-CAUSE FIX for empty salary/skills on job cards (see the header
-// comments in lib/jobs/salary.js's extractSalaryFromDescription() and
-// lib/jobs/skill-extraction.js's extractSkillsFromText() for the full
-// explanation): 8 of 9 ATS providers never return a structured salary or
-// skills field at all — src/providers/*.js hardcodes `salary: ''` and
-// `skills: []` because the raw API genuinely has nothing there. This
-// mines the SAME free-text description every provider already fetches,
-// as a fallback ONLY when the provider itself didn't supply the field —
-// a provider that DOES give real structured data (e.g. Recruitee's
-// `tags` for skills) is never overridden by a guess.
+function fnv1a(str, seed) {
+  let h = seed >>> 0;
+  for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; }
+  return h;
+}
+
+// Fingerprint of every field the sync writes from a provider. Two independent
+// 32-bit FNV-1a passes + length make an accidental collision (a changed job
+// silently skipped) vanishingly unlikely for this use.
+export function jobContentHash(j) {
+  const payload = [j.title, j.company, j.location, j.description, j.salary, j.remote_type,
+    JSON.stringify(j.skills || []), j.seniority, j.employment_type, j.job_handle]
+    .map((v) => String(v ?? '')).join('\u241f');
+  return fnv1a(payload, 2166136261).toString(16).padStart(8, '0')
+    + fnv1a(payload, 0x9747b28c).toString(16).padStart(8, '0')
+    + payload.length.toString(36);
+}
+
+// ROOT-CAUSE FIX for empty salary/skills on job cards (see lib/jobs/salary.js's
+// extractSalaryFromDescription() and lib/jobs/skill-extraction.js): most ATS
+// providers never return structured salary/skills, so they are mined from the
+// description as a fallback ONLY when the provider did not supply the field.
 function enrichJobFromDescription(j) {
-  if (j.salary && j.skills && j.skills.length) return j; // provider already gave us both — nothing to mine
+  if (j.salary && j.skills && j.skills.length) return j;
   const enriched = { ...j };
   if (!enriched.salary) {
     const extracted = extractSalaryFromDescription(enriched.description);
@@ -363,90 +383,178 @@ function enrichJobFromDescription(j) {
   return enriched;
 }
 
-async function saveJobs(env, jobs, counters, errorLog, providerId, settings = {}) {
-  const validJobs = (jobs || []).filter((j) => j && j.url).map(enrichJobFromDescription);
+const LIFECYCLE_SQL = `status='active',updated_at=CURRENT_TIMESTAMP,expires_at=datetime('now','+45 days')`;
+
+// budget = { remaining } — estimated written rows this run may still spend.
+export async function saveJobs(env, jobs, counters, errorLog, providerId, settings = {}, budget = { remaining: Infinity }) {
+  const seenUrls = new Set();
+  const validJobs = [];
+  for (const raw of (jobs || [])) {
+    if (!raw || !raw.url || seenUrls.has(raw.url)) continue;
+    seenUrls.add(raw.url);
+    validJobs.push(enrichJobFromDescription(raw));
+  }
   const skippedCount = (jobs || []).length - validJobs.length;
   counters.skipped += skippedCount;
-  let batchesUsed = 0; // returned so the caller's subrequest budget stays accurate
-  // Per-call breakdown (plan §4: Jobs Fetched/Added/Updated/Skipped per
-  // PROVIDER, not just globally across the whole run) — `counters` above
-  // stays as the run-wide total every existing caller already relies on;
-  // this is purely additive, returned alongside batchesUsed so
-  // syncJobs()'s providerStats entries can be accurate per-source.
-  const own = { fetched: (jobs || []).length, inserted: 0, updated: 0, skipped: skippedCount, failed: 0 };
+  let batchesUsed = 0;
+  const own = { fetched: (jobs || []).length, inserted: 0, updated: 0, touched: 0, unchanged: 0, deferred: 0, skipped: skippedCount, failed: 0 };
+  const touchDays = Math.min(25, Math.max(3, parseInt(settings.sync_touch_interval_days, 10) || 10));
+  const staleModifier = `-${touchDays} day`;
 
-  for (let i = 0; i < validJobs.length; i += DB_BATCH_SIZE) {
-    const chunk = validJobs.slice(i, i + DB_BATCH_SIZE);
+  for (let i = 0; i < validJobs.length; i += SELECT_CHUNK) {
+    const chunk = validJobs.slice(i, i + SELECT_CHUNK);
 
-    const insertStmts = chunk.map((j) => {
+    // ── 1. read what already exists ──
+    let existing = new Map();
+    try {
+      const placeholders = chunk.map(() => '?').join(',');
+      const { results } = await env.DB.prepare(
+        `SELECT url, content_hash, status,
+                CASE WHEN updated_at IS NULL OR updated_at < datetime('now', ?) THEN 1 ELSE 0 END AS stale
+           FROM jobs WHERE url IN (${placeholders})`
+      ).bind(staleModifier, ...chunk.map((j) => j.url)).all();
+      batchesUsed++;
+      existing = new Map((results || []).map((r) => [r.url, r]));
+    } catch (e) {
+      batchesUsed++;
+      errorLog.add(providerId, `DB read: ${String(e.message || e).slice(0, 60)}`);
+      own.failed += chunk.length;
+      continue;
+    }
+
+    // ── 2. classify ──
+    const stmts = [];
+    const kinds = [];
+    for (const j of chunk) {
+      const hash = jobContentHash(j);
+      const row = existing.get(j.url);
       const sal = parseSalary(j.salary);
       const salaryTier = classifySalaryFromParsed(sal, settings);
-      return env.DB.prepare(
-        `INSERT OR IGNORE INTO jobs (title,company,location,url,description,salary,remote_type,skills,seniority,employment_type,job_handle,source,status,updated_at,expires_at,salary_min_usd,salary_max_usd,salary_tier,salary_tier_confidence)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,'active',CURRENT_TIMESTAMP,datetime('now','+45 days'),?,?,?,?)`
-      ).bind(
-        j.title || 'Unknown', j.company || 'Company', j.location || '', j.url,
-        j.description || '', j.salary || '', j.remote_type || '',
-        JSON.stringify(j.skills || []), j.seniority || '', j.employment_type || '', j.job_handle || '',
-        providerId, sal.annualMinUsd, sal.annualMaxUsd, salaryTier.tier, salaryTier.confidence
-      );
-    });
 
-    const insertedUrls = new Set();
-    try {
-      const results = await env.DB.batch(insertStmts);
-      batchesUsed++;
-      results.forEach((r, idx) => {
-        if (r.meta?.changes > 0) { counters.inserted++; own.inserted++; insertedUrls.add(chunk[idx].url); }
-      });
-    } catch (e) {
-      errorLog.add(providerId, `DB insert: ${e.message.slice(0, 60)}`);
-      own.failed += chunk.length;
-      continue; // phase 1 itself failed for this chunk — skip phase 2 too
-    }
-
-    const toUpdate = chunk.filter((j) => !insertedUrls.has(j.url));
-    if (toUpdate.length) {
-      const updateStmts = toUpdate.map((j) => {
-        const sal = parseSalary(j.salary);
-        const salaryTier = classifySalaryFromParsed(sal, settings);
-        return env.DB.prepare(
-          `UPDATE jobs SET title=?,company=?,location=?,description=?,salary=?,remote_type=?,skills=?,seniority=?,employment_type=?,job_handle=?,source=?,status='active',updated_at=CURRENT_TIMESTAMP,expires_at=datetime('now','+45 days'),salary_min_usd=?,salary_max_usd=?,salary_tier=?,salary_tier_confidence=? WHERE url=?`
+      if (!row) {
+        if (budget.remaining < WRITE_COST.insert) { own.deferred++; continue; }
+        stmts.push(env.DB.prepare(
+          `INSERT OR IGNORE INTO jobs (title,company,location,url,description,salary,remote_type,skills,seniority,employment_type,job_handle,source,status,updated_at,expires_at,salary_min_usd,salary_max_usd,salary_tier,salary_tier_confidence,content_hash)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,'active',CURRENT_TIMESTAMP,datetime('now','+45 days'),?,?,?,?,?)`
         ).bind(
-          j.title || 'Unknown', j.company || 'Company', j.location || '',
+          j.title || 'Unknown', j.company || 'Company', j.location || '', j.url,
           j.description || '', j.salary || '', j.remote_type || '',
           JSON.stringify(j.skills || []), j.seniority || '', j.employment_type || '', j.job_handle || '',
-          providerId, sal.annualMinUsd, sal.annualMaxUsd, salaryTier.tier, salaryTier.confidence, j.url
-        );
-      });
-      try {
-        const results = await env.DB.batch(updateStmts);
-        batchesUsed++;
-        results.forEach((r) => { if (r.meta?.changes > 0) { counters.updated++; own.updated++; } });
-      } catch (e) {
-        errorLog.add(providerId, `DB update: ${e.message.slice(0, 60)}`);
-        own.failed += toUpdate.length;
+          providerId, sal.annualMinUsd, sal.annualMaxUsd, salaryTier.tier, salaryTier.confidence, hash
+        ));
+        kinds.push('insert');
+        budget.remaining -= WRITE_COST.insert; // refunded below if the row turns out to exist
+        continue;
       }
+
+      const needsLifecycle = row.status !== 'active' || Number(row.stale) === 1;
+      const manual = row.content_hash === 'manual';
+      const legacy = !row.content_hash;
+      const same = row.content_hash === hash;
+
+      if (manual || same || legacy) {
+        if (!needsLifecycle && !legacy) { own.unchanged++; continue; }
+        const cost = legacy ? (needsLifecycle ? WRITE_COST.touch : 1) : WRITE_COST.touch;
+        if (budget.remaining < cost) { own.deferred++; continue; }
+        if (legacy) {
+          stmts.push(env.DB.prepare(
+            needsLifecycle
+              ? `UPDATE jobs SET content_hash=?,${LIFECYCLE_SQL} WHERE url=? AND content_hash IS NULL`
+              : `UPDATE jobs SET content_hash=? WHERE url=? AND content_hash IS NULL`
+          ).bind(hash, j.url));
+        } else {
+          stmts.push(env.DB.prepare(`UPDATE jobs SET ${LIFECYCLE_SQL} WHERE url=?`).bind(j.url));
+        }
+        kinds.push(legacy && !needsLifecycle ? 'unchanged' : 'touch');
+        budget.remaining -= cost;
+        continue;
+      }
+
+      // content changed at the source → full refresh
+      if (budget.remaining < WRITE_COST.update) { own.deferred++; continue; }
+      stmts.push(env.DB.prepare(
+        `UPDATE jobs SET title=?,company=?,location=?,description=?,salary=?,remote_type=?,skills=?,seniority=?,employment_type=?,job_handle=?,source=?,content_hash=?,${LIFECYCLE_SQL},salary_min_usd=?,salary_max_usd=?,salary_tier=?,salary_tier_confidence=? WHERE url=?`
+      ).bind(
+        j.title || 'Unknown', j.company || 'Company', j.location || '',
+        j.description || '', j.salary || '', j.remote_type || '',
+        JSON.stringify(j.skills || []), j.seniority || '', j.employment_type || '', j.job_handle || '',
+        providerId, hash, sal.annualMinUsd, sal.annualMaxUsd, salaryTier.tier, salaryTier.confidence, j.url
+      ));
+      kinds.push('update');
+      budget.remaining -= WRITE_COST.update;
+    }
+
+    if (!stmts.length) continue;
+
+    // ── 3. one batch for the whole chunk ──
+    try {
+      const results = await env.DB.batch(stmts);
+      batchesUsed++;
+      results.forEach((r, idx) => {
+        const applied = (r.meta?.changes || 0) > 0;
+        const kind = kinds[idx];
+        if (kind === 'insert') {
+          if (applied) { counters.inserted++; own.inserted++; } else budget.remaining += WRITE_COST.insert;
+        } else if (kind === 'update') {
+          if (applied) { counters.updated++; own.updated++; } else budget.remaining += WRITE_COST.update;
+        } else if (kind === 'touch') {
+          if (applied) own.touched++; else budget.remaining += WRITE_COST.touch;
+        } else if (kind === 'unchanged') {
+          own.unchanged++;
+        }
+      });
+    } catch (e) {
+      batchesUsed++;
+      errorLog.add(providerId, `DB write: ${String(e.message || e).slice(0, 60)}`);
+      own.failed += stmts.length;
     }
   }
+  counters.touched = (counters.touched || 0) + own.touched;
+  counters.unchanged = (counters.unchanged || 0) + own.unchanged;
+  counters.deferred = (counters.deferred || 0) + own.deferred;
   return { batchesUsed, ...own };
 }
 
-// ROTATING WINDOW CAP — the fix for a real bug: capping via a fixed
-// `jobs.slice(0, cap)` always keeps the SAME first N jobs every run,
-// because providers return jobs in a stable order. Once those first N are
-// already saved, every later run re-fetches and re-slices the exact same
-// N — genuinely new postings sitting anywhere past position N in the
-// list are never reached, ever. This makes the cap window rotate over
-// time (same hour-based technique as providers/greenhouse.js's board
-// rotation) so every job in a large result eventually gets its turn to be
-// saved across a handful of runs, instead of a permanent stall at "+0".
-function rotatingCapSlice(jobs, cap) {
+// ────────────────────────────────────────────────────────────────
+// DIVERSITY — when a source returns more jobs than the per-run cap, the old
+// code kept a contiguous slice of whatever order the provider used, so one
+// company could fill the entire window. Jobs are first interleaved
+// round-robin BY COMPANY, then a rotating window (advanced once per 3-hour run,
+// see lib/platform/rotation.js) is taken: every run saves a few jobs from
+// many companies, and every job still gets its turn across runs.
+// ────────────────────────────────────────────────────────────────
+export function interleaveByCompany(jobs) {
+  const groups = new Map();
+  for (const job of jobs) {
+    const key = String(job.company || '').toLowerCase();
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(job);
+  }
+  const lists = [...groups.values()];
+  if (lists.length <= 1) return jobs;
+  const out = [];
+  for (let round = 0; out.length < jobs.length; round++) {
+    for (const list of lists) if (round < list.length) out.push(list[round]);
+  }
+  return out;
+}
+
+function capJobs(jobs, cap, slot) {
   if (jobs.length <= cap) return jobs;
-  const hourSlot = Math.floor(Date.now() / (1000 * 60 * 60));
-  const start = (hourSlot * cap) % jobs.length;
-  const end = start + cap;
-  return end <= jobs.length ? jobs.slice(start, end) : jobs.slice(start).concat(jobs.slice(0, end - jobs.length));
+  return pickRotatingWindow(interleaveByCompany(jobs), cap, slot);
+}
+
+// Sources in a stable order (by id), starting from the persisted cursor, so
+// every source gets its turn even when one run's budget only covers a few.
+export function orderSourcesFairly(sources, cursor) {
+  const sorted = [...sources].sort((a, b) => (Number(a.id) || 0) - (Number(b.id) || 0));
+  if (sorted.length <= 1) return sorted;
+  const start = ((Number(cursor) || 0) % sorted.length + sorted.length) % sorted.length;
+  const rotated = sorted.slice(start).concat(sorted.slice(0, start));
+  // keyword-search providers (none registered today) are costlier: stable cheap-first
+  const cheap = rotated.filter((s) => PROVIDERS[s.provider]?.ignoresQuery);
+  const costly = rotated.filter((s) => !PROVIDERS[s.provider]?.ignoresQuery);
+  return cheap.concat(costly);
 }
 
 // ────────────────────────────────────────────────────────────────
@@ -456,21 +564,12 @@ function rotatingCapSlice(jobs, cap) {
 export async function syncJobs(env, { onlyProvider = null } = {}) {
   await ensureTable(env);
   const settings = await getSettings(env);
-  const sources = await getActiveSources(env, { onlyProvider });
-  // Run cheap, single-request providers (every provider currently
-  // registered is ignoresQuery=true) before any future keyword-search
-  // provider. Otherwise a provider that needs one subrequest could get
-  // starved of budget by providers ahead of it that need 13+ each.
-  sources.sort((a, b) => {
-    const aCheap = PROVIDERS[a.provider]?.ignoresQuery ? 0 : 1;
-    const bCheap = PROVIDERS[b.provider]?.ignoresQuery ? 0 : 1;
-    return aCheap - bCheap;
-  });
+  const allSources = await getActiveSources(env, { onlyProvider });
   const counters = { inserted: 0, updated: 0, skipped: 0 };
   const errorLog = createErrorLog();
   const providerStats = [];
 
-  if (!sources.length) {
+  if (!allSources.length) {
     const result = {
       inserted: 0, updated: 0, skipped: 0,
       errors: [onlyProvider ? `No active sources found for provider "${onlyProvider}"` : 'No job sources configured — add one under Admin → API Sources'],
@@ -479,69 +578,84 @@ export async function syncJobs(env, { onlyProvider = null } = {}) {
     return result;
   }
 
-  // See "WARM-UP GOVERNOR" note above — this is the one place the cap is
-  // actually applied, right before jobs from a provider get saved.
+  // ── pacing: daily D1 write budget + fair source rotation ──
+  const now = Date.now();
+  const ceiling = subrequestCeiling(env);
+  let subrequestsUsed = 2; // settings + sync state reads
+  const state = await loadSyncState(env, now);
+  const dailyBudget = parseDailyBudget(settings.sync_daily_write_budget);
+  const allowance = runAllowance({ dailyBudget, usedToday: state.used, now });
+  if (allowance < WRITE_COST.touch) {
+    const result = {
+      inserted: 0, updated: 0, skipped: 0, touched: 0, unchanged: 0, deferred: 0,
+      errors: [`[budget] Daily write budget reached (~${state.used.toLocaleString('en-US')} of ${dailyBudget.toLocaleString('en-US')} rows today) — sync resumes after 00:00 UTC. Raise it under Admin → Settings → Job Sync.`],
+      budget: { dailyBudget, usedToday: state.used, allowance },
+    };
+    await logSync(env, result);
+    return result;
+  }
+  const budget = { remaining: allowance };
+
+  const sources = orderSourcesFairly(allSources, state.cursor);
+  const sortedCount = allSources.length;
+  const startIdx = sortedCount ? (((Number(state.cursor) || 0) % sortedCount) + sortedCount) % sortedCount : 0;
+
+  // See "WARM-UP GOVERNOR" above — the per-source cap is applied right before saving.
   const governor = await getSyncGovernorConfig(env);
   const totalJobsBefore = await getTotalJobsCount(env, governor.warmupThreshold);
+  subrequestsUsed += 1;
   const warmupActive = totalJobsBefore < governor.warmupThreshold;
   const perRunCap = warmupActive ? governor.warmupCapPerProvider : governor.hardCapPerProvider;
-  subrequestsUsed = 0; // reset per invocation — this module can be reused across a warm isolate
+  const slot = syncSlot(now);
 
-  // Providers actually attempted this run vs skipped for still holding a
-  // lock — locks are acquired/released per PROVIDER ID (not per source
-  // row), since multiple sources of the same provider are already
-  // processed sequentially within one JS loop iteration and can never
-  // race each other; the real race is this whole invocation vs a
-  // DIFFERENT overlapping invocation reaching the same provider.
   const lockedProviders = new Set();
+  const outcomeStatements = [];
+  let processedSources = 0;
 
   for (const source of sources) {
     const provider = PROVIDERS[source.provider];
-    if (!provider) { errorLog.add(source.provider, 'Unknown provider'); continue; }
+    if (!provider) { errorLog.add(source.provider, 'Unknown provider'); processedSources++; continue; }
 
     if (!lockedProviders.has(source.provider)) {
       const acquired = await acquireProviderLock(env, source.provider);
-      subrequestsUsed += 2; // SELECT + write — conservative, see estimateSubrequests' philosophy above
+      subrequestsUsed += 1;
       if (!acquired) {
         errorLog.add(source.provider, 'Skipped — already syncing in another run (concurrent sync prevented)', undefined);
+        processedSources++;
         continue;
       }
       lockedProviders.add(source.provider);
     }
 
-    // SUBREQUEST BUDGET CHECK — stop picking up new sources once this
-    // provider's estimated cost would risk exceeding Cloudflare's
-    // per-invocation subrequest ceiling. The remaining sources are simply
-    // deferred to the next cron run rather than causing a hard platform
-    // abort mid-write.
-    const identifierCount = Math.max(1, String(source.api_key || '').split(',').map(s => s.trim()).filter(Boolean).length);
-    const estimatedCost = estimateSubrequests(perRunCap, source.api_key);
-    if (subrequestsUsed + estimatedCost > SUBREQUEST_SAFETY_CEILING) {
-      errorLog.add(source.provider, `Deferred to next run — this sync already used its safe subrequest budget (${subrequestsUsed}/${SUBREQUEST_SAFETY_CEILING})`, undefined);
-      continue;
+    // SUBREQUEST BUDGET — stop at the first source that no longer fits. It is the
+    // FIRST source of the next run (the cursor is not advanced past it), so
+    // nothing starves and the order stays fair.
+    const identifierCount = Math.max(1, Math.min(
+      String(source.api_key || '').split(',').map(s => s.trim()).filter(Boolean).length,
+      Number(provider.MAX_BOARDS_PER_RUN) || Infinity
+    ));
+    const estimatedCost = estimateSubrequests(perRunCap, source.api_key, provider);
+    if (subrequestsUsed + estimatedCost > ceiling - TAIL_SUBREQUESTS) {
+      errorLog.add(source.provider, `Deferred to next run — this sync already used its safe subrequest budget (${subrequestsUsed}/${ceiling})`, undefined);
+      break;
     }
+    if (budget.remaining < WRITE_COST.touch) break; // today's write budget is spent for this run
 
     const startedAt = Date.now();
     const startInserted = counters.inserted;
-    // Keyless/per-company providers don't support keyword search — call
-    // once per sync instead of once per keyword.
     const runQueries = provider.ignoresQuery ? [null] : QUERIES;
     let providerBroken = false;
     let remainingCap = perRunCap;
-    let sourceErr = null; // last error for THIS source, used for recordSourceOutcome below
-    const own = { fetched: 0, inserted: 0, updated: 0, skipped: 0, failed: 0 };
+    let sourceErr = null;
+    const own = { fetched: 0, inserted: 0, updated: 0, touched: 0, unchanged: 0, deferred: 0, skipped: 0, failed: 0 };
 
     for (const q of runQueries) {
-      if (providerBroken) break; // first failure already indicates an account/quota-level issue — trying the other 12 keywords would just waste subrequest budget other providers need
-      if (remainingCap <= 0) break; // this provider has already hit its per-run cap
+      if (providerBroken) break;
+      if (remainingCap <= 0) break;
       try {
         let jobs = await withRetry(
           async () => {
-            // Count every attempt, including failed retries, against the
-            // invocation budget. The previous accounting only incremented
-            // after a successful fetch, so repeated timeouts/429s could make
-            // the governor believe there was more headroom than Cloudflare
-            // actually had.
+            // every attempt counts, including failed retries
             subrequestsUsed += identifierCount;
             return provider.fetchJobs({ apiKey: source.api_key, query: q, timeoutMs: TIMEOUT_MS });
           },
@@ -549,13 +663,13 @@ export async function syncJobs(env, { onlyProvider = null } = {}) {
         );
         if (jobs.length > remainingCap) {
           const total = jobs.length;
-          jobs = rotatingCapSlice(jobs, remainingCap);
-          errorLog.add(source.provider, `Capped at ${perRunCap} of ${total} jobs this run (rotating window)${warmupActive ? ' (warm-up mode)' : ''} — the rest will sync on a later run`, undefined);
+          jobs = capJobs(jobs, remainingCap, slot);
+          errorLog.add(source.provider, `Capped at ${perRunCap} of ${total} jobs this run (rotating window across companies)${warmupActive ? ' (warm-up mode)' : ''} — the rest will sync on a later run`, undefined);
         }
-        const saved = await saveJobs(env, jobs, counters, errorLog, source.provider, settings);
+        const saved = await saveJobs(env, jobs, counters, errorLog, source.provider, settings, budget);
         subrequestsUsed += saved.batchesUsed;
         remainingCap -= jobs.length;
-        own.fetched += saved.fetched; own.inserted += saved.inserted; own.updated += saved.updated; own.skipped += saved.skipped; own.failed += saved.failed;
+        for (const k of Object.keys(own)) own[k] += saved[k] || 0;
       } catch (e) {
         const cls = classifyError(e);
         errorLog.add(source.provider, `${cls.label}${cls.type === 'HTTP_ERROR' || cls.type === 'NETWORK_ERROR' ? '' : ` (${cls.type})`}`, q || undefined);
@@ -566,25 +680,44 @@ export async function syncJobs(env, { onlyProvider = null } = {}) {
     }
 
     if (source.id) {
-      await recordSourceOutcome(env, source.id, sourceErr
+      outcomeStatements.push(sourceOutcomeStatement(env, source.id, sourceErr
         ? { success: false, errorType: sourceErr.type, errorMessage: sourceErr.message }
-        : { success: true });
+        : { success: true }));
     }
+    processedSources++;
 
     providerStats.push({
       provider: source.provider,
       label: source.label,
       inserted: counters.inserted - startInserted,
-      fetched: own.fetched, updated: own.updated, skipped: own.skipped, failed: own.failed,
+      fetched: own.fetched, updated: own.updated, touched: own.touched, unchanged: own.unchanged,
+      deferred: own.deferred, skipped: own.skipped, failed: own.failed,
       duration_ms: Date.now() - startedAt,
     });
   }
 
-  for (const providerId of lockedProviders) await releaseProviderLock(env, providerId);
+  // ── tail: ≤ 4 D1 calls, all batched ──
+  if (outcomeStatements.length) { try { await env.DB.batch(outcomeStatements); } catch (e) { /* health bookkeeping never fails a sync */ } }
+  await releaseProviderLocks(env, lockedProviders);
+
+  const spent = Math.max(0, allowance - Math.max(0, budget.remaining));
+  await saveSyncState(env, {
+    day: state.day,
+    used: state.used + spent,
+    // a provider-filtered manual run must not disturb the fair rotation
+    cursor: onlyProvider ? state.cursor : (startIdx + processedSources) % Math.max(1, sortedCount),
+  });
+
+  if (counters.deferred > 0) {
+    errorLog.add('budget', `${counters.deferred} job(s) deferred to a later run — daily write budget pacing (${dailyBudget.toLocaleString('en-US')} rows/day)`, undefined);
+  }
 
   const result = {
     inserted: counters.inserted, updated: counters.updated, skipped: counters.skipped,
+    touched: counters.touched || 0, unchanged: counters.unchanged || 0, deferred: counters.deferred || 0,
     errors: errorLog.toArray(), providerStats, warmupActive, perRunCap,
+    budget: { dailyBudget, usedToday: state.used + spent, allowance, spent },
+    sourcesProcessed: processedSources, sourcesTotal: sortedCount,
   };
   await logSync(env, result);
   return result;

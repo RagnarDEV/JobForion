@@ -17,7 +17,7 @@ import { adSlot } from '../components/ad-slot.js';
 import { escapeHtml, slugify, listCompanies } from '../lib/directory/entities.js';
 import { googleAnalyticsTag } from '../lib/analytics/tag.js';
 import { analyticsTrackerScript } from '../lib/analytics/tracker.js';
-import { getSettings, HOMEPAGE_COPY_DEFAULTS, HERO_FONT_OPTIONS, resolveTheme } from '../lib/platform/settings.js';
+import { getSettings, HOMEPAGE_COPY_DEFAULTS, HERO_FONT_OPTIONS, resolveTheme, googleFontsHref } from '../lib/platform/settings.js';
 import { getCategories } from '../lib/content/categories.js';
 import { getCardStyles } from '../lib/jobs/job-card-styles.js';
 import { getAdSlotsConfig } from '../lib/content/ad-slots.js';
@@ -94,18 +94,7 @@ export async function renderMainHTML(env, base, user = null) {
   // leave the heading with no font applied at all.
   const heroFont = HERO_FONT_OPTIONS.find(f => f.name === settings.hero_heading_font) || HERO_FONT_OPTIONS[0];
   const resolvedTheme = resolveTheme(settings);
-  const googleFontParams = {
-    'Manrope': 'Manrope:wght@400;500;600;700;800',
-    'Inter': 'Inter:wght@400;500;600;700;800',
-    'Plus Jakarta Sans': 'Plus+Jakarta+Sans:wght@400;500;600;700;800',
-    'Poppins': 'Poppins:wght@400;500;600;700;800',
-    'Space Grotesk': 'Space+Grotesk:wght@500;600;700;800',
-    'Sora': 'Sora:wght@500;600;700;800',
-    'Outfit': 'Outfit:wght@400;500;600;700;800',
-  };
-  const selectedGoogleFonts = [...new Set([resolvedTheme.fontFamily, resolvedTheme.headingFont, heroFont.name])]
-    .map(name => googleFontParams[name]).filter(Boolean);
-  const googleFontHref = `${selectedGoogleFonts.map(param => `family=${param}`).join('&')}&family=JetBrains+Mono:wght@500;700`;
+  const googleFontHref = googleFontsHref(settings, [heroFont.name]);
   // Use the resolved D1 values exactly as entered in Settings. The defaults
   // already describe the current Hero, so a valid admin value must never be
   // silently rewritten just because it happens to match an older copy value.
@@ -312,7 +301,7 @@ export async function renderMainHTML(env, base, user = null) {
 
     career_insights: blogPosts.length ? `<section class="insights-strip homepage-reveal-section"><div class="content-wrap"><div class="section-heading compact-heading"><div><p class="eyebrow">CAREER GUIDANCE</p><h2>${escapeHtml(homepageCopy.blogTitle)}</h2></div><a class="text-button" href="/blog">${escapeHtml(homepageCopy.blogCta)}</a></div><div class="insights-grid">${blogPosts.map((post, i) => `<a class="insight-tile" href="/blog/${escapeHtml(post.slug)}"><div class="insight-cover" style="${post.cover_image_url ? `background-image:url('${escapeHtml(post.cover_image_url)}')` : `background:linear-gradient(135deg,${['#6a53d8','#ed9d83','#54a9b5','#d47898'][i % 4]},#29244e)`}"><span>${escapeHtml(post.category || 'Career advice')}</span></div><strong>${escapeHtml(post.title)}</strong><small>${escapeHtml(post.excerpt || 'Practical guidance for your next remote opportunity.')}</small></a>`).join('')}</div></div></section>` : '',
 
-    trust_strip: `<section class="trust-strip homepage-reveal-section"><div class="content-wrap trust-wrap"><div class="trust-card"><div class="trust-intro"><span class="trust-kicker">WHY JOBFORION</span><h2>Built for better remote work</h2><p>Everything you need to discover trusted opportunities with confidence.</p></div><div class="trust-grid"><div class="trust-item"><span class="trust-icon">⌁</span><p><strong>100% Remote Jobs</strong><small>Work from anywhere in the world</small></p></div><div class="trust-item"><span class="trust-icon">✓</span><p><strong>Verified companies</strong><small>Teams you can trust</small></p></div><div class="trust-item"><span class="trust-icon">✦</span><p><strong>Daily updates</strong><small>Fresh roles added every day</small></p></div><div class="trust-item"><span class="trust-icon">◌</span><p><strong>Free for job seekers</strong><small>Search and apply for free</small></p></div></div></div></div></section>`,
+    trust_strip: `<section class="trust-strip homepage-reveal-section"><div class="content-wrap trust-wrap"><div class="trust-card"><div class="trust-intro"><span class="trust-kicker">WHY JOBFORION</span><h2>Built for better remote work</h2><p>Everything you need to discover trusted opportunities with confidence.</p></div><div class="trust-grid"><div class="trust-item"><span class="trust-icon">${iconGlobe({ size: 20 })}</span><p><strong>100% Remote Jobs</strong><small>Work from anywhere in the world</small></p></div><div class="trust-item"><span class="trust-icon">${iconBadgeCheck({ size: 20 })}</span><p><strong>Verified companies</strong><small>Teams you can trust</small></p></div><div class="trust-item"><span class="trust-icon">${iconClock({ size: 20 })}</span><p><strong>Fresh every 3 hours</strong><small>Fresh roles added every day</small></p></div><div class="trust-item"><span class="trust-icon">${iconCheck({ size: 20 })}</span><p><strong>Free for job seekers</strong><small>Search and apply for free</small></p></div></div></div></div></section>`,
 
     employer_cta: `<section class="employer-cta-section homepage-reveal-section"><div class="content-wrap"><div class="cta-banner"><div class="cta-copy"><span class="cta-kicker">FOR EMPLOYERS</span><div class="cta-title">Build your next great team.</div><div class="cta-sub">Reach qualified candidates and post your job in minutes.</div><div class="cta-actions"><button class="cta-btn" onclick="openPostJobModal()">${iconPlus({ size: 13 })} Post a job</button><a class="cta-secondary" href="/companies">Explore employer resources ${iconArrowRight({ size: 13 })}</a></div></div><div class="cta-art" aria-hidden="true"><span class="cta-orbit cta-orbit-one"></span><span class="cta-orbit cta-orbit-two"></span><span class="cta-art-card cta-art-card-main">${iconBuilding({ size: 25 })}<strong>Remote-ready teams</strong><small>Made for modern hiring</small></span><span class="cta-art-card cta-art-card-mini">${iconBriefcase({ size: 17 })}<strong>Post a role</strong></span></div></div></div></section>`,
   };
@@ -346,11 +335,11 @@ ${ICON_HEAD}
 <meta name="twitter:card" content="summary">
 <link rel="canonical" href="${base}">
 <link rel="alternate" type="application/rss+xml" title="${siteName} Jobs Feed" href="${base}/feed.rss">
-<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebSite","name":${JSON.stringify(settings.site_name)},"url":"${base}","potentialAction":{"@type":"SearchAction","target":"${base}/?search={search_term_string}","query-input":"required name=search_term_string"}}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebSite","name":${JSON.stringify(settings.site_name)},"url":"${base}","potentialAction":{"@type":"SearchAction","target":"${base}/search/{search_term_string}","query-input":"required name=search_term_string"}}</script>
 <script type="application/ld+json">${orgSchema}</script>
 <script type="application/ld+json">${itemListSchema}</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?${googleFontHref}&display=swap" rel="stylesheet">
+<link href="${googleFontHref}" rel="stylesheet">
 ${homeStyles({ settings, heroFont })}
 </head>
 <body>
@@ -369,7 +358,7 @@ ${mobileBottomNavHtml('/', user)}
     <div class="content-wrap" style="max-width:800px">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px">
         <h2 style="font-family:var(--font-heading,sans-serif);font-size:22px;font-weight:700;color:var(--ink);display:flex;align-items:center;gap:8px">${iconBookmark({ size: 20 })} Saved Jobs</h2>
-        <button onclick="clearAllSaved()" style="padding:7px 14px;border-radius:8px;border:1px solid var(--border2);background:transparent;color:var(--ink3);font-size:12px;cursor:pointer;font-family:inherit;font-weight:600">Clear All</button>
+        <button onclick="clearAllSaved()" style="padding:7px 14px;border-radius:8px;border:1px solid var(--border2);background:transparent;color:var(--ink3);font-size:13px;cursor:pointer;font-family:inherit;font-weight:600">Clear All</button>
       </div>
       <div class="jobs-list" id="savedList"></div>
     </div>

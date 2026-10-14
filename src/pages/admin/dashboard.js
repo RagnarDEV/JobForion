@@ -430,7 +430,7 @@ export async function renderDashboardContent(env) {
         </div>`).join('') : '<div class="adm-empty">No activity recorded yet</div>'}</div>
       </div>
       <div class="adm-card dashboard-compact-card">
-        <div class="dashboard-card-heading"><div class="adm-card-title">Recent Cleanup History</div><span class="dashboard-card-note">Daily · 03:00 UTC</span></div>
+        <div class="dashboard-card-heading"><div class="adm-card-title">Recent Cleanup History</div><span class="dashboard-card-note">Daily · 03:30 UTC</span></div>
         <div class="dashboard-compact-list">
         ${(cleanupLogs || []).length ? cleanupLogs.map(c => {
           let breakdown = {};

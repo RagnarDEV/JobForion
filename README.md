@@ -12,7 +12,7 @@
 ```text
 jobforion/
 ├─ wrangler.toml                ← Worker + D1 + R2 + Workers AI + Cron واحد + Observability
-├─ package.json                 ← npm test = smoke + 5 اختبارات
+├─ package.json                 ← npm test = smoke + 6 اختبارات (منها sync-budget)
 ├─ .github/workflows/deploy.yml ← verify (audit + tests) ثم deploy
 ├─ scripts/audit.mjs            ← فحص syntax + import/export + الملفات اليتيمة (node scripts/audit.mjs [--strict])
 ├─ tests/                       ← smoke.test.mjs (يشغّل الـWorker الحقيقي على SQLite تحاكي D1) + اختبارات الوحدات
@@ -46,7 +46,7 @@ jobforion/
       ├─ ai/          ai-service · ai-control-center · admin/career/content/job-intelligence · matching
       ├─ analytics/   events · tracker · tag
       ├─ seo/         jsonld · meta · breadcrumbs · sitemap
-      ├─ platform/    config-memo · settings · cache · rate-limit · observability · activity-log · html-sanitizer · search-utils ·
+      ├─ platform/    config-memo · settings · cache · rate-limit · observability · activity-log · html-sanitizer · search-utils · rotation · write-budget · safe-redirect
       │               site-cache (طبقة التجميع المحسوبة مسبقاً — راجع docs/CHANGELOG.md) · job-window (استعلامات مقيَّدة)
       ├─ accounts/    session · csrf · password · permissions · tokens · email · users
       └─ monetization/core.js
@@ -58,7 +58,13 @@ jobforion/
 
 يمر الطلب عبر `src/index.js` الذي يطبّق security headers، ثم يمرر المسار إلى الراوتر المتخصص. تُعالج طلبات assets وR2 وlogo proxy قبل bootstrap الخاص بـD1 لتقليل كلفة الطلبات التي لا تحتاج قاعدة بيانات. أما الصفحات والحسابات والإدارة والمحتوى فتستخدم schema bootstrap الآمن والمتكرر داخل `src/db/schema/ai-tables.js`.
 
-تعمل **مهمة Cron واحدة** `*/30 * * * *` (الخطة المجانية تسمح بخمس مهام لكل حساب) وتوزّعها `src/app/cron.js` حسب وقت UTC: `:30` كل ساعة ← تجميع التحليلات وتنبيهاتها، `:00` عند الساعات 00/06/12/18 ← مزامنة الوظائف، الساعة 03 ← الصيانة اليومية (lifecycle الوظائف + انتهاء المقالات + حملات المونيتايزيشن)، الساعة 08 ← إرسال تنبيهات الوظائف، الساعة 09 ← فحص توليد المدونة. تُنفَّذ مجموعة واحدة فقط في كل استدعاء كي لا تتشارك ميزانية 50 subrequest. أي فشل يُسجَّل في `error_logs` ويظهر في `/admin/system`.
+تعمل **مهمة Cron واحدة** `*/30 * * * *` (الخطة المجانية تسمح بخمس مهام لكل حساب) وتوزّعها `src/app/cron.js` حسب وقت UTC: **المزامنة كل 3 ساعات** عند `:00` للساعات 00/03/06/09/12/15/18/21؛ `:30` كل ساعة ← تجميع التحليلات (وعند 03:30 الصيانة اليومية، وعند 09:30 توليد المدونة)؛ `08:00` ← تنبيهات الوظائف. كل استدعاء ينفّذ مجموعة مهام واحدة فقط حفاظاً على حد 50 subrequest.
+
+### المزامنة (db/sync.js) — توزيع عادل + ميزانية كتابة
+- **قراءة قبل الكتابة:** الوظيفة غير المتغيّرة لا تُكتب إطلاقاً (بصمة `content_hash`)؛ تُجدَّد تواريخها فقط كل `sync_touch_interval_days` (10 أيام). الوظيفة المعدّلة من الأدمن (`content_hash='manual'`) لا تُستبدل.
+- **ميزانية كتابة يومية:** `sync_daily_write_budget` (55,000 صف افتراضياً من حد D1 البالغ 100,000) تُوزَّع على الدورات المتبقية في اليوم؛ الوظائف الجديدة الزائدة تُؤجَّل للدورة التالية.
+- **تنوّع المصادر:** مؤشّر دوران (`_sync_cursor`) يضمن أن كل مصدر يأخذ دوره، ويُقطع عند أول مصدر لا تتسع له الميزانية ليبدأ منه الدور التالي؛ وعند تجاوز سقف الوظائف تُخلط الوظائف بالتناوب بين الشركات (`interleaveByCompany`) ثم تُؤخذ نافذة دوّارة تتقدّم مرة لكل دورة.
+- حُذفت ثلاثة فهارس زائدة من `jobs` (بادئات لفهارس مركّبة) فصار إدخال/حذف الوظيفة أرخص بنحو 18%.
 
 ## البيانات والتخزين
 

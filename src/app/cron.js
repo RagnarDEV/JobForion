@@ -3,20 +3,22 @@
 // Scheduled-task dispatcher.
 //
 // WHY ONE TRIGGER: Cloudflare's free plan allows only 5 Cron Triggers per
-// ACCOUNT (not per Worker). JobForion used all five on its own. A single
-// "*/30 * * * *" trigger is now dispatched here by UTC time instead:
+// ACCOUNT (not per Worker). A single "*/30 * * * *" trigger is dispatched here
+// by UTC time instead:
 //
-//   minute :30 (every hour)  → analytics aggregation + retention + alerts
-//   minute :00, hour % 6 = 0 → job sync           (00, 06, 12, 18 UTC)
-//   minute :00, hour = 3     → daily maintenance  (job cleanup, blog expiry,
-//                                                  monetization campaigns)
-//   minute :00, hour = 8     → job-alerts digest dispatch
-//   minute :00, hour = 9     → blog generation check
+//   :00, hour % 3 = 0        → job sync           (00,03,06,09,12,15,18,21 UTC)
+//   :30, hour = 3            → daily maintenance  (job cleanup, blog expiry,
+//                                                  monetization campaigns) —
+//                                                  runs right AFTER the 03:00 sync
+//   :00, hour = 8            → job-alerts digest dispatch
+//   :30, hour = 9            → blog generation check (09:00 is a sync slot)
+//   :30, every other hour    → analytics aggregation + retention + alerts
 //
 // EACH INVOCATION RUNS AT MOST ONE TASK GROUP. That is deliberate: the free
 // plan's 50-subrequest budget is per invocation (D1 queries count), so the
-// sync governor's ceiling (see db/sync.js) must never share an invocation
-// with another task. Slots never collide (:00 vs :30).
+// sync governor's ceiling (see db/sync.js) must never share an invocation with
+// another task. The sync cadence is SYNC_INTERVAL_HOURS in
+// lib/platform/rotation.js — the two must stay in step.
 //
 // LEGACY: if the old five triggers are still registered on the account
 // (event.cron matches one of them) they keep working exactly as before.
@@ -31,6 +33,7 @@ import { runBlogExpirationCleanup } from '../lib/content/blog-automation/expirat
 import { runJobAlertsDispatch } from '../lib/jobs/job-alerts-dispatcher.js';
 import { expireMonetizationCampaigns } from '../lib/monetization/core.js';
 import { aggregateAnalytics, cleanupAnalytics, evaluateAnalyticsAlerts } from '../lib/analytics/events.js';
+import { SYNC_INTERVAL_HOURS } from '../lib/platform/rotation.js';
 import { reportOperationalError } from '../lib/platform/observability.js';
 import { refreshSiteCache, siteCacheAgeMinutes, claimSiteCacheRefresh, SITE_CACHE_MAX_AGE_MINUTES } from '../lib/platform/site-cache.js';
 
@@ -95,11 +98,14 @@ export function pickTasks(event) {
   if (event && LEGACY_CRONS[event.cron]) return LEGACY_CRONS[event.cron];
   const when = new Date((event && event.scheduledTime) || Date.now());
   const hour = when.getUTCHours();
-  if (when.getUTCMinutes() >= 30) return ['analytics'];
-  if (hour === 3) return ['daily-maintenance'];
+  const late = when.getUTCMinutes() >= 30;
+  // Sync slots own the :00 minute of every 3rd hour. The two daily tasks that
+  // would collide with a slot (03:00, 09:00) move to :30 of that same hour.
+  if (late && hour === 3) return ['daily-maintenance'];
+  if (late && hour === 9) return ['blog-generation'];
+  if (late) return ['analytics'];
   if (hour === 8) return ['job-alerts'];
-  if (hour === 9) return ['blog-generation'];
-  if (hour % 6 === 0) return ['job-sync'];
+  if (hour % SYNC_INTERVAL_HOURS === 0) return ['job-sync'];
   return [];
 }
 

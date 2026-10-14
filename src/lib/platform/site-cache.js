@@ -23,7 +23,7 @@ import { getCategories } from '../content/categories.js';
 
 const MEMO_MS = 5 * 60 * 1000;
 const memo = new Map(); // key -> { at, value }
-// 12.5h: the refresh costs ~2x the catalogue in rows read, jobs sync every 6h and
+// 12.5h: the refresh costs ~2x the catalogue in rows read, jobs sync every 3h and
 // pages are edge-cached for hours anyway — twice a day is plenty.
 export const SITE_CACHE_MAX_AGE_MINUTES = 12 * 60 + 30;
 

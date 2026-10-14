@@ -4,6 +4,8 @@
 // (the slug in boards.greenhouse.io/<token>), separated by commas —
 // e.g. "airbnb, figma, netflix" — so a single "Add Source" entry can pull
 // from several companies at once instead of needing one entry per board.
+import { pickRotatingWindow, syncSlot } from '../lib/platform/rotation.js';
+
 export const id = 'greenhouse';
 export const needsKey = true;
 export const keyFormatHint = 'board token(s), comma-separated — e.g. airbnb, figma. Large lists (10+) are processed a few at a time per run automatically — see MAX_BOARDS_PER_RUN below.';
@@ -19,21 +21,13 @@ export const ignoresQuery = true;
 // below) instead of a single run ever trying to hit all of them at once.
 export const MAX_BOARDS_PER_RUN = 5;
 
-// Rotates which slice of tokens gets processed this run, based on the
-// current hour — so with 20 tokens and a cap of 5, every board still gets
-// synced roughly every ~4 runs (a few hours apart, since the cron itself
-// runs every few hours — see wrangler.toml) instead of tokens 6-20 simply
-// never running. No extra D1 state needed: purely a function of the
-// current time and the token list itself.
+// Rotates which slice of tokens gets processed this run. The window advances by
+// exactly one per scheduled sync (every 3 hours — lib/platform/rotation.js), so with
+// 20 tokens and a cap of 5 every board is synced once every 4 runs (12 hours). The
+// previous hour-based counter skipped windows once the cron moved off a 1-hour
+// cadence. No D1 state needed: a pure function of time and the token list.
 function pickTokensForThisRun(tokens) {
-  if (tokens.length <= MAX_BOARDS_PER_RUN) return tokens;
-  const hourSlot = Math.floor(Date.now() / (1000 * 60 * 60));
-  const start = (hourSlot * MAX_BOARDS_PER_RUN) % tokens.length;
-  const picked = [];
-  for (let i = 0; i < MAX_BOARDS_PER_RUN; i++) {
-    picked.push(tokens[(start + i) % tokens.length]);
-  }
-  return picked;
+  return pickRotatingWindow(tokens, MAX_BOARDS_PER_RUN, syncSlot());
 }
 
 export async function fetchJobs({ apiKey, timeoutMs = 15000 } = {}) {

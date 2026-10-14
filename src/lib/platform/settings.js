@@ -44,8 +44,8 @@ export const APPEARANCE_DEFAULTS = {
   appearance_section_spacing: '46',
   appearance_card_gap: '14',
   appearance_density: 'comfortable',
-  appearance_font_family: 'Manrope',
-  appearance_heading_font: 'Space Grotesk',
+  appearance_font_family: 'Inter',
+  appearance_heading_font: 'Plus Jakarta Sans',
   salary_tier_high_token: 'green',
   salary_tier_good_token: 'blue',
   salary_tier_standard_token: 'slate',
@@ -120,6 +120,8 @@ export const THEME_SETTING_METADATA = Object.freeze({
   analytics_enabled: { type: 'boolean', category: 'analytics', description: 'Enable first-party analytics collection' },
   analytics_retention: { type: 'enum', values: ['30', '60', '90', '180', '365', 'unlimited'], category: 'analytics', description: 'Analytics retention period in days' },
   analytics_timezone: { type: 'enum', values: ['UTC', 'America/New_York', 'Europe/London', 'Asia/Dubai', 'Asia/Tokyo'], category: 'analytics', description: 'Analytics reporting timezone' },
+  sync_daily_write_budget: { type: 'integer', min: 1000, max: 95000, category: 'sync', description: 'Estimated D1 rows the job sync may write per UTC day' },
+  sync_touch_interval_days: { type: 'integer', min: 3, max: 25, category: 'sync', description: 'How often an unchanged job is refreshed (days)' },
   analytics_sample_rate: { type: 'enum', values: ['10', '25', '50', '100'], category: 'analytics', description: 'Accepted client event sample rate' },
   analytics_alert_traffic_drop_pct: { type: 'integer', min: 1, max: 100, category: 'analytics', description: 'Traffic drop alert threshold' },
   analytics_alert_apply_drop_pct: { type: 'integer', min: 1, max: 100, category: 'analytics', description: 'Apply-rate drop alert threshold' },
@@ -167,6 +169,14 @@ export const SETTINGS_DEFAULTS = {
   sync_warmup_threshold: '150',
   sync_warmup_cap_per_provider: '15',
   sync_hard_cap_per_provider: '100',
+  // D1 free-plan write budget (see lib/platform/write-budget.js). The sync keeps
+  // its estimated rows-written under this number per UTC day and spreads it
+  // evenly across the day's 3-hourly runs. 100k is the plan limit; the rest is
+  // reserved for page-view logging, analytics, cleanup and admin actions.
+  sync_daily_write_budget: '55000',
+  // An UNCHANGED job is only "touched" (updated_at / expires_at refreshed) this
+  // often. Must stay well under the 30-day stale-cleanup rule.
+  sync_touch_interval_days: '10',
 
   // ── HOT PAY — high-salary job indicator ─────────────────────────────
   // The threshold is stored as annual USD after the shared salary parser
@@ -198,7 +208,7 @@ export const SETTINGS_DEFAULTS = {
   analytics_enabled: '1',
   analytics_retention: '90',
   analytics_timezone: 'UTC',
-  analytics_sample_rate: '100',
+  analytics_sample_rate: '50',
   analytics_alert_traffic_drop_pct: '30',
   analytics_alert_apply_drop_pct: '20',
   analytics_alert_payment_failure_pct: '15',
@@ -345,6 +355,26 @@ export function resolveTheme(settings = {}) {
     navGap: boundedInteger(source.nav_gap, 28, 8, 48),
     navCtaEnabled: String(source.nav_cta_enabled) !== '0',
   };
+}
+
+// ONE font loader for every public page. Previously the shared layout downloaded
+// 8 families on every inner page (render-blocking) while the homepage loaded only
+// the selected ones — so pages looked different and loaded far more than needed.
+const GOOGLE_FONT_PARAMS = {
+  'Manrope': 'Manrope:wght@400;500;600;700;800',
+  'Inter': 'Inter:wght@400;500;600;700;800',
+  'Plus Jakarta Sans': 'Plus+Jakarta+Sans:wght@400;500;600;700;800',
+  'Poppins': 'Poppins:wght@400;500;600;700;800',
+  'Space Grotesk': 'Space+Grotesk:wght@500;600;700;800',
+  'Sora': 'Sora:wght@500;600;700;800',
+  'Outfit': 'Outfit:wght@400;500;600;700;800',
+};
+export function googleFontsHref(settings = {}, extraFontNames = []) {
+  const theme = resolveTheme(settings);
+  const names = [...new Set([theme.fontFamily, theme.headingFont, ...extraFontNames])];
+  const families = names.map((n) => GOOGLE_FONT_PARAMS[n]).filter(Boolean).map((f) => `family=${f}`);
+  families.push('family=JetBrains+Mono:wght@500;700');
+  return `https://fonts.googleapis.com/css2?${families.join('&')}&display=swap`;
 }
 
 export function themeCssVariables(settings = {}) {
