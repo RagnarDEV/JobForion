@@ -557,12 +557,51 @@ export function orderSourcesFairly(sources, cursor) {
   return cheap.concat(costly);
 }
 
+
+// ────────────────────────────────────────────────────────────────
+// SELF-HEAL: the sync depends on jobs.content_hash. That column is created by the
+// schema migration (SCHEMA_VERSION gate), which only runs when the version string
+// changes. If a deploy ever ships the new sync code WITHOUT the migration having
+// run yet, every read would fail with "no such column" and the site would silently
+// stop importing jobs (this actually happened once: v2.5.0 forgot to bump the
+// version). So the sync verifies the column itself — one cheap probe per isolate —
+// and adds it when missing. ALTER TABLE ADD COLUMN is idempotent here (guarded by
+// the probe) and never touches existing rows.
+// ────────────────────────────────────────────────────────────────
+let contentHashColumnReady = false;
+export async function ensureContentHashColumn(env) {
+  if (contentHashColumnReady) return { ok: true, calls: 0 };
+  try {
+    await env.DB.prepare('SELECT content_hash FROM jobs LIMIT 1').all();
+    contentHashColumnReady = true;
+    return { ok: true, calls: 1 };
+  } catch (probeError) {
+    if (!/no such column|content_hash/i.test(String(probeError && probeError.message))) return { ok: false, calls: 1, error: String(probeError && probeError.message || probeError) };
+    try {
+      await env.DB.prepare('ALTER TABLE jobs ADD COLUMN content_hash TEXT').run();
+      contentHashColumnReady = true;
+      return { ok: true, calls: 2, healed: true };
+    } catch (alterError) {
+      // "duplicate column name" = another run added it first — that is success.
+      if (/duplicate column/i.test(String(alterError && alterError.message))) { contentHashColumnReady = true; return { ok: true, calls: 2 }; }
+      return { ok: false, calls: 2, error: String(alterError && alterError.message || alterError) };
+    }
+  }
+}
+export function resetContentHashColumnProbe() { contentHashColumnReady = false; } // tests only
+
 // ────────────────────────────────────────────────────────────────
 // Main entry point
 // ────────────────────────────────────────────────────────────────
 
 export async function syncJobs(env, { onlyProvider = null } = {}) {
   await ensureTable(env);
+  const columnCheck = await ensureContentHashColumn(env);
+  if (!columnCheck.ok) {
+    const result = { inserted: 0, updated: 0, skipped: 0, errors: [`[schema] jobs.content_hash is unavailable: ${String(columnCheck.error || '').slice(0, 120)} — run Admin → System → Repair schema`] };
+    await logSync(env, result);
+    return result;
+  }
   const settings = await getSettings(env);
   const allSources = await getActiveSources(env, { onlyProvider });
   const counters = { inserted: 0, updated: 0, skipped: 0 };
@@ -581,7 +620,7 @@ export async function syncJobs(env, { onlyProvider = null } = {}) {
   // ── pacing: daily D1 write budget + fair source rotation ──
   const now = Date.now();
   const ceiling = subrequestCeiling(env);
-  let subrequestsUsed = 2; // settings + sync state reads
+  let subrequestsUsed = 2 + columnCheck.calls; // settings + sync state reads + column probe
   const state = await loadSyncState(env, now);
   const dailyBudget = parseDailyBudget(settings.sync_daily_write_budget);
   const allowance = runAllowance({ dailyBudget, usedToday: state.used, now });

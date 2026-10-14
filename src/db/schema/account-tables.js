@@ -355,6 +355,84 @@ export async function ensureAccountTables(env) {
   // structure, dropping and recreating it never touches the underlying
   // row data.
   await env.DB.prepare(`DROP INDEX IF EXISTS idx_jobs_company_id`).run();
+
+  // ── Affiliate Manager (2026-10-14) — appended LAST, never reorders earlier units ──
+  // aff_programs: a partner / network account (Amazon, Impact, a direct deal ...).
+  // aff_offers:   one promotable link. The destination (with your affiliate id) lives
+  //               ONLY here; visitors reach it through /go/<slug>, never from client input.
+  // aff_daily:    per-day click counters (1 upserted row per offer+placement+day) — the
+  //               cheap source for stats; no per-click write is needed for reporting.
+  // aff_clicks:   per-click detail, written only while under the daily detail cap, kept
+  //               N days. Its click_id is what a network reports back for a conversion.
+  // aff_conversions: commissions you enter / import (never invented by the site).
+  await env.DB.prepare(`
+    CREATE TABLE IF NOT EXISTS aff_programs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      network TEXT,
+      commission_note TEXT,
+      status TEXT NOT NULL DEFAULT 'active',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `).run();
+  await env.DB.prepare(`
+    CREATE TABLE IF NOT EXISTS aff_offers (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      program_id INTEGER NOT NULL,
+      slug TEXT UNIQUE NOT NULL,
+      title TEXT NOT NULL,
+      description TEXT,
+      cta_label TEXT,
+      badge TEXT,
+      icon_key TEXT,
+      destination_url TEXT NOT NULL,
+      placements TEXT,
+      category_keys TEXT,
+      skill_keys TEXT,
+      weight INTEGER DEFAULT 1,
+      status TEXT NOT NULL DEFAULT 'active',
+      starts_at DATETIME,
+      ends_at DATETIME,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `).run();
+  await env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_aff_offers_program ON aff_offers(program_id)').run();
+  await env.DB.prepare(`
+    CREATE TABLE IF NOT EXISTS aff_daily (
+      day TEXT NOT NULL,
+      offer_id INTEGER NOT NULL,
+      placement TEXT NOT NULL,
+      clicks INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (day, offer_id, placement)
+    ) WITHOUT ROWID
+  `).run();
+  await env.DB.prepare(`
+    CREATE TABLE IF NOT EXISTS aff_clicks (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      click_id TEXT UNIQUE NOT NULL,
+      offer_id INTEGER NOT NULL,
+      placement TEXT,
+      page_path TEXT,
+      ip_hash TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `).run();
+  await env.DB.prepare(`
+    CREATE TABLE IF NOT EXISTS aff_conversions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      offer_id INTEGER NOT NULL,
+      click_id TEXT,
+      amount_minor INTEGER NOT NULL DEFAULT 0,
+      currency TEXT NOT NULL DEFAULT 'USD',
+      status TEXT NOT NULL DEFAULT 'pending',
+      note TEXT,
+      occurred_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `).run();
+  await env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_aff_conversions_offer ON aff_conversions(offer_id, occurred_at DESC)').run();
   await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_jobs_company_status ON jobs(company_id, status)`).run();
   // Exact-match company lookups (lib/directory/entities.js's jobsByCompany +
   // companySnapshot, both `WHERE company = ?`) — these predate the real

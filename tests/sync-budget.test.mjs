@@ -1,7 +1,8 @@
 // Tests for the 3-hourly sync: read-before-write, write budget, fair rotation, diversity.
 import assert from 'node:assert/strict';
 import { D1Shim } from './helpers/d1-shim.mjs';
-import { saveJobs, interleaveByCompany, orderSourcesFairly, jobContentHash } from '../src/db/sync.js';
+import { saveJobs, interleaveByCompany, orderSourcesFairly, jobContentHash, ensureContentHashColumn, resetContentHashColumnProbe } from '../src/db/sync.js';
+import { readFileSync } from 'node:fs';
 import { pickRotatingWindow, syncSlot, SYNC_INTERVAL_MS } from '../src/lib/platform/rotation.js';
 import { WRITE_COST, runAllowance, syncRunsLeftToday, loadSyncState, saveSyncState, parseDailyBudget } from '../src/lib/platform/write-budget.js';
 
@@ -111,4 +112,24 @@ assert.deepEqual([st.used, st.cursor], [1234, 5]);
 st = await loadSyncState(env, Date.UTC(2026, 9, 15, 0, 0));
 assert.equal(st.used, 0, 'counter resets on a new UTC day');
 assert.equal(st.cursor, 5, 'cursor survives the day change');
+// ── REGRESSION (v2.5.0 outage): code needs jobs.content_hash but the migration did not run ──
+const legacy = { DB: new D1Shim() };
+legacy.DB.db.exec('CREATE TABLE jobs(id INTEGER PRIMARY KEY, url TEXT UNIQUE, title TEXT)');
+resetContentHashColumnProbe();
+const healed = await ensureContentHashColumn(legacy);
+assert.ok(healed.ok && healed.healed, 'missing content_hash column is added by the sync itself');
+assert.ok(legacy.DB.db.prepare('PRAGMA table_info(jobs)').all().some((c) => c.name === 'content_hash'));
+resetContentHashColumnProbe();
+assert.ok((await ensureContentHashColumn(legacy)).ok, 'second probe is a no-op');
+
+// ── GUARD: new migration units are useless unless SCHEMA_VERSION changes ──
+// Fingerprint of the migration source; when it changes, SCHEMA_VERSION in db/schema.js
+// MUST change too (otherwise the migration never runs on deployed databases).
+const migrationSource = ['account-tables', 'core-tables', 'ai-tables'].map((f) => readFileSync(new URL(`../src/db/schema/${f}.js`, import.meta.url), 'utf8')).join('\n');
+let fp = 2166136261;
+for (let i = 0; i < migrationSource.length; i++) { fp ^= migrationSource.charCodeAt(i); fp = Math.imul(fp, 16777619) >>> 0; }
+const schemaVersion = /const SCHEMA_VERSION = '([^']+)'/.exec(readFileSync(new URL('../src/db/schema.js', import.meta.url), 'utf8'))[1];
+const RECORDED = { version: '2026-10-14.1', fingerprint: 0 };
+if (RECORDED.fingerprint !== 0 && fp !== RECORDED.fingerprint) assert.notEqual(schemaVersion, RECORDED.version, 'migration source changed — bump SCHEMA_VERSION');
+console.log(`schema fingerprint ${fp} @ SCHEMA_VERSION ${schemaVersion}`);
 console.log('sync-budget tests: all assertions passed');

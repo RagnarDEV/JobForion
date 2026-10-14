@@ -120,6 +120,16 @@ export const THEME_SETTING_METADATA = Object.freeze({
   analytics_enabled: { type: 'boolean', category: 'analytics', description: 'Enable first-party analytics collection' },
   analytics_retention: { type: 'enum', values: ['30', '60', '90', '180', '365', 'unlimited'], category: 'analytics', description: 'Analytics retention period in days' },
   analytics_timezone: { type: 'enum', values: ['UTC', 'America/New_York', 'Europe/London', 'Asia/Dubai', 'Asia/Tokyo'], category: 'analytics', description: 'Analytics reporting timezone' },
+  affiliate_enabled: { type: 'boolean', category: 'affiliate', description: 'Affiliate offers master switch' },
+  aff_place_job_page: { type: 'boolean', category: 'affiliate', description: 'Show affiliate offers on job pages' },
+  aff_place_skill_page: { type: 'boolean', category: 'affiliate', description: 'Show affiliate offers on skill pages' },
+  aff_place_category_page: { type: 'boolean', category: 'affiliate', description: 'Show affiliate offers on category pages' },
+  aff_place_blog_post: { type: 'boolean', category: 'affiliate', description: 'Show affiliate offers on blog posts' },
+  aff_place_home_sidebar: { type: 'boolean', category: 'affiliate', description: 'Show affiliate offers in the homepage sidebar' },
+  affiliate_disclosure: { type: 'text', max: 300, category: 'affiliate', description: 'Affiliate disclosure line' },
+  aff_max_offers_per_placement: { type: 'integer', min: 1, max: 4, category: 'affiliate', description: 'Offers shown per placement' },
+  aff_detail_clicks_per_day: { type: 'integer', min: 0, max: 20000, category: 'affiliate', description: 'Max per-click detail rows written per day' },
+  aff_detail_retention_days: { type: 'integer', min: 7, max: 365, category: 'affiliate', description: 'Days to keep per-click detail' },
   sync_daily_write_budget: { type: 'integer', min: 1000, max: 95000, category: 'sync', description: 'Estimated D1 rows the job sync may write per UTC day' },
   sync_touch_interval_days: { type: 'integer', min: 3, max: 25, category: 'sync', description: 'How often an unchanged job is refreshed (days)' },
   analytics_sample_rate: { type: 'enum', values: ['10', '25', '50', '100'], category: 'analytics', description: 'Accepted client event sample rate' },
@@ -177,6 +187,21 @@ export const SETTINGS_DEFAULTS = {
   // An UNCHANGED job is only "touched" (updated_at / expires_at refreshed) this
   // often. Must stay well under the 30-day stale-cleanup rule.
   sync_touch_interval_days: '10',
+
+  // ── Affiliate Manager (lib/affiliate/affiliate.js) ─────────────────
+  // Master switch + one switch per placement. Offers themselves are managed
+  // at /admin/affiliate. Nothing renders publicly until at least one active
+  // offer exists AND its placement is enabled here.
+  affiliate_enabled: '0',
+  aff_place_job_page: '1',
+  aff_place_skill_page: '1',
+  aff_place_category_page: '1',
+  aff_place_blog_post: '1',
+  aff_place_home_sidebar: '0',
+  affiliate_disclosure: 'We may earn a commission if you buy through links marked as sponsored. It never affects our job listings.',
+  aff_max_offers_per_placement: '2',
+  aff_detail_clicks_per_day: '2000',
+  aff_detail_retention_days: '90',
 
   // ── HOT PAY — high-salary job indicator ─────────────────────────────
   // The threshold is stored as annual USD after the shared salary parser
