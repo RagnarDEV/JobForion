@@ -338,8 +338,17 @@ export async function createAffiliateClick(env, input = {}, request) {
   try {
     const { results } = await env.DB.prepare("SELECT id,base_url FROM affiliate_programs WHERE id = ? AND status = 'active' LIMIT 1").bind(programId).all();
     if (!results?.length) return { ok: false, error: 'Affiliate program is unavailable.' };
+    // SECURITY: the client supplies `destination`, so it is only accepted when it points at the
+    // program's own host — otherwise anyone could stuff the click log with arbitrary URLs.
+    // (New offers use /go/<slug> instead, where the destination never comes from the client.)
+    let allowedHost = '', destinationHost = '';
+    try { allowedHost = new URL(String(results[0].base_url || '')).hostname.replace(/^www\./, ''); destinationHost = new URL(destination).hostname.replace(/^www\./, ''); } catch (e) {}
+    if (!allowedHost || destinationHost !== allowedHost) return { ok: false, error: 'Invalid affiliate click.' };
     const ip = boundedText(request?.headers?.get('CF-Connecting-IP'), 120);
-    const ipHash = ip ? await hmacHex('jobforion-affiliate-click', ip) : '';
+    // The HMAC key was a constant string in the source, which makes IPv4 hashes trivially
+    // reversible by enumeration. Use the deployment secret and a per-day salt instead.
+    const hashSecret = env.ANALYTICS_HASH_SECRET || env.CSRF_SECRET || 'jobforion-affiliate-click';
+    const ipHash = ip ? await hmacHex(hashSecret, `${new Date().toISOString().slice(0, 10)}:${ip}`) : '';
     await env.DB.prepare('INSERT INTO affiliate_clicks (program_id,campaign,source_page,destination,ip_hash,user_agent,created_at) VALUES (?,?,?,?,?,?,CURRENT_TIMESTAMP)').bind(programId, boundedText(input.campaign, 120), sourcePage, destination, ipHash, boundedText(request?.headers?.get('User-Agent'), 300)).run();
     return { ok: true };
   } catch (e) { return { ok: false, error: 'Unable to record affiliate click.' }; }

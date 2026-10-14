@@ -14,6 +14,7 @@ import { ICON_HEAD } from '../assets/favicon.js';
 import { JOB_TYPE_META, JOB_MANUAL_PIN_SORT_SQL, PUBLIC_JOB_STATUS_SQL, JOB_LISTING_COLUMNS } from '../config/constants.js';
 import { jobCardSSR, logoImgHtml } from '../components/job-card.js';
 import { adSlot } from '../components/ad-slot.js';
+import { affiliateHtmlFor } from '../lib/affiliate/placement.js';
 import { escapeHtml, slugify, listCompanies } from '../lib/directory/entities.js';
 import { googleAnalyticsTag } from '../lib/analytics/tag.js';
 import { analyticsTrackerScript } from '../lib/analytics/tracker.js';
@@ -236,7 +237,8 @@ export async function renderMainHTML(env, base, user = null) {
     career_boost: homepageCodeOverride('career_boost', `<div class="side-card resume-card"><div><p class="eyebrow">STAND OUT</p><h3>${escapeHtml(homepageCopy.careerTitle)}</h3><p>${escapeHtml(homepageCopy.careerText)}</p><a class="side-button light" href="${user ? '/user/profile' : '/register'}">${escapeHtml(homepageCopy.careerCta)}</a></div><div class="resume-orbit"><span></span><span></span><span></span></div></div>`, 'sidebar'),
     career_resources: homepageCodeOverride('career_resources', `<div class="side-card resources-card"><h3>${escapeHtml(homepageCopy.resourcesTitle)}</h3><a href="/blog">${iconFileText({ size: 14 })}<span>Career advice</span></a><a href="/blog">${iconFileText({ size: 14 })}<span>Interview tips</span></a><a href="/skills">${iconFileText({ size: 14 })}<span>Browse by skill</span></a><a href="/countries">${iconFileText({ size: 14 })}<span>Remote by country</span></a></div>`, 'sidebar'),
   };
-  const sidebarSectionsHtml = enabledSections.filter(s => sidebarSectionHtml[s.key]).map(s => sidebarSectionHtml[s.key]).join('');
+  const homeAffiliateHtml = await affiliateHtmlFor(env, settings, 'home_sidebar');
+  const sidebarSectionsHtml = enabledSections.filter(s => sidebarSectionHtml[s.key]).map(s => sidebarSectionHtml[s.key]).join('') + homeAffiliateHtml;
 
   const sectionHtml = {
     hero: `

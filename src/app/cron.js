@@ -33,6 +33,7 @@ import { runBlogExpirationCleanup } from '../lib/content/blog-automation/expirat
 import { runJobAlertsDispatch } from '../lib/jobs/job-alerts-dispatcher.js';
 import { expireMonetizationCampaigns } from '../lib/monetization/core.js';
 import { aggregateAnalytics, cleanupAnalytics, evaluateAnalyticsAlerts } from '../lib/analytics/events.js';
+import { cleanupAffiliate } from '../lib/affiliate/affiliate.js';
 import { SYNC_INTERVAL_HOURS } from '../lib/platform/rotation.js';
 import { reportOperationalError } from '../lib/platform/observability.js';
 import { refreshSiteCache, siteCacheAgeMinutes, claimSiteCacheRefresh, SITE_CACHE_MAX_AGE_MINUTES } from '../lib/platform/site-cache.js';
@@ -79,7 +80,8 @@ const TASKS = {
     if (await siteCacheAgeMinutes(env) > SITE_CACHE_MAX_AGE_MINUTES && await claimSiteCacheRefresh(env)) await refreshSiteCache(env);
   },
   'daily-maintenance': async (env) => {
-    await Promise.all([cleanupStaleJobs(env), runBlogExpirationCleanup(env), expireMonetizationCampaigns(env)]);
+    const settings = await getSettings(env);
+    await Promise.all([cleanupStaleJobs(env), runBlogExpirationCleanup(env), expireMonetizationCampaigns(env), cleanupAffiliate(env, settings.aff_detail_retention_days)]);
   },
   'job-alerts': (env) => runJobAlertsDispatch(env),
   'blog-generation': (env, ctx) => runBlogGeneration(env, { ctx }),

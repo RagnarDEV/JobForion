@@ -22,16 +22,16 @@ jobforion/
    ├─ index.js                  ← نقطة دخول رفيعة: توزيع الطلب فقط
    ├─ app/                      ← security-headers · fallback-error · cron (موزّع المهام المجدولة)
    ├─ config/  data/  layout/  styles/  assets/  auth/  providers/
-   ├─ components/               ← nav · footer · job-card · company-card · ad-slot · النماذج · rich-editor
+   ├─ components/               ← nav · footer · job-card · company-card · ad-slot · affiliate-block · النماذج · rich-editor
    ├─ db/
    │  ├─ schema.js              ← بوابة SCHEMA_VERSION + الترحيل المتقطّع (ensureAllSchema)
    │  ├─ schema/                ← state · migration-kit · core-tables · ai-tables · account-tables
    │  └─ sync.js · cleanup.js · telemetry.js (سجل المزامنة + الزيارات)
    ├─ routes/
-   │  ├─ pages · seo-pages · auth · user · company · feed · assets · admin.router.js
+   │  ├─ pages · seo-pages · auth · user · company · feed · assets · affiliate.router.js (/go/:slug) · admin.router.js
    │  ├─ api.router.js          ← موزّع فقط
    │  ├─ api/                   ← analytics · monetization · user · forms · jobs · system (+ shared)
-   │  └─ admin/                 ← 20 sub-router
+   │  └─ admin/                 ← 21 sub-router (منها affiliate.router.js)
    ├─ pages/
    │  ├─ home.js                ← تجميع الصفحة الرئيسية
    │  ├─ home/                  ← styles · client-script
@@ -39,6 +39,7 @@ jobforion/
    │  ├─ seo/                   ← shared · jobs · categories · companies · countries · skills · search
    │  └─ job-page · blog · auth · pricing · user-dashboard · company-dashboard · admin/ (21)
    └─ lib/                      ← مقسّمة حسب النطاق
+      ├─ affiliate/   affiliate (بيانات + تتبع + تحويلات) · placement (HTML لكل موضع)
       ├─ jobs/        related-jobs (وظائف مشابهة محدودة الكلفة) · salary · salary-tier · hot-pay · skill-extraction · saved-jobs · applications · job-alerts · job-card-styles
       ├─ directory/   entities · directory-overrides · geo-data · country-flags
       ├─ companies/   companies · company-logos · logo-proxy
@@ -177,3 +178,16 @@ node scripts/audit.mjs   # syntax + import/export + يتامى + imports غير 
 - **الأدمن:** كوكي الجلسة يُوقَّع بـ`ADMIN_SESSION_SECRET` (اختياري، يرجع إلى `ADMIN_PASSWORD`)، وبوابة مصادقة مركزية تحت `/admin`، ولا يُقبل أي سر في الرابط (`?jf_debug=1` للأدمن المسجَّل فقط).
 - **HTML الغني:** أجسام المدونة والصفحات الثابتة تمر بمعقّم قائمة سماح (`lib/platform/html-sanitizer.js`) عند العرض.
 - **الأيقونات:** Lucide فقط (`assets/icons.js`)؛ الإيموجي المتبقية بيانات يحرّرها الأدمن (رموز الفئات وأزرار القائمة) أو نصوص بريد.
+
+## التسويق بالعمولة (Affiliate Manager)
+
+لوحة التحكم: **Admin ← Affiliate Manager** (`/admin/affiliate`). الطبقات: `lib/affiliate/affiliate.js` (بيانات) ← `lib/affiliate/placement.js` ← `components/affiliate-block.js` (HTML) ← الصفحات العامة؛ و`routes/affiliate.router.js` لرابط التتبّع.
+
+- **برنامج ← عروض:** البرنامج حساب شريك (Amazon / Impact / CJ / اتفاق مباشر)، والعرض رابط واحد قابل للترويج. إيقاف البرنامج يوقف كل عروضه.
+- **رابط التتبّع `/go/<slug>`:** الوجهة تُقرأ من قاعدة البيانات فقط (لا من الطلب) فلا open redirect ولا تزوير نقرات. يدعم `{click_id}` `{offer}` `{placement}` في رابط الوجهة لتمرير معرّف النقرة للشبكة. الزواحف وطلبات HEAD والأدمن تُحوَّل ولا تُحتسب.
+- **المواضع (تُفعَّل/تُعطَّل من اللوحة):** صفحة الوظيفة · صفحات المهارات · صفحات التصنيفات · مقالات المدونة · شريط الرئيسية الجانبي. لا يظهر شيء قبل تفعيل المفتاح العام وعرض نشط لموضع مفعّل.
+- **الاستهداف:** كل عرض قد يُقيَّد بتصنيفات أو مهارات؛ العرض المرتبط بالصفحة يُعطى وزناً ×4.
+- **الامتثال:** `rel="sponsored nofollow noopener"` + سطر إفصاح قابل للتعديل + `Disallow: /go/` في robots.txt.
+- **ميزانية الكتابة:** النقرة = صف عدّاد واحد في `aff_daily` + صف تفصيل واحد في `aff_clicks` فقط ما دام تحت `aff_detail_clicks_per_day`؛ الإحصاءات تقرأ العدّاد فقط؛ تفاصيل النقرات تُحذف بعد `aff_detail_retention_days` (الصيانة اليومية 03:30).
+- **الأرباح:** لا يخترع الموقع أي رقم. تُسجَّل التحويلات يدوياً أو باستيراد CSV (`click_id` أو `offer` + `amount`)، ولا يُحتسب ربحاً إلا ما حالته `approved`. لا يُحسب EPC عند اختلاط العملات.
+- حُصِّنت نقطة `/api/monetization/affiliate-click` القديمة: الوجهة يجب أن تطابق نطاق `base_url` للبرنامج، وبصمة الـ IP صارت بمفتاح سري وملح يومي.

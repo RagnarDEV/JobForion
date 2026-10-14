@@ -35,6 +35,7 @@ import { handleSeoPagesRoute } from './routes/seo-pages.router.js';
 import { handlePagesRoute, getCachedHomepage } from './routes/pages.router.js';
 import { handleApiRoute } from './routes/api.router.js';
 import { handleAdFrameRoute, AD_FRAME_PREFIX } from './routes/ad-frame.router.js';
+import { handleAffiliateRoute, AFFILIATE_PREFIX } from './routes/affiliate.router.js';
 import { configureAdFrame, getAdFrameOrigin } from './lib/content/ad-origin.js';
 
 const NON_TRACKED_STATIC_PATHS = new Set([...ASSET_PATHS, '/feed.rss']);
@@ -153,10 +154,14 @@ async function routeRequest(request, env, ctx, state) {
     !url.pathname.startsWith('/sitemap') && !url.pathname.startsWith('/r2-asset/') &&
     !url.pathname.startsWith(LOGO_PROXY_PREFIX) &&
     !url.pathname.startsWith(AD_FRAME_PREFIX) &&
+    !url.pathname.startsWith(AFFILIATE_PREFIX) &&
     !NON_TRACKED_STATIC_PATHS.has(url.pathname);
 
   // ── ad iframe documents (own CSP, sandboxed) — never tracked as page views ──
   if (url.pathname.startsWith(AD_FRAME_PREFIX)) return handleAdFrameRoute(url, request, env); // the outer fetch() wraps EVERY response with withSecurityHeaders exactly once — wrapping here too would overwrite this route's own CSP
+
+  // ── tracked affiliate redirects: /go/<slug> (see routes/affiliate.router.js) ──
+  if (url.pathname.startsWith(AFFILIATE_PREFIX)) return handleAffiliateRoute(url, request, env, ctx);
 
   // ── JSON API — dispatched early: API calls (including every analytics
   // beacon) never need to walk through the page routers below ──

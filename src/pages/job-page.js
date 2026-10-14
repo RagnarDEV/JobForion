@@ -4,6 +4,7 @@ import { logoImgHtml, jobLocationHtml, remoteTagHtml, catForTitleServer, jobType
 import { baseLayout } from '../layout/base-layout.js';
 import { slugify, escapeHtml, safeExternalUrl, cleanDescription, parseSalaryRange, categorySalaryStats, companySnapshot } from '../lib/directory/entities.js';
 import { adSlot } from '../components/ad-slot.js';
+import { affiliateHtmlFor } from '../lib/affiliate/placement.js';
 import { jobPostingSchema } from '../lib/seo/jsonld.js';
 import { iconBadgeCheck, iconSparkle, iconFlame, iconDollarSign, iconBookmark, iconTrendingUp, iconBuilding, iconBriefcase, iconClock, iconGlobe } from '../assets/icons.js';
 import { getSettings } from '../lib/platform/settings.js';
@@ -135,6 +136,7 @@ export async function renderJobPage(job, related, base, env, user = null) {
   const categoryOrder = categories.map(c => c.key);
   const categoryMap = Object.fromEntries(categories.map(c => [c.key, { label: c.label, emoji: c.emoji, color: c.color }]));
   const categoryKey = catForTitleServer(job.title, categoryOrder);
+  const affiliateHtml = await affiliateHtmlFor(env, settings, 'job_page', { categoryKey, skills });
   const categoryLabel = (categoryMap[categoryKey] || { label: 'General' }).label;
   const [salaryStats, companyInfo, publicCompany] = await Promise.all([
     categorySalaryStats(env, categoryKey),
@@ -215,6 +217,7 @@ export async function renderJobPage(job, related, base, env, user = null) {
       ${companyPreviewHtml}
       ${requirementsHtml}
       ${benefitsHtml}
+      ${affiliateHtml}
       ${adSlot('job-detail-inline', '', adConfig, adsEnabled)}
     </div>
   </div>

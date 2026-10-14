@@ -9,7 +9,7 @@
 
 import { ICON_HEAD } from '../../assets/favicon.js';
 import { SHARED_CSS } from '../../styles/shared-css.js';
-import { iconBriefcase, iconBuilding, iconEdit3, iconFileText, iconGlobe, iconHome, iconLayoutDashboard, iconLogOut, iconMegaphone, iconMenu, iconMoon, iconPalette, iconPlug, iconServer, iconSettingsGear, iconShieldCheck, iconSparkle, iconSun, iconTag, iconUser, iconUsers } from '../../assets/icons.js';
+import { iconCoins, iconBriefcase, iconBuilding, iconEdit3, iconFileText, iconGlobe, iconHome, iconLayoutDashboard, iconLogOut, iconMegaphone, iconMenu, iconMoon, iconPalette, iconPlug, iconServer, iconSettingsGear, iconShieldCheck, iconSparkle, iconSun, iconTag, iconUser, iconUsers } from '../../assets/icons.js';
 
 // ── Admin Dashboard V2 sidebar IA ──────────────────────────────────
 // Grouped to mirror the site's real management surface (Overview / Jobs &
@@ -47,6 +47,7 @@ const NAV_GROUPS = [
   ]},
   { title: 'Monetization', items: [
     { id: 'monetization', label: 'Monetization Center', icon: iconMegaphone, href: '/admin/monetization' },
+    { id: 'affiliate', label: 'Affiliate Manager', icon: iconCoins, href: '/admin/affiliate' },
     { id: 'ads', label: 'Ads', icon: iconMegaphone, href: '/admin/ads' },
   ]},
   { title: 'System & Security', items: [
