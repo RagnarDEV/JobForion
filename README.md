@@ -40,6 +40,7 @@ jobforion/
    │  └─ job-page · blog · auth · pricing · user-dashboard · company-dashboard · admin/ (21)
    └─ lib/                      ← مقسّمة حسب النطاق
       ├─ affiliate/   affiliate (بيانات + تتبع + تحويلات) · placement (HTML لكل موضع)
+      ├─ admin-i18n/  translate · localize · ar/{common,messages,patterns,index} — ترجمة لوحة التحكم (إنجليزي/عربي RTL)
       ├─ jobs/        related-jobs (وظائف مشابهة محدودة الكلفة) · salary · salary-tier · hot-pay · skill-extraction · saved-jobs · applications · job-alerts · job-card-styles
       ├─ directory/   entities · directory-overrides · geo-data · country-flags
       ├─ companies/   companies · company-logos · logo-proxy
@@ -191,3 +192,13 @@ node scripts/audit.mjs   # syntax + import/export + يتامى + imports غير 
 - **ميزانية الكتابة:** النقرة = صف عدّاد واحد في `aff_daily` + صف تفصيل واحد في `aff_clicks` فقط ما دام تحت `aff_detail_clicks_per_day`؛ الإحصاءات تقرأ العدّاد فقط؛ تفاصيل النقرات تُحذف بعد `aff_detail_retention_days` (الصيانة اليومية 03:30).
 - **الأرباح:** لا يخترع الموقع أي رقم. تُسجَّل التحويلات يدوياً أو باستيراد CSV (`click_id` أو `offer` + `amount`)، ولا يُحتسب ربحاً إلا ما حالته `approved`. لا يُحسب EPC عند اختلاط العملات.
 - حُصِّنت نقطة `/api/monetization/affiliate-click` القديمة: الوجهة يجب أن تطابق نطاق `base_url` للبرنامج، وبصمة الـ IP صارت بمفتاح سري وملح يومي.
+
+## لغة لوحة التحكم (English / العربية) — للإدارة فقط
+
+زر **AR / EN** في الشريط العلوي بجانب زر الوضع الداكن. الموقع العام لا يتأثر إطلاقاً.
+
+- **الآلية:** صفحات الإدارة تُولَّد بالإنجليزية كما هي، ثم `lib/admin-i18n/localize.js` يترجم الـ HTML النهائي عند اختيار العربية فقط (الإنجليزية تمر بدون أي معالجة). يترجم: النصوص الكاملة للعقد، `placeholder / title / aria-label / alt`، ونصوص `confirm() / alert() / jnToast()`، ورسائل `?flash=` في إعادة التوجيه. لا يمسّ `script` المنطقي ولا `code/pre/textarea/style` ولا البيانات (عناوين الوظائف، أسماء الشركات…) لأنها لا تتطابق مع مفاتيح القاموس.
+- **الحفظ:** كوكي `adm_lang` بمسار `/admin` فقط (لا يصل للموقع العام).
+- **RTL:** `lang="ar" dir="rtl"` + خط Noto Sans Arabic + تصحيحات اتجاه (الشريط الجانبي، الجداول، الإشعارات، الدرج المحمول، حقول الروابط/المفاتيح تبقى LTR).
+- **إضافة نص جديد:** أضف سطراً في `ar/common.js` (تسميات قصيرة) أو `ar/messages.js` (جمل ورسائل) أو `ar/patterns.js` (نصوص فيها أرقام: `{a}` رقم، `{~a}` أي نص). أي نص بلا ترجمة يبقى بالإنجليزية (تراجع آمن).
+- **كشف النواقص:** `node scripts/harvest-admin-strings.mjs --runtime-only` يعرض النصوص التي تُعرض في الإدارة وليس لها ترجمة.

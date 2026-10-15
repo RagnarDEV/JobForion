@@ -9,7 +9,7 @@
 
 import { ICON_HEAD } from '../../assets/favicon.js';
 import { SHARED_CSS } from '../../styles/shared-css.js';
-import { iconCoins, iconBriefcase, iconBuilding, iconEdit3, iconFileText, iconGlobe, iconHome, iconLayoutDashboard, iconLogOut, iconMegaphone, iconMenu, iconMoon, iconPalette, iconPlug, iconServer, iconSettingsGear, iconShieldCheck, iconSparkle, iconSun, iconTag, iconUser, iconUsers } from '../../assets/icons.js';
+import { iconLanguages, iconCoins, iconBriefcase, iconBuilding, iconEdit3, iconFileText, iconGlobe, iconHome, iconLayoutDashboard, iconLogOut, iconMegaphone, iconMenu, iconMoon, iconPalette, iconPlug, iconServer, iconSettingsGear, iconShieldCheck, iconSparkle, iconSun, iconTag, iconUser, iconUsers } from '../../assets/icons.js';
 
 // ── Admin Dashboard V2 sidebar IA ──────────────────────────────────
 // Grouped to mirror the site's real management surface (Overview / Jobs &
@@ -83,6 +83,7 @@ const SHELL_CSS = `
 .adm-nav-link.active{background:linear-gradient(110deg,var(--brand),var(--brand2));color:#fff;box-shadow:0 7px 16px rgba(99,57,230,.16)}
 .adm-main{flex:1;min-width:0}
 .adm-topbar{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:13px 28px;border-bottom:1px solid var(--border);background:rgba(255,255,255,.9);backdrop-filter:blur(14px);position:sticky;top:0;z-index:80}.adm-topbar-left,.adm-topbar-actions{display:flex;align-items:center;gap:10px}.adm-breadcrumbs{display:flex;align-items:center;gap:8px;color:var(--ink3);font-size:11px;font-weight:700}.adm-breadcrumbs a{color:var(--brand);text-decoration:none}.adm-breadcrumbs strong{color:var(--ink)}.adm-view-site{display:inline-flex;align-items:center;min-height:34px;padding:0 11px;border:1px solid var(--border2);border-radius:8px;color:var(--ink2);font-size:11px;font-weight:800;text-decoration:none;background:var(--surface)}.adm-mobile-trigger{display:none;width:36px;height:36px;border:1px solid var(--border2);border-radius:9px;background:var(--surface);color:var(--ink);cursor:pointer;font-size:17px}.adm-mobile-backdrop,.adm-mobile-drawer{display:none}
+.lang-toggle{width:auto!important;padding:0 11px;gap:6px;font-size:12.5px;font-weight:800;letter-spacing:.2px}
 .theme-toggle{width:34px;height:34px;border-radius:9px;border:1px solid var(--border2);background:var(--surface);color:var(--ink2);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:15px}
 #toast-host{position:fixed;bottom:18px;right:18px;z-index:999;display:flex;flex-direction:column;gap:8px}
 .toast{background:var(--ink);color:var(--bg);font-size:13px;font-weight:600;padding:11px 16px;border-radius:10px;box-shadow:var(--shadow-lg);opacity:0;transform:translateY(8px);transition:all .25s}
@@ -135,8 +136,16 @@ const SHELL_SCRIPT = `
     var next = cur === 'dark' ? 'light' : 'dark';
     document.documentElement.setAttribute('data-theme', next);
     localStorage.setItem('jn_admin_theme', next);
+    var langLabel = document.getElementById('langToggleLabel');
+    if (langLabel) langLabel.textContent = document.documentElement.getAttribute('lang') === 'ar' ? 'EN' : 'AR';
     var btn = document.getElementById('themeToggleBtn');
     if (btn) btn.innerHTML = next === 'dark' ? '${iconSun({ size: 16 })}' : '${iconMoon({ size: 16 })}';
+  };
+  // Admin language (English / Arabic): a cookie scoped to /admin only — the public site never sees it.
+  window.jnToggleLang = function(){
+    var next = document.documentElement.getAttribute('lang') === 'ar' ? 'en' : 'ar';
+    document.cookie = 'adm_lang=' + next + '; Path=/admin; Max-Age=31536000; SameSite=Lax' + (location.protocol === 'https:' ? '; Secure' : '');
+    location.reload();
   };
   window.jnToast = function(msg){
     var host = document.getElementById('toast-host');
@@ -253,7 +262,7 @@ export function adminShell(activeId, content, csrfToken = '') {
   <main class="adm-main">
     <div class="adm-topbar">
       <div class="adm-topbar-left"><button class="adm-mobile-trigger" type="button" onclick="jnAdminMenu()" aria-label="Open admin navigation" aria-expanded="false" aria-controls="admMobileDrawer">${iconMenu({ size: 18 })}</button><div class="adm-breadcrumbs"><a href="/admin">Admin</a><span>›</span><strong>${activeItem.label}</strong><span class="adm-breadcrumb-group">${activeGroup ? `· ${activeGroup.title}` : ''}</span></div></div>
-      <div class="adm-topbar-actions"><a class="adm-view-site" href="/" target="_blank" rel="noopener">View live site</a><button class="theme-toggle" id="themeToggleBtn" onclick="jnToggleTheme()" title="Toggle dark mode" aria-label="Toggle dark mode">${iconSun({ size: 16 })}</button></div>
+      <div class="adm-topbar-actions"><a class="adm-view-site" href="/" target="_blank" rel="noopener">View live site</a><button class="theme-toggle" id="themeToggleBtn" onclick="jnToggleTheme()" title="Toggle dark mode" aria-label="Toggle dark mode">${iconSun({ size: 16 })}</button><button class="theme-toggle lang-toggle" id="langToggleBtn" type="button" onclick="jnToggleLang()" title="Change language" aria-label="Change language">${iconLanguages({ size: 16 })}<span id="langToggleLabel">AR</span></button></div>
     </div>
     <div class="adm-mobile-backdrop" id="admMobileBackdrop" onclick="jnAdminMenu(false)"></div>
     <aside class="adm-mobile-drawer" id="admMobileDrawer" aria-label="Admin navigation"><div class="adm-logo"><img src="/favicon.svg" alt="JobForion">JobForion</div>${NAV_GROUPS.map(g => `<div class="adm-nav-group-title">${g.title}</div>${g.items.map(n => `<a href="${n.href}" class="adm-nav-link${n.id === activeId ? ' active' : ''}" onclick="jnAdminMenu(false)">${n.icon({ size: 15 })} ${n.label}</a>`).join('')}`).join('')}<div class="adm-sidebar-footer"><a href="/admin/logout" class="adm-nav-link">${iconLogOut({ size: 15 })} Logout</a></div></aside>

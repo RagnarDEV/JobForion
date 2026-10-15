@@ -44,6 +44,7 @@ import { handleAdminAssistantRoute } from './admin/admin-assistant.router.js';
 import { handleAiControlCenterRoute } from './admin/ai-control-center.router.js';
 import { verifyAdminCookie, getAdminCsrfToken, verifyAdminCsrf } from '../auth/admin-auth.js';
 import { renderAdminLogin } from '../pages/admin.js';
+import { localizeAdminResponse } from '../lib/admin-i18n/localize.js';
 
 // Order matters only for cost/specificity, same rationale as index.js:
 // auth first (must work even before a session exists), the dashboard
@@ -72,7 +73,14 @@ const ADMIN_SUB_ROUTERS = [
   handleAdminDashboardRoute,
 ];
 
+// Public entry: runs the router, then localizes the response when the admin chose Arabic
+// (cookie adm_lang=ar scoped to /admin). English responses are returned untouched.
 export async function handleAdminRoute(url, request, env, base) {
+  const response = await routeAdminRequest(url, request, env, base);
+  return response ? localizeAdminResponse(response, request) : response;
+}
+
+async function routeAdminRequest(url, request, env, base) {
   if (!url.pathname.startsWith('/admin')) return null;
   const cookie = request.headers.get('Cookie');
   const isAuthenticated = await verifyAdminCookie(env, cookie);
