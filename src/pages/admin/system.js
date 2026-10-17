@@ -5,6 +5,7 @@
 // reuse the exact same handlers as before (/api/sync, /admin/cleanup) —
 // no new mutation logic, just a fuller view of what's already there.
 
+import { memoStat } from '../../lib/platform/stat-memo.js';
 import { getSiteStats, readSiteCache } from '../../lib/platform/site-cache.js';
 import { cappedCount } from '../../lib/platform/job-window.js';
 import { ensureTable } from '../../db/schema.js';
@@ -20,6 +21,7 @@ import { iconAlertTriangle, iconDatabase, iconMail, iconRefreshCw, iconServer, i
 // Tables considered safe/useful to show a row count for. Deliberately an
 // explicit allow-list (not "every table in sqlite_master") so a future
 // internal table never gets exposed here by accident.
+const TABLE_COUNT_CAP = 20000;
 const COUNTED_TABLES = [
   'jobs', 'subscribers', 'job_postings', 'api_sources', 'categories',
   'pages', 'blog_posts', 'nav_buttons', 'visits', 'admin_activity_log',
@@ -36,7 +38,7 @@ const COUNTED_TABLES = [
   'monetization_refunds',
 ];
 
-export async function renderSystemContent(env) {
+export async function renderSystemContent(env, { forceRefresh = false } = {}) {
   await ensureTable(env);
   const q = (sql, ...params) => env.DB.prepare(sql).bind(...params).all();
 
@@ -70,8 +72,14 @@ export async function renderSystemContent(env) {
     for (const t of COUNTED_TABLES) tableCounts[t] = null; // missing table → em-dash
     if (have.has('jobs')) tableCounts.jobs = siteStats ? Number(siteStats.totalAll || 0) : await cappedCount(env, 'jobs', '', [], 20000);
     if (present.length) {
-      const { results } = await q(present.map(t => `SELECT '${t}' AS t, COUNT(*) AS c FROM ${t}`).join(' UNION ALL '));
-      for (const r of results || []) tableCounts[r.t] = r.c;
+      // ROW-READ BUDGET: COUNT(*) over visits / analytics_event_queue / logs reads EVERY row (a busy
+      // site holds 100k–500k of them), so each count stops at TABLE_COUNT_CAP and the whole result is
+      // memoised for 10 minutes (?refresh=1 forces a recount). "20,000+" is shown for capped tables.
+      const counted = await memoStat('admin:table-counts', async () => {
+        const { results } = await q(present.map(t => `SELECT '${t}' AS t, COUNT(*) AS c FROM (SELECT 1 FROM ${t} LIMIT ${TABLE_COUNT_CAP})`).join(' UNION ALL '));
+        return results || [];
+      }, { force: forceRefresh });
+      for (const r of counted) tableCounts[r.t] = r.c;
     }
   } catch (e) { for (const t of COUNTED_TABLES) tableCounts[t] = null; }
 
@@ -198,7 +206,7 @@ export async function renderSystemContent(env) {
         <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px">
           ${COUNTED_TABLES.map(t => `<div style="background:var(--surface2);border-radius:10px;padding:10px 12px">
             <div style="font-size:10px;color:var(--ink3);text-transform:uppercase;font-weight:700;margin-bottom:4px">${t.replace(/_/g, ' ')}</div>
-            <div style="font-size:16px;font-weight:800;color:var(--ink)">${tableCounts[t] === null ? '—' : tableCounts[t].toLocaleString()}</div>
+            <div style="font-size:16px;font-weight:800;color:var(--ink)">${tableCounts[t] === null ? '—' : tableCounts[t].toLocaleString() + (tableCounts[t] >= TABLE_COUNT_CAP && t !== 'jobs' ? '+' : '')}</div>
           </div>`).join('')}
         </div>
       </div>

@@ -72,7 +72,7 @@ export function handleAssetsRoute(url, base) {
     // single source of truth for the site's canonical domain — instead of
     // being hardcoded here. If the domain ever changes again, this stays
     // correct automatically with zero edits needed in this file.
-    const robots = `User-agent: *\nAllow: /\nDisallow: /admin\nDisallow: /api/\nDisallow: /go/\nDisallow: /user/\nDisallow: /company/\nDisallow: /login\nDisallow: /register\nDisallow: /logout\nDisallow: /forgot-password\nDisallow: /reset-password\nDisallow: /verify-email\n\nSitemap: ${BASE_URL}/sitemap.xml`;
+    const robots = `User-agent: *\nAllow: /\nDisallow: /admin\nDisallow: /api/\nDisallow: /go/\nDisallow: /search/\nDisallow: /user/\nDisallow: /company/\nDisallow: /login\nDisallow: /register\nDisallow: /logout\nDisallow: /forgot-password\nDisallow: /reset-password\nDisallow: /verify-email\n\nSitemap: ${BASE_URL}/sitemap.xml`;
     return new Response(robots, { headers: { "Content-Type": "text/plain", "Cache-Control": "public, max-age=86400" } });
   }
   return null;

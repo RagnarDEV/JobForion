@@ -44,6 +44,7 @@ import { handleAdminAssistantRoute } from './admin/admin-assistant.router.js';
 import { handleAiControlCenterRoute } from './admin/ai-control-center.router.js';
 import { verifyAdminCookie, getAdminCsrfToken, verifyAdminCsrf } from '../auth/admin-auth.js';
 import { renderAdminLogin } from '../pages/admin.js';
+import { bumpConfigRev } from '../lib/platform/config-rev.js';
 import { localizeAdminResponse } from '../lib/admin-i18n/localize.js';
 
 // Order matters only for cost/specificity, same rationale as index.js:
@@ -108,7 +109,12 @@ async function routeAdminRequest(url, request, env, base) {
   for (const subRouter of ADMIN_SUB_ROUTERS) {
     const response = await subRouter(url, request, env, base);
     if (response) {
-      if (request.method === 'POST') clearConfigMemo(); // admin mutation: drop memoised config reads on this isolate
+      if (request.method === 'POST') {
+        clearConfigMemo(); // admin mutation: drop memoised config reads on this isolate
+        // …and tell every OTHER isolate (they revalidate against this revision, 1 row, instead of
+        // polling the config tables). Only for authenticated, successful mutations.
+        if (isAuthenticated && response.status < 400) await bumpConfigRev(env);
+      }
       if (request.method === 'GET' && isAuthenticated) {
         const headers = new Headers(response.headers);
         const token = await getAdminCsrfToken(env, cookie);

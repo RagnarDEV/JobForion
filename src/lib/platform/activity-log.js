@@ -45,7 +45,6 @@ export const ACTION_LABELS = {
   ads_updated: 'Ad slot updated',
   ads_toggled: 'Ads master switch toggled',
   monetization_product_saved: 'Monetization product saved',
-  monetization_affiliate_saved: 'Affiliate program saved',
   affiliate_settings_saved: 'Affiliate settings saved',
   affiliate_program_saved: 'Affiliate program saved',
   affiliate_offer_saved: 'Affiliate offer saved',

@@ -3,6 +3,7 @@
 // category breakdown, sync history, API sources, pending postings.
 // Returns inner HTML only — adminShell() in shell.js wraps it.
 
+import { memoStat } from '../../lib/platform/stat-memo.js';
 import { getSiteStats, readSiteCacheMany } from '../../lib/platform/site-cache.js';
 import { getCategories } from '../../lib/content/categories.js';
 import { ensureTable } from '../../db/schema.js';
@@ -146,10 +147,12 @@ export async function renderDashboardContent(env) {
   // from ONE read of the newest VISIT_SAMPLE rows (id DESC = primary-key order),
   // aggregated in JS. Total visits = MAX(id) (autoincrement), a 1-row lookup.
   const VISIT_SAMPLE = 5000;
-  const [{ results: visitSampleR }, { results: maxVisitR }] = await Promise.all([
+  // …and that read is memoised for 5 minutes per isolate (opening the dashboard repeatedly or
+  // from several tabs used to re-read 5,000 rows each time).
+  const [{ results: visitSampleR }, { results: maxVisitR }] = await memoStat('admin:dashboard-visits', () => Promise.all([
     q(`SELECT path, country, created_at FROM visits ORDER BY id DESC LIMIT ${VISIT_SAMPLE}`),
     q('SELECT MAX(id) c FROM visits'),
-  ]);
+  ]), { ttl: 5 * 60 * 1000 });
   const visitRows = visitSampleR || [];
   const cut1 = new Date(Date.now() - 86400000).toISOString().slice(0, 19).replace('T', ' ');
   const cut7 = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 19).replace('T', ' ');

@@ -17,6 +17,7 @@ export const CACHE_PRESETS = {
   directory: "public, max-age=1800, s-maxage=21600",  // companies/countries/cities/skills lists (6h edge)
   entity: "public, max-age=1800, s-maxage=21600",      // a single company/country/skill/category page (6h edge)
   job: "public, max-age=300, s-maxage=3600",           // a single job page (anonymous visitors only) — 1h edge
+  content: "public, max-age=300, s-maxage=900",        // blog index/articles + CMS pages (anonymous visitors only) — 15 min edge
   search: "public, max-age=300, s-maxage=3600",        // /search/:q and /jobs listings (anonymous visitors only) — 1h edge
   feed: "public, max-age=900, s-maxage=1800",          // sitemap.xml / feed.rss
   static: "public, max-age=86400, s-maxage=604800",    // favicons, manifest

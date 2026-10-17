@@ -966,4 +966,7 @@ export const COMMON = {
   "users": "المستخدمون",
   "visits": "الزيارات",
   "· Responding": "· يستجيب",
+  "Ad slots": "مواضع الإعلانات",
+  "Affiliate marketing": "التسويق بالعمولة",
+  "Open Affiliate Manager": "فتح مدير التسويق بالعمولة",
 };

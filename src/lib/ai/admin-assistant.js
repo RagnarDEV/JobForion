@@ -2,6 +2,7 @@
 // Phase 12.5 — read-only operational guidance for authenticated admins.
 // It never executes an admin action; it only summarizes a bounded server-side snapshot.
 
+import { memoStat } from '../platform/stat-memo.js';
 import { AI_MODEL_ID, AI_SERVICE_VERSION, runAiRequest } from './ai-service.js';
 
 export const ADMIN_ASSISTANT_TASK = 'admin_assistant_v1';
@@ -23,7 +24,12 @@ async function rows(env, sql) {
   try { return (await env.DB.prepare(sql).all()).results || []; } catch (e) { return []; }
 }
 
+// ROW-READ BUDGET: 9 COUNT(*) queries over jobs/users/applications… per call — memoised for 10 min.
 export async function getAdminSnapshot(env) {
+  return memoStat('admin:assistant-snapshot', () => buildAdminSnapshot(env));
+}
+
+async function buildAdminSnapshot(env) {
   const [activeJobs, expiredJobs, archivedJobs, users, companies, applications, savedJobs, sources, salaryRemaining, syncLogs, activity] = await Promise.all([
     count(env, "SELECT COUNT(*) count FROM jobs WHERE status = 'active'"),
     count(env, "SELECT COUNT(*) count FROM jobs WHERE status = 'expired'"),

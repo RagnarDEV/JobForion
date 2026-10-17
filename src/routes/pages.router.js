@@ -121,6 +121,19 @@ async function renderBlogGonePage(env, base, slug) {
   );
 }
 
+// ROW-READ BUDGET: blog index/articles and CMS pages were rebuilt from D1 on every anonymous hit.
+// Anonymous GETs (visitors AND crawlers get identical HTML) are now edge-cached for 15 minutes;
+// signed-in users and non-GET requests always render fresh. Only 200 responses are stored.
+async function cachedForAnonymous(request, user, ctx, build) {
+  const key = request.method === 'GET' && !user ? normalizedCacheKey(request, []) : null;
+  if (key) { const hit = await readEdgeCache(key); if (hit) return hit; }
+  const html = await build();
+  if (!html) return null;
+  const response = new Response(html, { headers: { 'Content-Type': 'text/html; charset=utf-8', ...(key ? { 'Cache-Control': CACHE_PRESETS.content } : {}) } });
+  if (key) writeEdgeCache(ctx, key, response);
+  return response;
+}
+
 export async function handlePagesRoute(url, request, env, base, ctx = null) {
   // (The anonymous-homepage cache lookup happens once, in src/index.js,
   // before schema bootstrap — repeating it here only doubled the miss cost.)
@@ -164,7 +177,7 @@ export async function handlePagesRoute(url, request, env, base, ctx = null) {
     return jobResponse;
   }
 
-  if (url.pathname === '/blog') return new Response(await renderBlogIndex(base, env, user), { headers: { "Content-Type": "text/html; charset=utf-8" } });
+  if (url.pathname === '/blog') return cachedForAnonymous(request, user, ctx, () => renderBlogIndex(base, env, user));
 
   if (url.pathname === '/resources') return new Response(await renderResourcesHub(base, env, user), { headers: { "Content-Type": "text/html; charset=utf-8" } });
 
@@ -176,11 +189,15 @@ export async function handlePagesRoute(url, request, env, base, ctx = null) {
     // new posts get slug URLs. Try numeric id first, then fall back to
     // slug, so neither old nor new links ever break.
     const idOrSlug = blogMatch[1];
+    const articleKey = request.method === 'GET' && !user ? normalizedCacheKey(request, []) : null;
+    if (articleKey) { const hit = await readEdgeCache(articleKey); if (hit) return hit; }
     const post = /^\d+$/.test(idOrSlug)
       ? await getPostById(env, parseInt(idOrSlug, 10))
       : await getPostBySlug(env, idOrSlug);
     if (!post) return renderBlogGonePage(env, base, idOrSlug);
-    return new Response(await renderArticlePage(post, base, env, user), { headers: { "Content-Type": "text/html; charset=utf-8" } });
+    const articleResponse = new Response(await renderArticlePage(post, base, env, user), { headers: { "Content-Type": "text/html; charset=utf-8", ...(articleKey ? { "Cache-Control": CACHE_PRESETS.content } : {}) } });
+    if (articleKey) writeEdgeCache(ctx, articleKey, articleResponse);
+    return articleResponse;
   }
 
   if (url.pathname === '/') {
@@ -199,8 +216,8 @@ export async function handlePagesRoute(url, request, env, base, ctx = null) {
   // populated the slug, otherwise they render the capability-led fallback.
   const informationalMatch = url.pathname.match(/^\/(about|how-it-works|contact)$/);
   if (informationalMatch) {
-    const html = await renderInformationalPage(informationalMatch[1], base, env, user);
-    if (html) return new Response(html, { headers: { "Content-Type": "text/html; charset=utf-8" } });
+    const informational = await cachedForAnonymous(request, user, ctx, () => renderInformationalPage(informationalMatch[1], base, env, user));
+    if (informational) return informational;
   }
 
   // ── CMS pages catch-all (Privacy/Terms/Disclaimer + any admin-created
@@ -212,8 +229,8 @@ export async function handlePagesRoute(url, request, env, base, ctx = null) {
   // etc. never even reach here.
   const pageMatch = url.pathname.match(/^\/([a-z][a-z0-9-]{1,49})$/);
   if (pageMatch && !RESERVED_SLUGS.has(pageMatch[1])) {
-    const html = await renderStaticPage(pageMatch[1], base, env, user);
-    if (html) return new Response(html, { headers: { "Content-Type": "text/html; charset=utf-8" } });
+    const staticPage = await cachedForAnonymous(request, user, ctx, () => renderStaticPage(pageMatch[1], base, env, user));
+    if (staticPage) return staticPage;
   }
 
   return null;

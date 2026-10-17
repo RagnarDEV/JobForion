@@ -20,7 +20,7 @@ export async function handleAdminSystemRoute(url, request, env, base) {
     try {
       const ok = await verifyAdminCookie(env, request.headers.get('Cookie'));
       if (!ok) return new Response(renderAdminLogin(false), { headers: { "Content-Type": "text/html; charset=utf-8" } });
-      const content = await renderSystemContent(env);
+      const content = await renderSystemContent(env, { forceRefresh: url.searchParams.get('refresh') === '1' });
       return new Response(adminShell('system', content), { headers: { "Content-Type": "text/html; charset=utf-8" } });
     } catch (e) { return errorPage(e); }
   }

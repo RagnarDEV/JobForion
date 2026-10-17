@@ -16,6 +16,9 @@ import { enqueueAnalyticsEvents } from '../../lib/analytics/events.js';
 
 // Whitelisted params only: arbitrary extra query strings must never create new
 // cache entries (each one would be a fresh, full D1 query).
+// ROW-READ BUDGET: OFFSET pagination READS every skipped row — page 1000 meant ~20,000 rows for one
+// request, and crawlers love ?page=N. 250 pages × 20 = 5,000 jobs is far deeper than any person goes.
+const MAX_API_PAGE = 250;
 const JOBS_CACHE_PARAMS = ['page', 'category', 'search', 'q', 'remote_type', 'employment_type', 'seniority', 'salary_min', 'salary_max', 'salary_tier', 'days', 'source_type', 'sort', 'country', 'skill', 'company'];
 function publicJobsCacheKey(url) {
   const params = new URLSearchParams();
@@ -71,7 +74,7 @@ export async function handleJobsApi(url, request, env, ctx) {
     // page must never reach an unbounded raw OFFSET calculation. It is
     // clamped to a practical upper bound as well as a floor of 1, so a
     // crafted request cannot force an arbitrarily deep scan.
-    const page = Math.min(1000, Math.max(1, parseInt(url.searchParams.get("page") || "1", 10) || 1));
+    const page = Math.min(MAX_API_PAGE, Math.max(1, parseInt(url.searchParams.get("page") || "1", 10) || 1));
     const limit = 20, offset = (page - 1) * limit;
     const queryValue = (name, max = 120) => String(url.searchParams.get(name) || '').trim().slice(0, max);
     const category = queryValue("category");

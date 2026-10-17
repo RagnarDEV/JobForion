@@ -12,6 +12,7 @@
 // this composes safely — see src/routes/*.router.js for details.
 // ════════════════════════════════════════════════════════════════
 
+import { useConfigEnv } from './lib/platform/config-rev.js';
 import { ensureAllSchema } from './db/schema.js';
 import { recordVisit } from './db/telemetry.js';
 import { BASE_URL } from './config/constants.js';
@@ -238,6 +239,7 @@ export default {
     // runtime hands the same object to every request in an isolate, those
     // flags would leak across requests.
     env = { ...env };
+    useConfigEnv(env); // config-rev.js: lets per-isolate caches revalidate against the config revision
     try {
       return await handleFetch(request, env, ctx);
     } catch (e) {

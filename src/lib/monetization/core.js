@@ -1,6 +1,6 @@
 // Central monetization domain service.
 // Products and prices are server-owned; orders, transactions, entitlements,
-// campaigns, refunds, affiliate clicks, and revenue events remain separate.
+// campaigns, refunds, and revenue events remain separate. (Affiliate marketing lives in lib/affiliate/.)
 // No payment provider is assumed or simulated. A real provider must prove
 // payment through a signed webhook before an order or entitlement is activated.
 
@@ -330,30 +330,6 @@ export async function processPaymentWebhook(env, event) {
   }
 }
 
-export async function createAffiliateClick(env, input = {}, request) {
-  const programId = positiveInt(input.program_id);
-  const destination = boundedText(input.destination, 1000);
-  const sourcePage = boundedText(input.source_page, 300) || '/';
-  if (!programId || !destination || !/^https?:\/\//i.test(destination)) return { ok: false, error: 'Invalid affiliate click.' };
-  try {
-    const { results } = await env.DB.prepare("SELECT id,base_url FROM affiliate_programs WHERE id = ? AND status = 'active' LIMIT 1").bind(programId).all();
-    if (!results?.length) return { ok: false, error: 'Affiliate program is unavailable.' };
-    // SECURITY: the client supplies `destination`, so it is only accepted when it points at the
-    // program's own host — otherwise anyone could stuff the click log with arbitrary URLs.
-    // (New offers use /go/<slug> instead, where the destination never comes from the client.)
-    let allowedHost = '', destinationHost = '';
-    try { allowedHost = new URL(String(results[0].base_url || '')).hostname.replace(/^www\./, ''); destinationHost = new URL(destination).hostname.replace(/^www\./, ''); } catch (e) {}
-    if (!allowedHost || destinationHost !== allowedHost) return { ok: false, error: 'Invalid affiliate click.' };
-    const ip = boundedText(request?.headers?.get('CF-Connecting-IP'), 120);
-    // The HMAC key was a constant string in the source, which makes IPv4 hashes trivially
-    // reversible by enumeration. Use the deployment secret and a per-day salt instead.
-    const hashSecret = env.ANALYTICS_HASH_SECRET || env.CSRF_SECRET || 'jobforion-affiliate-click';
-    const ipHash = ip ? await hmacHex(hashSecret, `${new Date().toISOString().slice(0, 10)}:${ip}`) : '';
-    await env.DB.prepare('INSERT INTO affiliate_clicks (program_id,campaign,source_page,destination,ip_hash,user_agent,created_at) VALUES (?,?,?,?,?,?,CURRENT_TIMESTAMP)').bind(programId, boundedText(input.campaign, 120), sourcePage, destination, ipHash, boundedText(request?.headers?.get('User-Agent'), 300)).run();
-    return { ok: true };
-  } catch (e) { return { ok: false, error: 'Unable to record affiliate click.' }; }
-}
-
 export async function grantAdminEntitlement(env, adminUserId, input = {}) {
   const product = await getProductById(env, input.product_id, { activeOnly: true });
   const userId = positiveInt(input.user_id);
@@ -430,14 +406,13 @@ export async function expireMonetizationCampaigns(env) {
 }
 
 export async function getMonetizationOverview(env) {
-  const fallback = { products: { active: 0, total: 0 }, orders: { total: 0, paid: 0, pending: 0, failed: 0, refunded: 0 }, revenue: { gross_minor: 0, net_minor: 0, currency: null, currencies: [] }, entitlements: { active: 0, featured: 0, sponsored: 0, premium_company: 0 }, affiliate_clicks: 0, ads: { enabled: 0, total: 0 }, revenueAvailable: false, revenueNote: 'No confirmed revenue events yet.' };
+  const fallback = { products: { active: 0, total: 0 }, orders: { total: 0, paid: 0, pending: 0, failed: 0, refunded: 0 }, revenue: { gross_minor: 0, net_minor: 0, currency: null, currencies: [] }, entitlements: { active: 0, featured: 0, sponsored: 0, premium_company: 0 }, ads: { enabled: 0, total: 0 }, revenueAvailable: false, revenueNote: 'No confirmed revenue events yet.' };
   try {
     const [products, orders, revenue, entitlements, clicks, ads] = await Promise.all([
       env.DB.prepare("SELECT COUNT(*) total, SUM(CASE WHEN status='active' THEN 1 ELSE 0 END) active FROM monetization_products").all(),
       env.DB.prepare("SELECT COUNT(*) total, SUM(CASE WHEN status='paid' THEN 1 ELSE 0 END) paid, SUM(CASE WHEN status IN ('pending','processing') THEN 1 ELSE 0 END) pending, SUM(CASE WHEN status='failed' THEN 1 ELSE 0 END) failed, SUM(CASE WHEN status IN ('refunded','partially_refunded') THEN 1 ELSE 0 END) refunded FROM monetization_orders").all(),
       env.DB.prepare("SELECT currency, COALESCE(SUM(gross_amount_minor),0) gross_minor, COALESCE(SUM(net_amount_minor),0) net_minor, COUNT(*) events FROM monetization_transactions WHERE status='succeeded' GROUP BY currency").all(),
       env.DB.prepare("SELECT COUNT(*) active, SUM(CASE WHEN kind='featured' THEN 1 ELSE 0 END) featured, SUM(CASE WHEN kind='sponsored' THEN 1 ELSE 0 END) sponsored, SUM(CASE WHEN kind='premium_company' THEN 1 ELSE 0 END) premium_company FROM monetization_entitlements WHERE status='active' AND (ends_at IS NULL OR ends_at > CURRENT_TIMESTAMP)").all(),
-      env.DB.prepare('SELECT COUNT(*) clicks FROM affiliate_clicks').all(),
       env.DB.prepare('SELECT COUNT(*) total, SUM(CASE WHEN enabled=1 THEN 1 ELSE 0 END) enabled FROM ad_slots').all(),
     ]);
     const revenueRows = (revenue.results || []).map(row => ({ currency: normalCurrency(row.currency) || 'USD', gross_minor: Number(row.gross_minor || 0), net_minor: Number(row.net_minor || 0), events: Number(row.events || 0) }));
@@ -448,7 +423,6 @@ export async function getMonetizationOverview(env) {
       orders: orders.results?.[0] ? Object.fromEntries(['total', 'paid', 'pending', 'failed', 'refunded'].map(k => [k, Number(orders.results[0][k] || 0)])) : fallback.orders,
       revenue: revenueRows.length ? revenueSummary : fallback.revenue,
       entitlements: entitlements.results?.[0] ? { active: Number(entitlements.results[0].active || 0), featured: Number(entitlements.results[0].featured || 0), sponsored: Number(entitlements.results[0].sponsored || 0), premium_company: Number(entitlements.results[0].premium_company || 0) } : fallback.entitlements,
-      affiliate_clicks: Number(clicks.results?.[0]?.clicks || 0),
       ads: ads.results?.[0] ? { total: Number(ads.results[0].total || 0), enabled: Number(ads.results[0].enabled || 0) } : fallback.ads,
       revenueAvailable: revenueRows.length > 0,
       revenueNote: revenueRows.length > 0 ? (currencies.length === 1 ? 'Based on confirmed backend transactions.' : `Multiple currencies reported: ${currencies.join(', ')}. Totals are intentionally not converted.`) : fallback.revenueNote,
@@ -482,20 +456,3 @@ export async function saveProduct(env, input, productId = null) {
   } catch (e) { return { ok: false, error: 'Product could not be saved. Slugs must be unique.' }; }
 }
 
-export async function getAffiliatePrograms(env) {
-  try { const { results } = await env.DB.prepare("SELECT p.*, COUNT(c.id) clicks FROM affiliate_programs p LEFT JOIN affiliate_clicks c ON c.program_id=p.id GROUP BY p.id ORDER BY p.id DESC").all(); return results || []; } catch (e) { return []; }
-}
-
-export async function saveAffiliateProgram(env, input, programId = null) {
-  const name = boundedText(input.name, 120);
-  const slug = slugify(boundedText(input.slug || name, 80));
-  const baseUrl = boundedText(input.base_url, 1000);
-  const status = ['active', 'inactive'].includes(String(input.status)) ? String(input.status) : 'inactive';
-  if (!name || !slug || !/^https?:\/\//i.test(baseUrl)) return { ok: false, error: 'Affiliate name and a valid HTTPS/HTTP base URL are required.' };
-  try {
-    const id = positiveInt(programId);
-    if (id) await env.DB.prepare('UPDATE affiliate_programs SET name=?,slug=?,base_url=?,status=?,updated_at=CURRENT_TIMESTAMP WHERE id=?').bind(name, slug, baseUrl, status, id).run();
-    else await env.DB.prepare('INSERT INTO affiliate_programs (name,slug,base_url,status,created_at,updated_at) VALUES (?,?,?,?,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)').bind(name, slug, baseUrl, status).run();
-    return { ok: true };
-  } catch (e) { return { ok: false, error: 'Affiliate program could not be saved.' }; }
-}

@@ -7,6 +7,10 @@
 // Every admin POST clears the memo of the isolate that handled it
 // (see routes/admin.router.js), other isolates converge within the TTL.
 
+import { entryStillValid, revForLoad } from './config-rev.js';
+
+// Soft TTL: inside it nothing is checked at all. After it the entry is revalidated against the
+// config revision (1 memoised row) instead of being reloaded — see config-rev.js.
 export const CONFIG_MEMO_TTL_MS = 120000;
 const store = new Map(); // key -> { at, value }
 
@@ -14,9 +18,10 @@ export function clearConfigMemo() { store.clear(); }
 
 export async function memoConfig(key, loader, ttl = CONFIG_MEMO_TTL_MS) {
   const hit = store.get(key);
-  const now = Date.now();
-  if (hit && now - hit.at < ttl) return hit.value;
+  if (hit && await entryStillValid(hit, ttl)) return hit.value;
+  const rev = await revForLoad();
+  const at = Date.now();
   const value = await loader();
-  store.set(key, { at: now, value });
+  store.set(key, { at, value, rev });
   return value;
 }

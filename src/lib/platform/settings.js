@@ -28,6 +28,8 @@
 // the 60s window.
 // ════════════════════════════════════════════════════════════════
 
+import { entryStillValid, revForLoad, bumpRevStatement } from './config-rev.js';
+
 export const APPEARANCE_DEFAULTS = {
   appearance_primary_color: '#6339E6',
   appearance_secondary_color: '#4F2BD0',
@@ -462,8 +464,10 @@ export const WEEKDAY_OPTIONS = [
   { value: 6, label: 'Saturday' },
 ];
 
-const TTL_MS = 300000; // 5 min: this read costs every site_settings row per isolate; admin writes clear the local cache
-let cache = null; // { values: {...}, loadedAt: number }
+// Soft TTL 60 s; after that the isolate revalidates against the config revision (1 row) instead of
+// re-reading every site_settings row — see lib/platform/config-rev.js. Hard limit 15 min.
+const SOFT_TTL_MS = 60000;
+let cache = null; // { values: {...}, at: number, rev: string|null }
 
 async function loadFromDb(env) {
   const values = { ...SETTINGS_DEFAULTS };
@@ -482,10 +486,11 @@ async function loadFromDb(env) {
 // Returns the full resolved settings object (DB values merged over
 // DEFAULTS). Safe to call on every request.
 export async function getSettings(env) {
-  const now = Date.now();
-  if (cache && (now - cache.loadedAt) < TTL_MS) return cache.values;
+  if (cache && await entryStillValid(cache, SOFT_TTL_MS, undefined, env)) return cache.values;
+  const rev = await revForLoad(env);
+  const at = Date.now();
   const values = await loadFromDb(env);
-  cache = { values, loadedAt: now };
+  cache = { values, at, rev };
   return values;
 }
 
@@ -518,6 +523,7 @@ export async function setSettings(env, updates) {
        ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP`
     ).bind(k, v)
   );
+  stmts.push(bumpRevStatement(env)); // other isolates notice the change through the config revision
   await env.DB.batch(stmts);
   cache = null; // force a fresh read on this isolate's next getSettings() call
 }

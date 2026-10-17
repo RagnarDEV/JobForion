@@ -163,4 +163,12 @@ assert.ok(page.includes('enctype="multipart/form-data"'));
 
 // ── admin redirect helper still strict ──
 assert.equal(safeAdminRedirect('//evil.com'), '/admin/jobs');
+// ── the old Monetization Center affiliate section is gone (Affiliate Manager replaces it) ──
+import { readFileSync } from 'node:fs';
+const src = (f) => readFileSync(new URL(`../src/${f}`, import.meta.url), 'utf8');
+for (const f of ['pages/admin/monetization.js', 'routes/admin/monetization.router.js', 'routes/api/monetization.api.js', 'lib/monetization/core.js']) {
+  const s = src(f);
+  assert.ok(!/affiliate\/save|affiliate-click|createAffiliateClick|saveAffiliateProgram|getAffiliatePrograms|Affiliate programs/.test(s), `${f} no longer contains the legacy affiliate code`);
+}
+assert.ok(src('pages/admin/monetization.js').includes('/admin/affiliate'), 'Monetization Center points to the Affiliate Manager');
 console.log('affiliate tests: all assertions passed');

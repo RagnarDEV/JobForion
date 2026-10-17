@@ -11,7 +11,7 @@ import { adminShell } from '../../pages/admin/shell.js';
 import { setSettings } from '../../lib/platform/settings.js';
 import { updateAdSlot, resetAdSlot, AD_SLOT_DEFS } from '../../lib/content/ad-slots.js';
 import { logActivity } from '../../lib/platform/activity-log.js';
-import { saveProduct, saveAffiliateProgram, requestRefund, grantAdminEntitlement } from '../../lib/monetization/core.js';
+import { saveProduct, requestRefund, grantAdminEntitlement } from '../../lib/monetization/core.js';
 import { errorPage } from './error-page.js';
 
 export async function handleAdminMonetizationRoute(url, request, env, base) {
@@ -33,18 +33,6 @@ export async function handleAdminMonetizationRoute(url, request, env, base) {
       if (!result.ok) return new Response(result.error, { status: 400 });
       await logActivity(env, 'monetization_product_saved', form.get('name') || form.get('slug'), { productId: result.id || form.get('product_id') || null, status: form.get('status') || 'active' });
       return new Response(null, { status: 302, headers: { Location: `/admin/monetization?flash=${encodeURIComponent('Product saved')}` } });
-    } catch (e) { return errorPage(e); }
-  }
-
-  if (url.pathname === '/admin/monetization/affiliate/save' && request.method === 'POST') {
-    try {
-      const ok = await verifyAdminCookie(env, request.headers.get('Cookie'));
-      if (!ok) return new Response('Unauthorized', { status: 401 });
-      const form = await request.formData();
-      const result = await saveAffiliateProgram(env, Object.fromEntries(form.entries()), form.get('program_id'));
-      if (!result.ok) return new Response(result.error, { status: 400 });
-      await logActivity(env, 'monetization_affiliate_saved', form.get('name') || form.get('slug'), { programId: form.get('program_id') || null });
-      return new Response(null, { status: 302, headers: { Location: `/admin/monetization?flash=${encodeURIComponent('Affiliate program saved')}` } });
     } catch (e) { return errorPage(e); }
   }
 

@@ -438,7 +438,7 @@ function goPage(p){pg=p;loadJobs(true);window.scrollTo(0,0);}
 function renderPagination(){
   const el=document.getElementById('pagination');
   if(!el)return;
-  const tp=Math.ceil(total/20);
+  const tp=Math.min(250,Math.ceil(total/20));
   el.innerHTML=tp>1?\`
     <button class="page-btn" onclick="goPage(\${pg-1})" \${pg===1?'disabled':''} aria-label="Previous page"> Prev</button>
     <span class="page-info" aria-current="page">Page \${pg} / \${tp}</span>

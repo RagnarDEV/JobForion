@@ -1,12 +1,12 @@
 // src/routes/api/monetization.api.js
-// Monetization: catalog, server-priced orders, entitlements, affiliate clicks and the trusted payment webhook boundary.
+// Monetization: catalog, server-priced orders, entitlements and the trusted payment webhook boundary.
 // Returns a Response, or null when the path is not this module's concern.
 
 import { checkRateLimit } from '../../lib/platform/rate-limit.js';
 import { verifyAdminCookie } from '../../auth/admin-auth.js';
 import { getSessionUser } from '../../lib/accounts/session.js';
 import { verifyCsrf } from '../../lib/accounts/csrf.js';
-import { listProducts, createPendingOrder, listUserOrders, listUserEntitlements, getMonetizationOverview, getRevenueAnalytics, verifyPaymentWebhook, processPaymentWebhook, createAffiliateClick } from '../../lib/monetization/core.js';
+import { listProducts, createPendingOrder, listUserOrders, listUserEntitlements, getMonetizationOverview, getRevenueAnalytics, verifyPaymentWebhook, processPaymentWebhook } from '../../lib/monetization/core.js';
 import { readBoundedText, readBoundedJson, jsonResponse } from './shared.js';
 
 export async function handleMonetizationApi(url, request, env, ctx) {
@@ -54,14 +54,6 @@ export async function handleMonetizationApi(url, request, env, ctx) {
   if (url.pathname === '/api/monetization/campaigns' && request.method === 'GET') {
     if (!await verifyAdminCookie(env, request.headers.get('Cookie'))) return jsonResponse({ success: false, error: 'Unauthorized.' }, 401);
     try { const { results } = await env.DB.prepare('SELECT * FROM monetization_campaigns ORDER BY id DESC LIMIT 100').all(); return jsonResponse({ campaigns: results || [] }); } catch (e) { return jsonResponse({ campaigns: [] }); }
-  }
-  if (url.pathname === '/api/monetization/affiliate-click' && request.method === 'POST') {
-    try {
-      const rl = await checkRateLimit(env, `affiliate-click:${request.headers.get('CF-Connecting-IP') || 'unknown'}`, { maxRequests: 60, windowMinutes: 10 });
-      if (!rl.allowed) return jsonResponse({ success: false, error: 'Too many requests.' }, 429);
-      const result = await createAffiliateClick(env, await readBoundedJson(request, 16 * 1024), request);
-      return jsonResponse(result, result.ok ? 200 : 400);
-    } catch (e) { return jsonResponse({ success: false, error: 'Invalid affiliate click.' }, 400); }
   }
   if (url.pathname === '/api/monetization/webhook' && request.method === 'POST') {
     const rl = await checkRateLimit(env, `payment-webhook:${request.headers.get('CF-Connecting-IP') || 'unknown'}`, { maxRequests: 120, windowMinutes: 5, failClosed: true });

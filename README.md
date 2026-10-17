@@ -202,3 +202,9 @@ node scripts/audit.mjs   # syntax + import/export + يتامى + imports غير 
 - **RTL:** `lang="ar" dir="rtl"` + خط Noto Sans Arabic + تصحيحات اتجاه (الشريط الجانبي، الجداول، الإشعارات، الدرج المحمول، حقول الروابط/المفاتيح تبقى LTR).
 - **إضافة نص جديد:** أضف سطراً في `ar/common.js` (تسميات قصيرة) أو `ar/messages.js` (جمل ورسائل) أو `ar/patterns.js` (نصوص فيها أرقام: `{a}` رقم، `{~a}` أي نص). أي نص بلا ترجمة يبقى بالإنجليزية (تراجع آمن).
 - **كشف النواقص:** `node scripts/harvest-admin-strings.mjs --runtime-only` يعرض النصوص التي تُعرض في الإدارة وليس لها ترجمة.
+
+## ميزانية قراءات D1 (5M صف/يوم)
+
+- **القياس:** `node --no-warnings scripts/profile-reads.mjs 12000 --cron` يعرض لكل رابط وكل مهمة مجدولة الاستعلامات التي تمسح جدولاً كاملاً؛ و`scripts/simulate-warm-isolate.mjs` يقيس الاستهلاك الثابت لـ isolate دافئ واحد.
+- **الإعدادات والتصنيفات وكل `memoConfig`** لا تُعاد قراءتها بالساعة: تتحقق من `_config_rev` (صف واحد). أي كود جديد يكتب إعداداً مباشرة في `site_settings` يجب أن يستدعي `bumpConfigRev(env)` (أو يمرّ عبر `setSettings`).
+- **إحصاءات الأدمن الثقيلة:** غلّفها بـ `memoStat(key, loader)` (10 دقائق) ولا تستخدم `COUNT(*)` على جداول تنمو بلا حد (visits، analytics_event_queue، logs) إلا بسقف `LIMIT`.

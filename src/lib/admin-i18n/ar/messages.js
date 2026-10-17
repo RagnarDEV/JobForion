@@ -307,4 +307,6 @@ export const MESSAGES = {
   "Section code saved": "تم حفظ كود القسم",
   "Settings saved": "تم حفظ الإعدادات",
   "Source updated": "تم تحديث المصدر",
+  "Programs, tracked links, placements and earnings now have their own section with full control over where offers appear.": "للبرامج والروابط المتتبَّعة والمواضع والأرباح الآن قسمها الخاص مع تحكم كامل في أماكن ظهور العروض.",
+  "enabled — managed in Ads Manager": "مفعّلة — تُدار من مدير الإعلانات",
 };

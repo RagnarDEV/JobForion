@@ -3,6 +3,7 @@
 // copy-link, preview, duplicate-detection (manual review, never auto-delete),
 // and stale-job cleanup (configurable age threshold, confirmed before running).
 
+import { memoStat } from '../../lib/platform/stat-memo.js';
 import { getSiteStats, readSiteCache } from '../../lib/platform/site-cache.js';
 import { cappedCount } from '../../lib/platform/job-window.js';
 import { BASE_URL, JOB_TYPE_META, JOB_TYPE_ORDER, JOB_STATUS_META, JOB_STATUS_ORDER, JOB_SORT_OPTIONS } from '../../config/constants.js';
@@ -13,6 +14,9 @@ import { getJobIntelligence } from '../../lib/ai/job-intelligence.js';
 import { jobTypeIconHtml } from '../../lib/jobs/job-card-styles.js';
 
 import { iconArchive, iconBriefcase, iconDollarSign, iconEdit3, iconPin, iconSearch, iconTrash2 } from '../../assets/icons.js';
+// Filtered admin searches scan; bound them to the newest N jobs so one search can never read the
+// whole (ever-growing) table. Unfiltered browsing is index-driven and not affected.
+const ADMIN_FILTER_WINDOW = 15000;
 const PAGE_SIZE = 30;
 // Sorting (plan §19, Stage 5): now defined once in config/constants.js
 // as JOB_SORT_OPTIONS and shared with the public /api/jobs (Stage 8) —
@@ -113,7 +117,7 @@ export async function renderJobsListContent(env, params) {
   const [listResult, { results: sourceRows }] = await Promise.all([
     unfiltered
       ? env.DB.prepare(`SELECT * FROM jobs ORDER BY ${SORT_OPTIONS[sortKey].sql} LIMIT ${PAGE_SIZE} OFFSET ${offset}`).all()
-      : env.DB.prepare(`SELECT *, COUNT(*) OVER () AS jf_total FROM jobs ${whereSql} ORDER BY ${SORT_OPTIONS[sortKey].sql} LIMIT ${PAGE_SIZE} OFFSET ${offset}`).bind(...binds).all(),
+      : env.DB.prepare(`SELECT *, COUNT(*) OVER () AS jf_total FROM (SELECT * FROM jobs ORDER BY id DESC LIMIT ${ADMIN_FILTER_WINDOW}) AS jobs ${whereSql} ORDER BY ${SORT_OPTIONS[sortKey].sql} LIMIT ${PAGE_SIZE} OFFSET ${offset}`).bind(...binds).all(),
     cachedSources ? Promise.resolve({ results: cachedSources.map(r => ({ source: r.s })).sort((a, b) => String(a.source).localeCompare(String(b.source))) })
       : env.DB.prepare(`SELECT DISTINCT source FROM jobs WHERE source IS NOT NULL AND source != '' ORDER BY source ASC`).all(),
   ]);
@@ -128,16 +132,20 @@ export async function renderJobsListContent(env, params) {
   }
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
-  const { results: staleCountRows } = await env.DB.prepare(
-    "SELECT COUNT(*) c FROM jobs WHERE created_at < datetime('now','-45 day')"
-  ).all();
-  const staleCount = staleCountRows[0]?.c || 0;
+  // Both housekeeping badges below are memoised for 10 minutes per isolate: they ran on EVERY
+  // list view / filter change / page click and each one reads thousands of rows.
+  const staleCount = await memoStat('admin:jobs-stale-count', async () => {
+    const { results: staleCountRows } = await env.DB.prepare(
+      "SELECT COUNT(*) c FROM (SELECT 1 FROM jobs WHERE created_at < datetime('now','-45 day') LIMIT 20000)"
+    ).all();
+    return staleCountRows[0]?.c || 0;
+  });
 
   // ROW-READ BUDGET: no index covers this combination (a plain "SCAN jobs" —
   // unlike staleCount just above, which uses idx_jobs_created_at), and this runs
   // on every /admin/jobs page view regardless of filters. Capped: exact past a
   // few thousand isn't needed for a "needs backfill" badge.
-  const unbackfilledCount = await cappedCount(env, 'jobs', "salary IS NOT NULL AND salary != '' AND salary_min_usd IS NULL", [], 5000);
+  const unbackfilledCount = await memoStat('admin:jobs-unbackfilled', () => cappedCount(env, 'jobs', "salary IS NOT NULL AND salary != '' AND salary_min_usd IS NULL", [], 5000));
 
   const rowsHtml = (rows || []).map(j => jobRow(j, categoryOrder, categoryMap)).join('').replaceAll('__REDIRECT__', escapeHtml(redirectTarget));
 

@@ -30,7 +30,8 @@ export async function handleAnalyticsApi(url, request, env, ctx) {
     if (url.pathname === '/api/admin/analytics/alerts') return jsonResponse({ alerts: await getAnalyticsAlerts(env), health: await getAnalyticsHealth(env) });
     if (url.pathname === '/api/admin/analytics/revenue') return jsonResponse(await getRevenueAnalytics(env, url.searchParams.get('days') || 30));
     if (url.pathname === '/api/admin/analytics/payments') { try { const { results } = await env.DB.prepare(`SELECT status,COUNT(*) count,SUM(gross_amount_minor) amount FROM monetization_transactions GROUP BY status`).all(); return jsonResponse({ rows: results || [] }); } catch (e) { return jsonResponse({ rows: [] }); } }
-    if (url.pathname === '/api/admin/analytics/affiliate') { try { const { results } = await env.DB.prepare(`SELECT program_id,COUNT(*) clicks,COUNT(DISTINCT ip_hash) unique_clicks FROM affiliate_clicks GROUP BY program_id ORDER BY clicks DESC`).all(); return jsonResponse({ rows: results || [] }); } catch (e) { return jsonResponse({ rows: [] }); } }
+    // Affiliate Manager counters (aff_daily — one row per offer/placement/day, so this read is tiny).
+    if (url.pathname === '/api/admin/analytics/affiliate') { try { const { results } = await env.DB.prepare(`SELECT offer_id, SUM(clicks) clicks FROM aff_daily WHERE day >= date('now','-90 day') GROUP BY offer_id ORDER BY clicks DESC LIMIT 200`).all(); return jsonResponse({ rows: results || [] }); } catch (e) { return jsonResponse({ rows: [] }); } }
     if (url.pathname === '/api/admin/analytics/export') {
       const type = url.searchParams.get('type') || 'traffic';
       let data;

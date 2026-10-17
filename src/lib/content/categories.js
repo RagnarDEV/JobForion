@@ -21,9 +21,10 @@
 // ════════════════════════════════════════════════════════════════
 
 import { CATEGORY_META as LEGACY_CATEGORY_META } from '../../config/constants.js';
+import { entryStillValid, revForLoad } from '../platform/config-rev.js';
 
 const KEY_PATTERN = /^[a-z][a-z0-9]{1,19}$/;
-const TTL_MS = 300000;
+const TTL_MS = 60000; // soft TTL; revalidated against the config revision afterwards (lib/platform/config-rev.js)
 let cache = null; // { rows: [...], loadedAt: number }
 
 function validateKey(key) {
@@ -42,8 +43,9 @@ async function loadFromDb(env) {
 // Full row list (includes inactive — the admin list needs to show and
 // toggle those). Cached per isolate for TTL_MS, cleared on any write.
 export async function getCategoriesRaw(env) {
+  if (cache && await entryStillValid(cache, TTL_MS, undefined, env)) return cache.rows;
+  const rev = await revForLoad(env);
   const now = Date.now();
-  if (cache && (now - cache.loadedAt) < TTL_MS) return cache.rows;
   let rows;
   try {
     rows = await loadFromDb(env);
@@ -52,7 +54,7 @@ export async function getCategoriesRaw(env) {
     // the legacy static list so the site still renders correctly.
     rows = Object.entries(LEGACY_CATEGORY_META).map(([key, v], i) => ({ key, label: v.label, emoji: v.emoji, color: v.color, sort_order: i, active: 1 }));
   }
-  cache = { rows, loadedAt: now };
+  cache = { rows, at: now, rev };
   return rows;
 }
 
