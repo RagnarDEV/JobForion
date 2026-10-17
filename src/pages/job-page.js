@@ -17,6 +17,7 @@ import { getLogoOverrides, attachCompanyLogos } from '../lib/companies/company-l
 import { hydrateHotPay, HOT_PAY_LABEL } from '../lib/jobs/hot-pay.js';
 import { salaryTierBadgeHtml } from '../components/job-card.js';
 import { getVerifiedCompanyNameSet, getPublicCompanyBySlug } from '../lib/companies/companies.js';
+import { parseDbDate, dbDateMs } from '../lib/platform/db-date.js';
 
 // SECURITY: JSON.stringify() does NOT escape "<", so a malicious job title
 // like `</script><script>...` embedded in scraped/submitted data could
@@ -114,7 +115,7 @@ export async function renderJobPage(job, related, base, env, user = null) {
   related = hydrated.slice(1);
   let skills = [];
   try { skills = JSON.parse(job.skills || '[]'); } catch (e) {}
-  const isNew = job.created_at && Date.now() - new Date(job.created_at).getTime() < 86400000;
+  const isNew = job.created_at && Date.now() - dbDateMs(job.created_at) < 86400000;
   const canonical = `${base}/job/${job.id}`;
   const cleanDesc = cleanDescription(job.description);
 
@@ -157,7 +158,7 @@ export async function renderJobPage(job, related, base, env, user = null) {
   const companyDescriptionHtml = publicCompany?.description ? `<p>${escapeHtml(publicCompany.description)}</p>` : '';
   const applyUrl = safeExternalUrl(job.url);
   const applyHtml = applyUrl ? `<a href="${escapeHtml(applyUrl)}" target="_blank" rel="noopener noreferrer" class="apply-big" onclick="recordApplyClick(${job.id})">Apply Now </a>` : '';
-  const postedLabel = job.created_at ? (isNew ? 'Posted recently' : `Posted ${new Date(job.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`) : '';
+  const postedLabel = job.created_at ? (isNew ? 'Posted recently' : `Posted ${parseDbDate(job.created_at).toLocaleDateString('en-US', { timeZone: 'UTC', month: 'short', day: 'numeric', year: 'numeric' })}`) : '';
   const titleCase = value => String(value || '').replace(/_/g, ' ').replace(/\b\w/g, letter => letter.toUpperCase());
   const employmentLabel = job.employment_type ? titleCase(job.employment_type) : '';
   const remoteLabel = job.remote_type ? titleCase(job.remote_type) : '';

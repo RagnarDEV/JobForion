@@ -1,8 +1,10 @@
 // src/db/cleanup.js
 // Daily job-lifecycle cleanup — separate from sync.js on purpose (sync.js
 // is scoped to "talk to providers and save results"; this file is scoped
-// to "decide what no longer belongs in the database"). Wired into the
-// Worker's scheduled() handler via a second cron pattern in wrangler.toml.
+// to "decide what no longer belongs in the database"). Runs once a day at
+// 03:30 UTC from the daily-maintenance task in src/app/cron.js (the sync itself
+// runs every 3 hours — see SYNC_INTERVAL_HOURS in lib/platform/rotation.js).
+// Physical deletion + tombstones live in ./job-lifecycle.js.
 //
 // STAGE 5 (Job Management) — three-phase soft lifecycle, replacing the
 // old direct-delete-once-stale approach:
@@ -33,15 +35,18 @@ import { cappedCount } from '../lib/platform/job-window.js';
 import { ensureTable, ensureAccountTables } from './schema.js';
 import { BASE_URL } from '../config/constants.js';
 import { JOBS_PER_SITEMAP } from '../lib/seo/sitemap.js';
+import { hardDeleteJobs, SOFT_DELETE_RETENTION_DAYS } from './job-lifecycle.js';
 
-// Cloudflare D1 hard-caps bound parameters at 100 per query (confirmed:
-// https://developers.cloudflare.com/d1/platform/limits) — well below
-// SQLite's usual 999. Every batched UPDATE/DELETE below binds one
-// placeholder per id in a single `id IN (?,?,...)` clause, so 100 is
-// also the batch size ceiling here (unlike DB_BATCH_SIZE in sync.js,
-// which batches separate INSERT/UPDATE statements via env.DB.batch()
-// and only needs ~11 params each).
-const BATCH_SIZE = 100;
+// SUBREQUEST / WRITE BUDGET: this runs inside the daily-maintenance cron
+// invocation, which shares Cloudflare's free-plan limit of 50 subrequests
+// (every D1 call counts) with the blog-expiry, monetization and affiliate
+// tasks. Phases 1-2 are therefore ONE set-based UPDATE each (no id lists,
+// no chunk loops, nothing that grows with the backlog), and physical
+// deletion is capped per run — a backlog simply drains over a few days.
+// (The earlier version fetched every id first and updated them 100 at a
+// time, which scales its D1 calls with the number of expired jobs.)
+const MAX_STATUS_CHANGES_PER_RUN = 3000;
+const MAX_HARD_DELETES_PER_RUN = 800; // 8 chunks of 100 = 8 D1 batches
 
 // How long a job stays visibly 'expired' (findable in admin/company
 // dashboards, still resolvable as a real row for saved_jobs/
@@ -53,18 +58,33 @@ const ARCHIVE_AFTER_DAYS = 14;
 // staleness window (see PHASE 1 below) + ARCHIVE_AFTER_DAYS + this.
 const DELETE_AFTER_DAYS = 30;
 
-class CleanupSkipped extends Error {}
+// Log-table retention (days). Without it sync_logs / cleanup_logs / error_logs
+// grow forever; the dashboards only ever read the latest few rows. sync_logs
+// must stay well above the 72h window used by the safety valve below.
+const LOG_RETENTION_DAYS = { sync_logs: 30, cleanup_logs: 90, error_logs: 30 };
 
-async function batchUpdateStatus(env, ids, newStatus) {
-  let changed = 0;
-  for (let i = 0; i < ids.length; i += BATCH_SIZE) {
-    const chunk = ids.slice(i, i + BATCH_SIZE);
-    const placeholders = chunk.map(() => '?').join(',');
-    const r = await env.DB.prepare(`UPDATE jobs SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id IN (${placeholders})`).bind(newStatus, ...chunk).run();
-    changed += r.meta?.changes || 0;
-  }
-  return changed;
-}
+// PHASE 1 predicate — a job becomes 'expired' once EITHER is true:
+//  (a) expires_at has passed, or
+//  (b) it is provider-synced AND its source stopped returning it: updated_at
+//      older than 30 days (every successful sync resets updated_at).
+// Rule (b) deliberately does NOT apply to employer-submitted / admin-approved
+// jobs (source='manual' / source_type='employer'): no provider ever refreshes
+// them, so under rule (b) they were being expired after 30 days instead of the
+// 45-day lease they are promised. They live exactly until expires_at.
+// 'deleted' is excluded so an admin-deleted row is never turned back into
+// 'expired' (which would let the lifecycle later hard-delete it and sync
+// re-import it).
+const EXPIRE_WHERE = `status NOT IN ('expired','archived','deleted') AND (
+  (expires_at IS NOT NULL AND expires_at < datetime('now'))
+  OR (
+    COALESCE(source_type,'provider') = 'provider' AND COALESCE(source,'') != 'manual'
+    AND (expires_at IS NULL OR expires_at >= datetime('now'))
+    AND (updated_at IS NULL OR updated_at < datetime('now','-30 day'))
+    AND created_at < datetime('now','-30 day')
+  )
+)`;
+
+class CleanupSkipped extends Error {}
 
 export async function cleanupStaleJobs(env) {
   await ensureTable(env);
@@ -99,68 +119,50 @@ export async function cleanupStaleJobs(env) {
     }
 
     // ── PHASE 1: active/paused/closed → expired ──────────────────
-    // A job qualifies once EITHER condition is true:
-    //  - expires_at has passed (our own computed 45-day lease, extended
-    //    every time a sync still finds the job at its source, or the
-    //    owner explicitly pauses/resumes it)
-    //  - updated_at is more than 30 days old (the source has stopped
-    //    returning this job for over a month — treated as gone for good)
-    // These two thresholds overlap in practice (expires_at is set from
-    // updated_at + 45 days), which is intentional: the shorter of the two
-    // always wins, so a source that briefly hiccups doesn't lose jobs
-    // prematurely, while a source that goes fully silent doesn't hold
-    // onto stale listings for the full 45 days. Excludes rows already
-    // past this phase (expired/archived) so they aren't re-touched here.
-    const { results: toExpire } = await env.DB.prepare(
-      `SELECT id FROM jobs WHERE status NOT IN ('expired','archived') AND (
-         (expires_at IS NOT NULL AND expires_at < datetime('now'))
-         OR ((expires_at IS NULL OR expires_at >= datetime('now')) AND (updated_at IS NULL OR updated_at < datetime('now','-30 day')) AND created_at < datetime('now','-30 day'))
-       )`
-    ).all();
-    // Deliberately a LIVE (but capped) count, not the precomputed cache: this
-    // number gates a potentially destructive mass-expiry decision and must
-    // reflect the database as it actually is right now, not an aggregate that
-    // may be hours stale — the exact condition (something has gone wrong) this
-    // safety valve exists to catch. Capped at 20,000 rows, once a day from cron.
+    // See EXPIRE_WHERE above for the exact rule. The candidate count is a
+    // LIVE (capped) count: it gates a potentially destructive mass-expiry
+    // decision and must reflect the database as it is right now, not an
+    // aggregate that may be hours stale — the exact condition (something has
+    // gone wrong) this safety valve exists to catch.
+    const candidates = await cappedCount(env, 'jobs', EXPIRE_WHERE, [], 20000);
     const activeTotal = await cappedCount(env, 'jobs', "status = 'active'", [], 20000);
-    if (activeTotal >= 200 && (toExpire || []).length > activeTotal * 0.5) {
-      breakdown.skipped = `mass_expiry_blocked (${(toExpire || []).length}/${activeTotal})`;
+    if (activeTotal >= 200 && candidates > activeTotal * 0.5) {
+      breakdown.skipped = `mass_expiry_blocked (${candidates}/${activeTotal})`;
       throw new CleanupSkipped();
     }
-    breakdown.expired = await batchUpdateStatus(env, (toExpire || []).map(r => r.id), 'expired');
+    const expireRes = await env.DB.prepare(
+      `UPDATE jobs SET status = 'expired', updated_at = CURRENT_TIMESTAMP
+       WHERE id IN (SELECT id FROM jobs WHERE ${EXPIRE_WHERE} LIMIT ${MAX_STATUS_CHANGES_PER_RUN})`
+    ).run();
+    breakdown.expired = expireRes.meta?.changes || 0;
 
     // ── PHASE 2: expired → archived ───────────────────────────────
-    const { results: toArchive } = await env.DB.prepare(
-      `SELECT id FROM jobs WHERE status = 'expired' AND updated_at < datetime('now','-' || ? || ' day')`
-    ).bind(ARCHIVE_AFTER_DAYS).all();
-    breakdown.archived = await batchUpdateStatus(env, (toArchive || []).map(r => r.id), 'archived');
+    const archiveRes = await env.DB.prepare(
+      `UPDATE jobs SET status = 'archived', updated_at = CURRENT_TIMESTAMP
+       WHERE id IN (SELECT id FROM jobs WHERE status = 'expired' AND updated_at < datetime('now','-' || ? || ' day') LIMIT ${MAX_STATUS_CHANGES_PER_RUN})`
+    ).bind(ARCHIVE_AFTER_DAYS).run();
+    breakdown.archived = archiveRes.meta?.changes || 0;
 
     // ── PHASE 3: archived → permanently deleted ───────────────────
+    // hardDeleteJobs() writes the URL tombstone, removes saved_jobs /
+    // applications / job_intelligence rows and the job in ONE atomic D1 batch
+    // per 100 ids (see db/job-lifecycle.js).
     const { results: toDelete } = await env.DB.prepare(
-      `SELECT id,job_handle,url FROM jobs WHERE status = 'archived' AND updated_at < datetime('now','-' || ? || ' day')`
-    ).bind(DELETE_AFTER_DAYS).all();
-    const deleteRows = toDelete || [];
-    for (let i = 0; i < deleteRows.length; i += BATCH_SIZE) {
-      const chunk = deleteRows.slice(i, i + BATCH_SIZE);
-      const ids = chunk.map(row => row.id);
-      const placeholders = ids.map(() => '?').join(',');
-      // Preserve only the URL identity before hard deletion so the public
-      // route can return a truthful 410 instead of guessing from MAX(id).
-      const tombstones = chunk.map(row => env.DB.prepare('INSERT OR IGNORE INTO job_tombstones (job_id,job_handle,url,deleted_at) VALUES (?,?,?,CURRENT_TIMESTAMP)').bind(row.id, row.job_handle || null, row.url || null));
-      if (typeof env.DB.batch === 'function') await env.DB.batch(tombstones);
-      else for (const statement of tombstones) await statement.run();
-      // Remove dependent rows first. D1/SQLite does not automatically
-      // cascade these legacy references, so deleting jobs alone would leave
-      // broken Saved Jobs, Applications, and job-intelligence records.
-      const dependents = [
-        env.DB.prepare(`DELETE FROM saved_jobs WHERE job_id IN (${placeholders})`).bind(...ids),
-        env.DB.prepare(`DELETE FROM applications WHERE job_id IN (${placeholders})`).bind(...ids),
-        env.DB.prepare(`DELETE FROM job_intelligence WHERE job_id IN (${placeholders})`).bind(...ids),
-      ];
-      if (typeof env.DB.batch === 'function') await env.DB.batch(dependents);
-      else for (const statement of dependents) await statement.run();
-      const r = await env.DB.prepare(`DELETE FROM jobs WHERE id IN (${placeholders})`).bind(...ids).run();
-      totalDeleted += r.meta?.changes || 0;
+      `SELECT id FROM jobs WHERE status = 'archived' AND updated_at < datetime('now','-' || ? || ' day') ORDER BY id LIMIT ?`
+    ).bind(DELETE_AFTER_DAYS, MAX_HARD_DELETES_PER_RUN).all();
+    totalDeleted += await hardDeleteJobs(env, (toDelete || []).map((row) => row.id));
+
+    // ── PHASE 4: admin-deleted ('deleted') rows past their retention ──
+    // Admin deletes are soft (db/job-lifecycle.js softDeleteJobs) so sync.js
+    // cannot resurrect them. Once SOFT_DELETE_RETENTION_DAYS have passed they
+    // are removed for real (with a tombstone, so /job/:id answers 410).
+    const room = MAX_HARD_DELETES_PER_RUN - (toDelete || []).length;
+    if (room > 0) {
+      const { results: oldSoft } = await env.DB.prepare(
+        `SELECT id FROM jobs WHERE status = 'deleted' AND updated_at < datetime('now','-' || ? || ' day') ORDER BY id LIMIT ?`
+      ).bind(SOFT_DELETE_RETENTION_DAYS, room).all();
+      breakdown.purged_soft_deleted = await hardDeleteJobs(env, (oldSoft || []).map((row) => row.id));
+      totalDeleted += breakdown.purged_soft_deleted;
     }
     breakdown.deleted = totalDeleted;
   } catch (e) {
@@ -208,6 +210,14 @@ export async function cleanupStaleJobs(env) {
     await env.DB.prepare("DELETE FROM rate_limits WHERE window_start < datetime('now','-48 hours')").run();
     await env.DB.prepare("DELETE FROM job_tombstones WHERE deleted_at < datetime('now','-730 days')").run();
   } catch (e) {}
+
+  // Operational-log retention (one independent statement per table so a table
+  // that does not exist yet can never block the others).
+  for (const [table, days] of Object.entries(LOG_RETENTION_DAYS)) {
+    try {
+      await env.DB.prepare(`DELETE FROM ${table} WHERE created_at IS NULL OR created_at < datetime('now','-' || ? || ' day')`).bind(days).run();
+    } catch (e) {}
+  }
 
   return { deleted: totalDeleted, breakdown };
 }

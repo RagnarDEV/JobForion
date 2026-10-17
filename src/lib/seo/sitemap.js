@@ -34,6 +34,7 @@ import { PUBLIC_JOB_STATUS_SQL } from '../../config/constants.js';
 // XML payload comfortably small and fast to generate/cache.
 export { JOBS_PER_SITEMAP } from '../../config/constants.js';
 import { JOBS_PER_SITEMAP } from '../../config/constants.js';
+import { dbDateYmd } from '../platform/db-date.js';
 
 function xmlEscape(value) {
   return String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;');
@@ -138,7 +139,7 @@ export async function buildJobsSitemapXml(env, base, page) {
     for (const j of results || []) {
       urls.push(urlTag(`${base}/job/${j.id}`, {
         changefreq: 'weekly', priority: '0.6',
-        lastmod: new Date(j.created_at || Date.now()).toISOString().split('T')[0],
+        lastmod: dbDateYmd(j.created_at),
       }));
     }
   } catch (e) {}

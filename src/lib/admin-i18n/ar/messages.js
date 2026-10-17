@@ -261,6 +261,7 @@ export const MESSAGES = {
   "Company hidden": "تم إخفاء الشركة",
   "Company unhidden": "تم إظهار الشركة",
   "Delete this homepage section permanently?": "حذف قسم الصفحة الرئيسية هذا نهائياً؟",
+  "Delete this job? It is hidden from the site and can be restored later.": "حذف هذه الوظيفة؟ ستُخفى من الموقع ويمكن استعادتها لاحقاً.",
   "Delete this job permanently?": "حذف هذه الوظيفة نهائياً؟",
   "Delete this program?": "حذف هذا البرنامج؟",
   "Delete this record?": "حذف هذا السجل؟",

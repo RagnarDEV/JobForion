@@ -15,6 +15,8 @@ import { logActivity } from '../../lib/platform/activity-log.js';
 import { errorPage } from './error-page.js';
 import { safeAdminRedirect } from '../../lib/platform/safe-redirect.js';
 import { safeExternalUrl } from '../../lib/directory/entities.js';
+import { isSafeHttpUrl } from '../../lib/platform/safe-url.js';
+import { softDeleteJobs } from '../../db/job-lifecycle.js';
 import { salaryClassificationForJob } from '../../lib/jobs/salary-tier.js';
 
 export async function handleAdminJobsRoute(url, request, env, base) {
@@ -71,6 +73,10 @@ export async function handleAdminJobsRoute(url, request, env, base) {
       if (id) {
         const { results } = await env.DB.prepare("SELECT * FROM job_postings WHERE id = ?").bind(id).all();
         const p = results[0];
+        if (p && !isSafeHttpUrl(p.url)) {
+          // Never publish a posting whose apply link is not a plain http(s) URL.
+          return new Response(null, { status: 302, headers: { 'Location': `/admin?flash=${encodeURIComponent('Cannot approve: the apply URL is not a valid http(s) link')}` } });
+        }
         if (p) {
           try {
             // Employer Submitted Jobs (plan §16) — every job approved
@@ -280,7 +286,9 @@ export async function handleAdminJobsRoute(url, request, env, base) {
       const form = await request.formData();
       const id = form.get('id');
       const redirect = safeAdminRedirect(form.get('redirect'));
-      if (id) await env.DB.prepare('DELETE FROM jobs WHERE id = ?').bind(id).run();
+      // Soft delete (see db/job-lifecycle.js): a hard DELETE let the next 3-hourly
+      // sync re-import the same provider job and orphaned saved_jobs/applications.
+      if (id) await softDeleteJobs(env, [id]);
       await logActivity(env, 'job_deleted', `job #${id}`);
       const sep = redirect.includes('?') ? '&' : '?';
       return new Response(null, { status: 302, headers: { 'Location': `${redirect}${sep}flash=${encodeURIComponent('Job deleted')}` } });
@@ -340,11 +348,7 @@ export async function handleAdminJobsRoute(url, request, env, base) {
       let flashMsg = '';
 
       if (action === 'delete') {
-        for (const chunk of chunks) {
-          const placeholders = chunk.map(() => '?').join(',');
-          const r = await env.DB.prepare(`DELETE FROM jobs WHERE id IN (${placeholders})`).bind(...chunk).run();
-          changed += r.meta?.changes || 0;
-        }
+        changed = await softDeleteJobs(env, ids); // soft delete — sync cannot resurrect these
         flashMsg = `Deleted ${changed} job${changed === 1 ? '' : 's'}`;
         await logActivity(env, 'jobs_bulk_deleted', `${changed} jobs (manual selection)`);
       } else if (action === 'feature' || action === 'unfeature') {
@@ -381,9 +385,15 @@ export async function handleAdminJobsRoute(url, request, env, base) {
         // PUBLIC_JOB_STATUS_SQL exclusion, same eventual cleanup timeline
         // once archived).
         const newStatus = action === 'restore' ? 'active' : action === 'resume' ? 'active' : action + 'd';
+        // Re-activating must also renew the lease: restoring an expired job whose
+        // expires_at is already in the past made the next daily cleanup expire it
+        // again. Only 'restore' may bring back an admin-deleted job; every other
+        // transition leaves 'deleted' rows alone.
+        const leaseSql = newStatus === 'active' ? ", expires_at = datetime('now','+45 days')" : '';
+        const guardSql = action === 'restore' ? '' : " AND COALESCE(status,'') != 'deleted'";
         for (const chunk of chunks) {
           const placeholders = chunk.map(() => '?').join(',');
-          const r = await env.DB.prepare(`UPDATE jobs SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id IN (${placeholders})`).bind(newStatus, ...chunk).run();
+          const r = await env.DB.prepare(`UPDATE jobs SET status = ?, updated_at = CURRENT_TIMESTAMP${leaseSql} WHERE id IN (${placeholders})${guardSql}`).bind(newStatus, ...chunk).run();
           changed += r.meta?.changes || 0;
         }
         flashMsg = `${changed} job${changed === 1 ? '' : 's'} → ${newStatus}`;

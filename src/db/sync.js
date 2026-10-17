@@ -8,6 +8,7 @@
 import { ensureTable } from './schema.js';
 import { logSync } from './telemetry.js';
 import { PROVIDERS } from '../providers/index.js';
+import { isSafeHttpUrl } from '../lib/platform/safe-url.js';
 import { getSettings } from '../lib/platform/settings.js';
 import { parseSalary, extractSalaryFromDescription } from '../lib/jobs/salary.js';
 import { classifySalaryFromParsed, salaryClassificationForJob } from '../lib/jobs/salary-tier.js';
@@ -390,7 +391,9 @@ export async function saveJobs(env, jobs, counters, errorLog, providerId, settin
   const seenUrls = new Set();
   const validJobs = [];
   for (const raw of (jobs || [])) {
-    if (!raw || !raw.url || seenUrls.has(raw.url)) continue;
+    // Only absolute http(s) URLs are ever stored: provider data is untrusted and
+    // jobs.url is later rendered as the Apply button's href.
+    if (!raw || !raw.url || !isSafeHttpUrl(raw.url) || seenUrls.has(raw.url)) continue;
     seenUrls.add(raw.url);
     validJobs.push(enrichJobFromDescription(raw));
   }
@@ -428,6 +431,9 @@ export async function saveJobs(env, jobs, counters, errorLog, providerId, settin
     for (const j of chunk) {
       const hash = jobContentHash(j);
       const row = existing.get(j.url);
+      // Admin-deleted job (status='deleted', see db/job-lifecycle.js): the source may
+      // keep listing it forever — never revive, refresh or re-insert it.
+      if (row && row.status === 'deleted') { own.skipped++; counters.skipped++; continue; }
       const sal = parseSalary(j.salary);
       const salaryTier = classifySalaryFromParsed(sal, settings);
 
@@ -459,11 +465,11 @@ export async function saveJobs(env, jobs, counters, errorLog, providerId, settin
         if (legacy) {
           stmts.push(env.DB.prepare(
             needsLifecycle
-              ? `UPDATE jobs SET content_hash=?,${LIFECYCLE_SQL} WHERE url=? AND content_hash IS NULL`
-              : `UPDATE jobs SET content_hash=? WHERE url=? AND content_hash IS NULL`
+              ? `UPDATE jobs SET content_hash=?,${LIFECYCLE_SQL} WHERE url=? AND content_hash IS NULL AND COALESCE(status,'') != 'deleted'`
+              : `UPDATE jobs SET content_hash=? WHERE url=? AND content_hash IS NULL AND COALESCE(status,'') != 'deleted'`
           ).bind(hash, j.url));
         } else {
-          stmts.push(env.DB.prepare(`UPDATE jobs SET ${LIFECYCLE_SQL} WHERE url=?`).bind(j.url));
+          stmts.push(env.DB.prepare(`UPDATE jobs SET ${LIFECYCLE_SQL} WHERE url=? AND COALESCE(status,'') != 'deleted'`).bind(j.url));
         }
         kinds.push(legacy && !needsLifecycle ? 'unchanged' : 'touch');
         budget.remaining -= cost;
@@ -473,7 +479,7 @@ export async function saveJobs(env, jobs, counters, errorLog, providerId, settin
       // content changed at the source → full refresh
       if (budget.remaining < WRITE_COST.update) { own.deferred++; continue; }
       stmts.push(env.DB.prepare(
-        `UPDATE jobs SET title=?,company=?,location=?,description=?,salary=?,remote_type=?,skills=?,seniority=?,employment_type=?,job_handle=?,source=?,content_hash=?,${LIFECYCLE_SQL},salary_min_usd=?,salary_max_usd=?,salary_tier=?,salary_tier_confidence=? WHERE url=?`
+        `UPDATE jobs SET title=?,company=?,location=?,description=?,salary=?,remote_type=?,skills=?,seniority=?,employment_type=?,job_handle=?,source=?,content_hash=?,${LIFECYCLE_SQL},salary_min_usd=?,salary_max_usd=?,salary_tier=?,salary_tier_confidence=? WHERE url=? AND COALESCE(status,'') != 'deleted'`
       ).bind(
         j.title || 'Unknown', j.company || 'Company', j.location || '',
         j.description || '', j.salary || '', j.remote_type || '',

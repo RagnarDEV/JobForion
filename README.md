@@ -26,7 +26,7 @@ jobforion/
    ├─ db/
    │  ├─ schema.js              ← بوابة SCHEMA_VERSION + الترحيل المتقطّع (ensureAllSchema)
    │  ├─ schema/                ← state · migration-kit · core-tables · ai-tables · account-tables
-   │  └─ sync.js · cleanup.js · telemetry.js (سجل المزامنة + الزيارات)
+   │  └─ sync.js · cleanup.js · job-lifecycle.js (soft/hard delete) · telemetry.js (سجل المزامنة + الزيارات)
    ├─ routes/
    │  ├─ pages · seo-pages · auth · user · company · feed · assets · affiliate.router.js (/go/:slug) · admin.router.js
    │  ├─ api.router.js          ← موزّع فقط
@@ -48,7 +48,7 @@ jobforion/
       ├─ ai/          ai-service · ai-control-center · admin/career/content/job-intelligence · matching
       ├─ analytics/   events · tracker · tag
       ├─ seo/         jsonld · meta · breadcrumbs · sitemap
-      ├─ platform/    config-memo · settings · cache · rate-limit · observability · activity-log · html-sanitizer · search-utils · rotation · write-budget · safe-redirect
+      ├─ platform/    config-memo · settings · cache · rate-limit · observability · activity-log · html-sanitizer · search-utils · rotation · write-budget · safe-redirect · safe-url (التحقق من روابط http/https) · db-date (قراءة تواريخ SQLite كـ UTC)
       │               site-cache (طبقة التجميع المحسوبة مسبقاً — راجع docs/CHANGELOG.md) · job-window (استعلامات مقيَّدة)
       ├─ accounts/    session · csrf · password · permissions · tokens · email · users
       └─ monetization/core.js
@@ -67,6 +67,14 @@ jobforion/
 - **ميزانية كتابة يومية:** `sync_daily_write_budget` (55,000 صف افتراضياً من حد D1 البالغ 100,000) تُوزَّع على الدورات المتبقية في اليوم؛ الوظائف الجديدة الزائدة تُؤجَّل للدورة التالية.
 - **تنوّع المصادر:** مؤشّر دوران (`_sync_cursor`) يضمن أن كل مصدر يأخذ دوره، ويُقطع عند أول مصدر لا تتسع له الميزانية ليبدأ منه الدور التالي؛ وعند تجاوز سقف الوظائف تُخلط الوظائف بالتناوب بين الشركات (`interleaveByCompany`) ثم تُؤخذ نافذة دوّارة تتقدّم مرة لكل دورة.
 - حُذفت ثلاثة فهارس زائدة من `jobs` (بادئات لفهارس مركّبة) فصار إدخال/حذف الوظيفة أرخص بنحو 18%.
+
+### دورة حياة الوظيفة (db/cleanup.js + db/job-lifecycle.js)
+`active ← المزامنة تجدّد updated_at/expires_at (+45 يوماً)` · الصيانة اليومية 03:30 UTC:
+1. **expired:** انتهى `expires_at`، أو (وظيفة مزوّد فقط) لم يعد المصدر يعيدها منذ 30 يوماً. وظائف أصحاب العمل (`source='manual'`) تنتهي عند `expires_at` فقط.
+2. **archived:** بعد 14 يوماً من expired. 3. **حذف فعلي:** بعد 30 يوماً من archived (مع tombstone → 410، وحذف saved_jobs/applications/job_intelligence في batch ذرّي واحد لكل 100 وظيفة).
+- كل مرحلة `UPDATE` واحد مبني على شرط (لا قوائم ids)، وسقف الحذف الفعلي 800/تشغيلة؛ الصمّامان (لا مزامنة سليمة خلال 72 ساعة، أو >50% من الكتالوج) يوقفان التنظيف.
+- **حذف الأدمن ناعم:** `status='deleted'` (الاستعادة من Bulk ← Restore). المزامنة تتجاهل الصفوف `deleted` ولا تُحييها ولا تعيد إدخالها، ويُحذف الصف فعلياً بعد 180 يوماً.
+- احتفاظ بالسجلات: `sync_logs` 30 يوماً، `error_logs` 30، `cleanup_logs` 90.
 
 ## البيانات والتخزين
 

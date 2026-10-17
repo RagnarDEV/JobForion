@@ -55,7 +55,7 @@ function jobRow(j, categoryOrder = [], categoryMap = {}) {
           <input type="hidden" name="redirect" value="${escapeHtml(currentQueryString())}">
           <button class="adm-btn-sm" type="submit" style="color:var(--ink2)">${j.featured ? 'Unpin' : 'Pin'}</button>
         </form>
-        <form method="POST" action="/admin/jobs/delete" onsubmit="return confirm('Delete this job permanently?')" style="display:inline">
+        <form method="POST" action="/admin/jobs/delete" onsubmit="return confirm('Delete this job? It is hidden from the site and can be restored later.')" style="display:inline">
           <input type="hidden" name="id" value="${j.id}">
           <input type="hidden" name="redirect" value="${escapeHtml(currentQueryString())}">
           <button class="adm-btn-sm" type="submit">Delete</button>
@@ -302,7 +302,7 @@ export async function renderJobsListContent(env, params) {
     function jnBulkAction(action){
       var checked = document.querySelectorAll('.bulk-row-check:checked').length;
       if (!checked) return;
-      if (action === 'delete' && !confirm('Permanently delete ' + checked + ' job' + (checked === 1 ? '' : 's') + '? This cannot be undone.')) return;
+      if (action === 'delete' && !confirm('Delete ' + checked + ' job' + (checked === 1 ? '' : 's') + '? They are hidden from the site and can be restored later.')) return;
       if (action === 'archive' && !confirm('Archive ' + checked + ' job' + (checked === 1 ? '' : 's') + '? Archived jobs are removed from public listings and permanently deleted after 30 days.')) return;
       if (action === 'set_job_type') {
         document.getElementById('bulkJobTypeField').value = document.getElementById('bulkJobTypeSelect').value;

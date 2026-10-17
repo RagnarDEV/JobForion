@@ -109,7 +109,9 @@ function pastelFor(j){
   if(FEATURES.featuredJobs && j.featured)return'var(--pastel-blue)';
   return salaryTierCardTintClient(j)||(j.isHotPay?'var(--pastel-yellow)':'var(--surface)');
 }
-function isNew(ts){if(!ts)return false;return Date.now()-new Date(ts).getTime()<86400000;}
+// SQLite stores 'YYYY-MM-DD HH:MM:SS' in UTC with no zone; the browser would read it as LOCAL time.
+function parseDbDate(v){if(!v)return new Date(NaN);var s=String(v).trim();if(s.charAt(10)===' '&&s.indexOf('Z')<0&&s.indexOf('+')<0)s=s.replace(' ','T')+'Z';return new Date(s);}
+function isNew(ts){if(!ts)return false;return Date.now()-parseDbDate(ts).getTime()<86400000;}
 function getTimeAgo(date){
   const diff=Date.now()-date.getTime();
   const h=Math.floor(diff/3600000);
@@ -168,7 +170,7 @@ function renderJobsList(){
   document.getElementById('jobsList').innerHTML=jobs.map((j,idx)=>{
     const nw=isNew(j.created_at);
     const hot=j.isHotPay===true;
-    const timeAgo=j.created_at?getTimeAgo(new Date(j.created_at)):'';
+    const timeAgo=j.created_at?getTimeAgo(parseDbDate(j.created_at)):'';
     const k=catForTitle(j.title);
     const meta=CAT_META[k];
     const bg=pastelFor(j);

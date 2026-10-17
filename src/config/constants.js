@@ -130,8 +130,11 @@ export const JOB_STATUS_META = {
   closed: { label: 'Closed', color: '#8890A4' },
   expired: { label: 'Expired', color: '#FF5C7A' },
   archived: { label: 'Archived', color: '#525A72' },
+  // Admin-deleted (soft). Hidden everywhere public; kept so sync cannot re-import it
+  // and so Restore is lossless — see db/job-lifecycle.js.
+  deleted: { label: 'Deleted', color: '#B42318' },
 };
-export const JOB_STATUS_ORDER = ['active', 'paused', 'closed', 'expired', 'archived'];
+export const JOB_STATUS_ORDER = ['active', 'paused', 'closed', 'expired', 'archived', 'deleted'];
 
 // The ONE filter every public-facing job query must apply — home page,
 // /api/jobs, category/company/skill/country pages, search, sitemap, RSS.

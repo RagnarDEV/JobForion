@@ -1,3 +1,23 @@
+# CHANGELOG — v2.8.1 (2026-10-17) — إصلاح دورة حياة الوظيفة
+
+> المزامنة **كل 3 ساعات** كما هي (cron واحد `*/30 * * * *` + `SYNC_INTERVAL_HOURS = 3`) — لم يُلمس أي شيء متعلق بها. لا تغيير في المخطط، لذا **لا حاجة لرفع `SCHEMA_VERSION`**.
+
+## إصلاحات
+| المشكلة | الإصلاح |
+|---|---|
+| **حذف الأدمن (فردي/جماعي) كان `DELETE` فعلياً**: أول مزامنة تالية تعيد إدخال نفس وظيفة المزوّد، وتصبح `saved_jobs`/`applications` بلا مرجع | **حذف ناعم** `status='deleted'` (`db/job-lifecycle.js`). المزامنة تتجاهل هذه الصفوف (فحص في التصنيف + `AND status != 'deleted'` في كل `UPDATE`)، والاستعادة من Bulk ← Restore، والحذف الفعلي بعد 180 يوماً |
+| التنظيف يجلب كل الـ ids ثم يحدّثها 100×100 → عدد استدعاءات D1 ينمو مع الـ backlog وقد يتجاوز حد 50 مع بقية مهام الصيانة | المرحلتان 1 و2 صارتا `UPDATE` واحداً مبنياً على شرط (سقف 3000)؛ الحذف الفعلي في **batch ذرّي واحد لكل 100 id** (tombstone + dependents + job) وبسقف 800/تشغيلة. اختبار يثبت ≤30 استدعاء |
+| وظائف أصحاب العمل/المعتمدة (`source='manual'`) كانت تنتهي بعد 30 يوماً بدل عقد الـ45 يوماً (لا مزوّد يجدّد `updated_at` لها) | قاعدة "المصدر صامت 30 يوماً" تخص وظائف المزوّد فقط |
+| Restore/Resume من الأدمن لوظيفة منتهية يُبقي `expires_at` في الماضي فيعيد التنظيف إنهاءها غداً | يُجدَّد `expires_at` (+45 يوماً) عند إعادة التفعيل |
+| `sync_logs` / `error_logs` / `cleanup_logs` تكبر بلا حد | احتفاظ 30 / 30 / 90 يوماً داخل الصيانة اليومية |
+| روابط التقديم القادمة من المزوّدين لا تُفحص عند التخزين (كانت تُفحص عند العرض فقط) | `isSafeHttpUrl` عند الإدخال في المزامنة (تحقق فقط دون تعديل المفتاح الفريد `url`) وعند اعتماد إعلان في الأدمن؛ الوحدة الجديدة `lib/platform/safe-url.js` |
+| `new Date('YYYY-MM-DD HH:MM:SS')` في المتصفح يُقرأ كتوقيت محلي → "NEW" و"Xh ago" خاطئة خارج UTC؛ و`toISOString()` قد يرمي RangeError لقيمة تالفة | `lib/platform/db-date.js` (+ نسخة مطابقة في `home/client-script.js`) تُستخدم في بطاقات الوظائف وصفحة الوظيفة وJSON-LD وsitemap |
+| حالة `deleted` غير ظاهرة في فلتر/شارة حالات الأدمن | أُضيفت إلى `JOB_STATUS_META` / `JOB_STATUS_ORDER` |
+
+## ملفات جديدة / معدّلة
+- جديد: `src/db/job-lifecycle.js` · `src/lib/platform/safe-url.js` · `src/lib/platform/db-date.js` · `tests/job-lifecycle.test.mjs`
+- معدّل: `db/cleanup.js` · `db/sync.js` · `routes/admin/jobs.router.js` · `lib/directory/entities.js` (إعادة تصدير) · `config/constants.js` · `components/job-card.js` · `pages/job-page.js` · `pages/home/client-script.js` · `lib/seo/jsonld.js` · `lib/seo/sitemap.js` · `package.json` (2.8.1 + الاختبار الجديد) · `README.md`
+
 # CHANGELOG — v2.8.0 (2026-10-16) — تقليل الصفوف المقروءة + إزالة عمولة مركز الإعلانات القديمة
 
 ## قراءات D1 (الحد المجاني 5M صف/يوم)

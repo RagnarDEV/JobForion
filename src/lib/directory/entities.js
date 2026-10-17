@@ -99,14 +99,9 @@ export function slugify(str) {
 // with a real hostname are accepted for job applications and provider links;
 // javascript:, data:, protocol-relative, and malformed values render as no
 // link instead of becoming an executable href.
-export function safeExternalUrl(value) {
-  const raw = String(value || '').trim();
-  if (!/^https?:\/\//i.test(raw) || /[\s"'<>]/.test(raw)) return '';
-  try {
-    const parsed = new URL(raw);
-    return ['http:', 'https:'].includes(parsed.protocol) && parsed.hostname ? parsed.toString() : '';
-  } catch (e) { return ''; }
-}
+// Implementation lives in lib/platform/safe-url.js (dependency-free, shared with
+// sync / forms / admin routes); re-exported so existing imports keep working.
+export { safeExternalUrl, isSafeHttpUrl } from '../platform/safe-url.js';
 
 // ── Companies ──────────────────────────────────────────────────
 // PERFORMANCE: bounded to the most recent 8000 jobs rather than scanning the

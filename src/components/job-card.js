@@ -10,6 +10,7 @@ import { DEFAULT_CARD_STYLES, buildCardStyleAttr, buildBadgeStyleAttr, jobTypeIc
 import { logoProxyPath } from '../lib/companies/logo-proxy.js';
 import { isHotPayJob, HOT_PAY_LABEL } from '../lib/jobs/hot-pay.js';
 import { salaryTierEnabled } from '../lib/jobs/salary-tier.js';
+import { dbDateMs } from '../lib/platform/db-date.js';
 
 // Shared empty-Set default for jobCardSSR's optional verifiedCompanySet
 // param — a single frozen instance instead of allocating `new Set()` on
@@ -192,7 +193,7 @@ export function isHotJob(job, hotPaySettings = {}) {
 }
 export function timeAgoServer(dateStr) {
   if (!dateStr) return '';
-  const diff = Date.now() - new Date(dateStr).getTime();
+  const diff = Date.now() - dbDateMs(dateStr);
   const h = Math.floor(diff / 3600000);
   const d = Math.floor(diff / 86400000);
   if (h < 1) return 'just now';
@@ -231,7 +232,7 @@ const FALLBACK_CATEGORY_META = { label: 'General', emoji: '🏷️', color: '#25
 export function jobCardSSR(job, idx, categoryMap = CATEGORY_META, categoryOrder = CATEGORY_ORDER, cardStyles = DEFAULT_CARD_STYLES, logoOverrides = {}, featuredEnabled = true, verifiedCompanySet = EMPTY_SET, hotPaySettings = {}) {
   const catKey = catForTitleServer(job.title, categoryOrder);
   const meta = categoryMap[catKey] || FALLBACK_CATEGORY_META;
-  const isNew = job.created_at && Date.now() - new Date(job.created_at).getTime() < 86400000;
+  const isNew = job.created_at && Date.now() - dbDateMs(job.created_at) < 86400000;
   const isHot = job.isHotPay === true || (job.isHotPay !== false && isHotJob(job, hotPaySettings));
   const logoOverride = job.company_logo_url || logoOverrides[(job.company || '').toLowerCase()] || null;
   const timeAgo = timeAgoServer(job.created_at);

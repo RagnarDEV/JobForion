@@ -67,6 +67,7 @@ export function organizationSchema(base) {
 
 import { isKnownCountry, US_STATE_CODES } from '../directory/country-flags.js';
 import { parseSalaryRange } from '../directory/entities.js';
+import { dbDateYmd } from '../platform/db-date.js';
 
 // Google's enum, underscore-separated. "CONTRACT" isn't valid — the
 // closest accepted value is "CONTRACTOR".
@@ -154,8 +155,8 @@ export function jobPostingSchema(job, base, overrides = {}) {
     "description": overrides.description || job.description || `${job.title} at ${job.company}. ${job.location || 'Remote'}.`,
     "identifier": { "@type": "PropertyValue", "name": job.company, "value": String(job.job_handle || job.id) },
     "hiringOrganization": { "@type": "Organization", "name": job.company },
-    ...(job.created_at ? { "datePosted": new Date(job.created_at).toISOString().split('T')[0] } : {}),
-    ...(job.expires_at ? { "validThrough": new Date(job.expires_at).toISOString().split('T')[0] } : {}),
+    ...(job.created_at ? { "datePosted": dbDateYmd(job.created_at) } : {}),
+    ...(job.expires_at ? { "validThrough": dbDateYmd(job.expires_at) } : {}),
     "url": canonical,
     // Required for Google's "Work from home jobs" experience.
     // applicantLocationRequirements is intentionally omitted (no
