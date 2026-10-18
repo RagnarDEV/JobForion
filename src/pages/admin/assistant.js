@@ -2,6 +2,7 @@
 import { escapeHtml } from '../../lib/directory/entities.js';
 import { getSettings } from '../../lib/platform/settings.js';
 import { isAiConfigured } from '../../lib/ai/ai-service.js';
+import { iconSparkle } from '../../assets/icons.js';
 
 function plainText(value) {
   return escapeHtml(String(value || '')).replace(/\r?\n/g, '<br>');
@@ -12,7 +13,7 @@ export async function renderAdminAssistantContent(env, { question = '', answer =
   const enabled = settings.ai_enabled !== '0';
   const configured = isAiConfigured(env);
   return `<div class="adm-wrap">
-    <div class="adm-hdr"><div><div class="adm-title">✦ Admin Assistant</div><div class="adm-sub">Read-only operational guidance for JobForion administrators</div></div><a href="/admin" class="adm-btn">Dashboard</a></div>
+    <div class="adm-hdr"><div><div class="adm-title">${iconSparkle({ size: 20 })} Admin Assistant</div><div class="adm-sub">Read-only operational guidance for JobForion administrators</div></div><a href="/admin" class="adm-btn">Dashboard</a></div>
     ${error ? `<div style="padding:11px 14px;border-radius:9px;background:rgba(231,76,60,.10);border:1px solid rgba(231,76,60,.25);color:var(--coral);font-size:12px;margin-bottom:16px" role="alert">${escapeHtml(error)}</div>` : ''}
     <div class="adm-grid" style="margin-bottom:16px">
       <div class="adm-card" style="grid-column:span 2"><div class="adm-card-title">Operational questions</div><p style="font-size:12.5px;line-height:1.75;color:var(--ink2);margin:0 0 14px">Ask about the current JobForion snapshot, sync history, job lifecycle, salary normalization, or which existing admin page to review next. This assistant is deliberately read-only: it cannot run actions, change settings, delete data, send email, or make payment decisions.</p><div style="display:flex;gap:8px;flex-wrap:wrap;font-size:11px;color:var(--ink3)"><span style="padding:6px 9px;border-radius:7px;background:var(--surface2)">AI ${!enabled ? 'disabled' : configured ? 'binding ready' : 'not configured'}</span><span style="padding:6px 9px;border-radius:7px;background:var(--surface2)">Server-side only</span><span style="padding:6px 9px;border-radius:7px;background:var(--surface2)">No destructive actions</span></div></div>
