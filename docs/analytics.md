@@ -72,3 +72,7 @@ Analytics failures are caught at intake, aggregation, cleanup, alert evaluation 
 - [Cloudflare D1 documentation](https://developers.cloudflare.com/d1/)
 - [Cloudflare Workers scheduled handlers](https://developers.cloudflare.com/workers/runtime-apis/scheduled-event/)
 - [Cloudflare Cache API](https://developers.cloudflare.com/workers/runtime-apis/cache/)
+
+## Live Analytics (`/admin/analytics/live`)
+
+Read-only real-time view built on `analytics_event_queue` — no new tables, indexes or writes. `lib/analytics/live.js` serves three modes through `GET /admin/analytics/live/data`: `init` (one bounded query, newest 3,000 rows, memoised 15 s), `delta` (`id > ?`, max 300 rows, polled every 15 s) and `series` (7/30-day totals from `analytics_daily`, memoised 5 min). The browser pauses when the tab is hidden and stops after 30 minutes until Resume. Raw session ids are hashed server-side and never sent. Tests: `tests/live-analytics.test.mjs`.
