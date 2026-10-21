@@ -60,8 +60,13 @@ assert.equal(big.events.length, LIVE_DELTA_ROWS); assert.equal(big.more, true);
 
 // series reuses the aggregate table and tolerates an empty one
 clearStatMemo();
-const series = await getLiveSeries({ DB: db }, 7, 'UTC');
+const series = await getLiveSeries({ DB: db }, 7);
 assert.equal(series.ok, true); assert.ok(Array.isArray(series.rows));
+const today = new Date().toISOString().slice(0, 10);
+for (let i = 0; i < 3; i++) await db.exec(`INSERT INTO analytics_daily (metric_date,event_type,job_id,country,event_count) VALUES ('${today}','page_view',0,'C${i}',5)`);
+clearStatMemo();
+const s2 = await getLiveSeries({ DB: db }, 7);
+assert.equal(s2.rows.find(r => r.d === today).pv, 15, 'daily totals summed per day'); assert.equal(s2.capped, false);
 
 // router: auth, methods, JSON headers, read-only
 const env = { DB: db, ADMIN_PASSWORD: 'pw-for-test', ADMIN_SESSION_SECRET: 'secret-for-test' };

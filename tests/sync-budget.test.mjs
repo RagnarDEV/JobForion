@@ -129,7 +129,7 @@ const migrationSource = ['account-tables', 'core-tables', 'ai-tables'].map((f) =
 let fp = 2166136261;
 for (let i = 0; i < migrationSource.length; i++) { fp ^= migrationSource.charCodeAt(i); fp = Math.imul(fp, 16777619) >>> 0; }
 const schemaVersion = /const SCHEMA_VERSION = '([^']+)'/.exec(readFileSync(new URL('../src/db/schema.js', import.meta.url), 'utf8'))[1];
-const RECORDED = { version: '2026-10-14.1', fingerprint: 2785379637 }; // update BOTH when migrations change
+const RECORDED = { version: '2026-10-21.1', fingerprint: 1299468558 }; // update BOTH when migrations change
 if (RECORDED.fingerprint !== 0 && fp !== RECORDED.fingerprint) assert.notEqual(schemaVersion, RECORDED.version, 'migration source changed — bump SCHEMA_VERSION');
 console.log(`schema fingerprint ${fp} @ SCHEMA_VERSION ${schemaVersion}`);
 console.log('sync-budget tests: all assertions passed');

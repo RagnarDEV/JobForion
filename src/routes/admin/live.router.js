@@ -12,7 +12,6 @@ import { adminShell } from '../../pages/admin/shell.js';
 import { renderAdminLogin } from '../../pages/admin.js';
 import { renderLiveContent } from '../../pages/admin/live.js';
 import { getLiveInit, getLiveDelta, getLiveSeries, parseSince, selfHostSet } from '../../lib/analytics/live.js';
-import { getSettings } from '../../lib/platform/settings.js';
 import { BASE_URL } from '../../config/constants.js';
 import { errorPage } from './error-page.js';
 
@@ -54,8 +53,7 @@ export async function handleAdminLiveRoute(url, request, env) {
     const mode = url.searchParams.get('mode') || 'delta';
     if (mode === 'init') return json(await getLiveInit(env, selfHosts, { force: url.searchParams.get('refresh') === '1' }));
     if (mode === 'series') {
-      const settings = await getSettings(env);
-      return json(await getLiveSeries(env, url.searchParams.get('days') === '30' ? 30 : 7, settings.analytics_timezone || 'UTC'));
+      return json(await getLiveSeries(env, url.searchParams.get('days') === '30' ? 30 : 7));
     }
     if (mode === 'delta') return json(await getLiveDelta(env, parseSince(url.searchParams.get('since')), selfHosts));
     return json({ ok: false, error: 'unknown mode' }, 400);

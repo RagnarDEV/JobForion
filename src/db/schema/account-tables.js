@@ -539,6 +539,26 @@ export async function ensureAccountTables(env) {
   await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_analytics_daily_job ON analytics_daily(job_id, metric_date)`).run();
   await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_analytics_daily_company ON analytics_daily(company_id, metric_date)`).run();
   await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_analytics_daily_source ON analytics_daily(source, metric_date)`).run();
+  // ROW-READ BUDGET (severe): analytics_daily keeps one row per day × event × JOB × company × country ×
+  // device × source × medium, so a 30-day admin report scanned it ~8 times (≈3.5M rows on a modest site).
+  // This compact rollup drops the job/company dimension — hundreds of rows per day instead of thousands —
+  // and is what the overview / trends / traffic / geography / device reports read (events.js).
+  await env.DB.prepare(`
+    CREATE TABLE IF NOT EXISTS analytics_summary_daily (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      metric_date TEXT NOT NULL,
+      event_type TEXT NOT NULL,
+      country TEXT NOT NULL DEFAULT 'XX',
+      device_type TEXT NOT NULL DEFAULT 'unknown',
+      source TEXT NOT NULL DEFAULT 'direct',
+      medium TEXT NOT NULL DEFAULT 'none',
+      event_count INTEGER DEFAULT 0,
+      unique_count INTEGER DEFAULT 0,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(metric_date,event_type,country,device_type,source,medium)
+    )
+  `).run();
+  await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_analytics_summary_date ON analytics_summary_daily(metric_date, event_type)`).run();
   // Daily visitor fingerprints are HMACs, never raw browser session IDs. The
   // unique key prevents the hourly aggregator from adding the same visitor
   // repeatedly when events for one day arrive in different batches.

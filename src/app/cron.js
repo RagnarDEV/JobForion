@@ -32,7 +32,7 @@ import { runBlogGeneration } from '../lib/content/blog-automation/generator.js';
 import { runBlogExpirationCleanup } from '../lib/content/blog-automation/expiration.js';
 import { runJobAlertsDispatch } from '../lib/jobs/job-alerts-dispatcher.js';
 import { expireMonetizationCampaigns } from '../lib/monetization/core.js';
-import { aggregateAnalytics, cleanupAnalytics, evaluateAnalyticsAlerts } from '../lib/analytics/events.js';
+import { aggregateAnalytics, backfillAnalyticsSummary, cleanupAnalytics, evaluateAnalyticsAlerts } from '../lib/analytics/events.js';
 import { cleanupAffiliate } from '../lib/affiliate/affiliate.js';
 import { SYNC_INTERVAL_HOURS } from '../lib/platform/rotation.js';
 import { reportOperationalError } from '../lib/platform/observability.js';
@@ -71,6 +71,7 @@ const TASKS = {
     // Keep this sequence in one chain: cleanup must never race aggregation
     // and delete queue rows before they are processed.
     await aggregateAnalytics(env);
+    await backfillAnalyticsSummary(env); // no-op (1 row read) once the rollup is complete
     const settings = await getSettings(env);
     // Retention is a DAILY chore (04:30 UTC), not an hourly one — see cleanupAnalytics().
     if (new Date().getUTCHours() === 4) await cleanupAnalytics(env, settings.analytics_retention);

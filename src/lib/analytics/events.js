@@ -6,6 +6,7 @@ import { sha256Hex } from '../accounts/tokens.js';
 import { reportOperationalError } from '../platform/observability.js';
 import { getSiteStats } from '../platform/site-cache.js';
 import { cappedCount } from '../platform/job-window.js';
+import { memoStat } from '../platform/stat-memo.js';
 
 export const ANALYTICS_EVENT_TYPES = Object.freeze([
   'page_view', 'job_impression', 'job_view', 'job_apply_click', 'job_favorite',
@@ -226,6 +227,16 @@ export async function aggregateAnalytics(env, limit = 300) {
     }
     const statements = [];
     for (const group of groups.values()) statements.push(env.DB.prepare(`INSERT INTO analytics_daily (metric_date,event_type,job_id,company_id,country,device_type,source,medium,event_count,unique_count,metadata,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP) ON CONFLICT(metric_date,event_type,job_id,company_id,country,device_type,source,medium) DO UPDATE SET event_count=analytics_daily.event_count+excluded.event_count,unique_count=analytics_daily.unique_count+excluded.unique_count,metadata=excluded.metadata,updated_at=CURRENT_TIMESTAMP`).bind(group.metric_date, group.event_type, group.job_id, group.company_id, group.country, group.device_type, group.source, group.medium, group.events, group.unique_events, JSON.stringify(group.metadata)));
+    // Compact rollup (no job/company dimension) written in the SAME atomic batch as analytics_daily,
+    // so the two can never drift apart. unique_count sums exactly like the reports' SUM(unique_count).
+    const summaryGroups = new Map();
+    for (const g of groups.values()) {
+      const k = [g.metric_date, g.event_type, g.country, g.device_type, g.source, g.medium].join('|');
+      const cur = summaryGroups.get(k) || { metric_date: g.metric_date, event_type: g.event_type, country: g.country, device_type: g.device_type, source: g.source, medium: g.medium, events: 0, uniques: 0 };
+      cur.events += g.events; cur.uniques += g.unique_events;
+      summaryGroups.set(k, cur);
+    }
+    for (const g of summaryGroups.values()) statements.push(env.DB.prepare(`INSERT INTO analytics_summary_daily (metric_date,event_type,country,device_type,source,medium,event_count,unique_count,updated_at) VALUES (?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP) ON CONFLICT(metric_date,event_type,country,device_type,source,medium) DO UPDATE SET event_count=analytics_summary_daily.event_count+excluded.event_count,unique_count=analytics_summary_daily.unique_count+excluded.unique_count,updated_at=CURRENT_TIMESTAMP`).bind(g.metric_date, g.event_type, g.country, g.device_type, g.source, g.medium, g.events, g.uniques));
     for (const search of searchGroups.values()) statements.push(env.DB.prepare(`INSERT INTO analytics_search_daily (metric_date,query,searches,zero_result_searches,result_clicks,unique_searches,updated_at) VALUES (?,?,?,?,?,?,CURRENT_TIMESTAMP) ON CONFLICT(metric_date,query) DO UPDATE SET searches=analytics_search_daily.searches+excluded.searches,zero_result_searches=analytics_search_daily.zero_result_searches+excluded.zero_result_searches,result_clicks=analytics_search_daily.result_clicks+excluded.result_clicks,unique_searches=analytics_search_daily.unique_searches+excluded.unique_searches,updated_at=CURRENT_TIMESTAMP`).bind(search.metric_date, search.query, search.searches, search.zero_result_searches, search.result_clicks, search.unique_searches));
     for (const filter of filterGroups.values()) statements.push(env.DB.prepare(`INSERT INTO analytics_filter_daily (metric_date,filter_name,filter_value,uses,updated_at) VALUES (?,?,?,?,CURRENT_TIMESTAMP) ON CONFLICT(metric_date,filter_name,filter_value) DO UPDATE SET uses=analytics_filter_daily.uses+excluded.uses,updated_at=CURRENT_TIMESTAMP`).bind(filter.metric_date, filter.filter_name, filter.filter_value, filter.uses));
     for (const event of results) statements.push(env.DB.prepare('UPDATE analytics_event_queue SET processed_at=CURRENT_TIMESTAMP WHERE id=? AND processed_at IS NULL').bind(event.id));
@@ -285,8 +296,9 @@ export async function cleanupAnalytics(env, retention = '90') {
     const searches = await env.DB.prepare("DELETE FROM analytics_search_daily WHERE metric_date < date('now', '-' || ? || ' days')").bind(days).run();
     const filters = await env.DB.prepare("DELETE FROM analytics_filter_daily WHERE metric_date < date('now', '-' || ? || ' days')").bind(days).run();
     const uniques = await env.DB.prepare("DELETE FROM analytics_daily_uniques WHERE metric_date < date('now', '-' || ? || ' days')").bind(days).run();
+    const summary = await env.DB.prepare("DELETE FROM analytics_summary_daily WHERE metric_date < date('now', '-' || ? || ' days')").bind(days).run();
     const alerts = await env.DB.prepare("DELETE FROM analytics_alerts WHERE status='resolved' AND created_at < datetime('now', '-' || ? || ' days')").bind(days).run();
-    deleted += [daily, searches, filters, uniques, alerts].reduce((sum, item) => sum + Number(item.meta?.changes || 0), 0);
+    deleted += [daily, summary, searches, filters, uniques, alerts].reduce((sum, item) => sum + Number(item.meta?.changes || 0), 0);
     return { deleted, retention: days };
   } catch (e) { return { deleted: 0, error: 'analytics_cleanup_failed' }; }
 }
@@ -342,15 +354,70 @@ function percentChange(current, previous) {
   return Number(((now - prior) / prior * 100).toFixed(2));
 }
 
-export async function getAnalyticsOverview(env, input = {}) {
+// ── Summary rollup plumbing ───────────────────────────────────────────────
+const SUMMARY_TABLE = 'analytics_summary_daily';
+const SUMMARY_READY_KEY = '_analytics_summary_ready';
+const BACKFILL_CHUNK_DAYS = 30, BACKFILL_MAX_CHUNKS = 14;
+let backfillInFlight = null;
+
+async function summaryFlag(env) {
+  try { const row = await env.DB.prepare('SELECT value FROM site_settings WHERE key = ?').bind(SUMMARY_READY_KEY).first(); return !!row && row.value === '1'; } catch (e) { return false; }
+}
+
+// One-time (idempotent) copy of existing analytics_daily history into the rollup, in 30-day chunks so
+// no single statement is huge. Safe to re-run: it SETS totals from analytics_daily (the source of truth),
+// and new events are written to both tables in one batch, so ordering vs the aggregator cannot matter.
+export async function backfillAnalyticsSummary(env) {
+  if (await summaryFlag(env)) return { skipped: true };
+  const span = await env.DB.prepare('SELECT MIN(metric_date) a, MAX(metric_date) b FROM analytics_daily').first();
+  let chunks = 0;
+  if (span && span.a && span.b) {
+    const end = new Date(`${span.b}T00:00:00Z`);
+    for (let from = new Date(`${span.a}T00:00:00Z`); from <= end; from.setUTCDate(from.getUTCDate() + BACKFILL_CHUNK_DAYS)) {
+      if (chunks >= BACKFILL_MAX_CHUNKS) return { complete: false, chunks };
+      const to = new Date(from); to.setUTCDate(to.getUTCDate() + BACKFILL_CHUNK_DAYS - 1);
+      await env.DB.prepare(`INSERT INTO ${SUMMARY_TABLE} (metric_date,event_type,country,device_type,source,medium,event_count,unique_count,updated_at)
+        SELECT metric_date,event_type,country,device_type,source,medium,SUM(event_count),SUM(unique_count),CURRENT_TIMESTAMP FROM analytics_daily
+        WHERE metric_date >= ? AND metric_date <= ? GROUP BY metric_date,event_type,country,device_type,source,medium
+        ON CONFLICT(metric_date,event_type,country,device_type,source,medium) DO UPDATE SET event_count=excluded.event_count,unique_count=excluded.unique_count,updated_at=CURRENT_TIMESTAMP`)
+        .bind(from.toISOString().slice(0, 10), to.toISOString().slice(0, 10)).run();
+      chunks++;
+    }
+  }
+  await env.DB.prepare(`INSERT INTO site_settings (key,value,updated_at) VALUES (?,'1',CURRENT_TIMESTAMP) ON CONFLICT(key) DO UPDATE SET value='1',updated_at=CURRENT_TIMESTAMP`).bind(SUMMARY_READY_KEY).run();
+  return { complete: true, chunks };
+}
+
+// Which table the aggregate reports read. Until the rollup is complete the old table is used (correct, just
+// expensive); the first report request completes the backfill itself so the expensive path is a one-off.
+async function reportTable(env) {
+  const ready = await memoStat('analytics:summary-ready', async () => {
+    if (await summaryFlag(env)) return true;
+    try {
+      backfillInFlight = backfillInFlight || backfillAnalyticsSummary(env).finally(() => { backfillInFlight = null; });
+      await backfillInFlight;
+    } catch (e) { return false; }
+    return summaryFlag(env);
+  }, { ttl: 60000 });
+  return ready ? SUMMARY_TABLE : 'analytics_daily';
+}
+
+export function getAnalyticsOverview(env, input = {}) {
+  const range = dateRange(input);
+  // The funnel report calls this again with the same range: memoise briefly so one page view = one computation.
+  return memoStat(`analytics:overview:${range.from}:${range.to}`, () => computeAnalyticsOverview(env, input), { ttl: 120000 });
+}
+
+async function computeAnalyticsOverview(env, input = {}) {
   const range = dateRange(input);
   const w = rangeWhere(range);
   const previous = previousDateRange(range);
   const fallback = { range, traffic: { visitors: 0, unique_visitors: 0, page_views: 0, sessions: 0, new_users: 0, returning_users: 0 }, jobs: { total: 0, active: 0, new_jobs: 0, views: 0, apply_clicks: 0, conversion_rate: 0 }, companies: { total: 0, active: 0, new_companies: 0, jobs_posted: 0, views: 0 }, revenue: { gross_minor: null, net_minor: null, payment_fees_minor: null, refunds_minor: null, successful_payments: 0, failed_payments: 0, average_order_minor: null, currencies: [] }, funnel: [], growth: { comparison: 'not_available', period: previous }, health: { queued: 0, processed_last_at: null, errors: 0 } };
   try {
+    const tbl = await reportTable(env);
     const [events, previousEvents, jobs, companies, revenue, refunds, health] = await Promise.all([
-      env.DB.prepare(`SELECT event_type, SUM(event_count) events, SUM(unique_count) uniques FROM analytics_daily WHERE ${w.sql} GROUP BY event_type`).bind(...w.binds).all(),
-      previous ? env.DB.prepare(`SELECT event_type, SUM(event_count) events, SUM(unique_count) uniques FROM analytics_daily WHERE metric_date >= ? AND metric_date <= ? GROUP BY event_type`).bind(previous.from, previous.to).all() : { results: [] },
+      env.DB.prepare(`SELECT event_type, SUM(event_count) events, SUM(unique_count) uniques FROM ${tbl} WHERE ${w.sql} GROUP BY event_type`).bind(...w.binds).all(),
+      previous ? env.DB.prepare(`SELECT event_type, SUM(event_count) events, SUM(unique_count) uniques FROM ${tbl} WHERE metric_date >= ? AND metric_date <= ? GROUP BY event_type`).bind(previous.from, previous.to).all() : { results: [] },
       // ROW-READ BUDGET (D1 free tier: 5M rows/day): total/active come from the
       // precomputed stats row (0 rows); new_jobs uses the created_at index (only
       // the matching rows are read) instead of an unindexed full-table scan.
@@ -387,12 +454,20 @@ export async function getAnalyticsOverview(env, input = {}) {
   } catch (e) { return fallback; }
 }
 
+const DETAIL_ROW_CAP = 20000; // job/company leaderboards read at most this many newest analytics_daily rows
+
 async function groupedQuery(env, table, range, groupBy, orderBy = 'events DESC', limit = 50) {
   const w = rangeWhere(range);
   const allowedTables = new Set(['analytics_daily']);
   const allowedGroups = new Set(['source', 'medium', 'country', 'device_type', 'job_id', 'company_id', 'event_type']);
   if (!allowedTables.has(table) || !allowedGroups.has(groupBy)) return [];
-  try { const { results } = await env.DB.prepare(`SELECT ${groupBy} key, SUM(event_count) events, SUM(unique_count) uniques FROM ${table} WHERE ${w.sql} GROUP BY ${groupBy} ORDER BY ${orderBy} LIMIT ?`).bind(...w.binds, Math.min(100, Math.max(1, Number(limit) || 50))).all(); return results || []; } catch (e) { return []; }
+  const perJob = groupBy === 'job_id' || groupBy === 'company_id';
+  // Per-job / per-company needs the detailed table, so it is read through a capped newest-first window;
+  // everything else comes from the compact rollup.
+  const from = perJob
+    ? `(SELECT ${groupBy}, event_count, unique_count FROM analytics_daily WHERE ${w.sql} ORDER BY metric_date DESC LIMIT ${DETAIL_ROW_CAP})`
+    : `${await reportTable(env)} WHERE ${w.sql}`;
+  try { const { results } = await env.DB.prepare(`SELECT ${groupBy} key, SUM(event_count) events, SUM(unique_count) uniques FROM ${from} GROUP BY ${groupBy} ORDER BY ${orderBy} LIMIT ?`).bind(...w.binds, Math.min(100, Math.max(1, Number(limit) || 50))).all(); return results || []; } catch (e) { return []; }
 }
 
 export async function getAnalyticsReport(env, type, input = {}) {
@@ -467,6 +542,7 @@ export async function purgeAnalytics(env, { before } = {}) {
       env.DB.prepare('DELETE FROM analytics_event_queue WHERE created_at < ?').bind(cutoff),
       env.DB.prepare('DELETE FROM visits WHERE created_at < ?').bind(cutoff),
       env.DB.prepare('DELETE FROM analytics_daily WHERE metric_date < ?').bind(before),
+      env.DB.prepare('DELETE FROM analytics_summary_daily WHERE metric_date < ?').bind(before),
       env.DB.prepare('DELETE FROM analytics_search_daily WHERE metric_date < ?').bind(before),
       env.DB.prepare('DELETE FROM analytics_filter_daily WHERE metric_date < ?').bind(before),
       env.DB.prepare('DELETE FROM analytics_daily_uniques WHERE metric_date < ?').bind(before),
@@ -485,15 +561,16 @@ export async function resolveAnalyticsAlert(env, alertId) {
 
 export async function getAnalyticsTrends(env, input = {}) {
   const range = dateRange(input);
-  try { const { results } = await env.DB.prepare(`SELECT metric_date,event_type,SUM(event_count) events,SUM(unique_count) uniques FROM analytics_daily WHERE metric_date >= ? AND metric_date <= ? AND event_type IN ('page_view','job_view','job_apply_click','search','payment_success','payment_failed') GROUP BY metric_date,event_type ORDER BY metric_date ASC`).bind(range.from, range.to).all(); return { range, rows: results || [] }; } catch (e) { return { range, rows: [] }; }
+  const tbl = await reportTable(env);
+  try { const { results } = await env.DB.prepare(`SELECT metric_date,event_type,SUM(event_count) events,SUM(unique_count) uniques FROM ${tbl} WHERE metric_date >= ? AND metric_date <= ? AND event_type IN ('page_view','job_view','job_apply_click','search','payment_success','payment_failed') GROUP BY metric_date,event_type ORDER BY metric_date ASC`).bind(range.from, range.to).all(); return { range, rows: results || [] }; } catch (e) { return { range, rows: [] }; }
 }
 
 export async function getAnalyticsTopJobs(env, input = {}) {
   const range = dateRange(input);
-  try { const { results } = await env.DB.prepare(`SELECT d.job_id,j.title,j.company,SUM(CASE WHEN d.event_type='job_view' THEN d.event_count ELSE 0 END) views,SUM(CASE WHEN d.event_type='job_apply_click' THEN d.event_count ELSE 0 END) apply_clicks,SUM(CASE WHEN d.event_type='job_impression' THEN d.event_count ELSE 0 END) impressions FROM analytics_daily d LEFT JOIN jobs j ON j.id=d.job_id WHERE d.job_id > 0 AND d.metric_date >= ? AND d.metric_date <= ? GROUP BY d.job_id ORDER BY views DESC LIMIT 50`).bind(range.from, range.to).all(); return { range, rows: results || [] }; } catch (e) { return { range, rows: [] }; }
+  try { const { results } = await env.DB.prepare(`SELECT d.job_id,j.title,j.company,SUM(CASE WHEN d.event_type='job_view' THEN d.event_count ELSE 0 END) views,SUM(CASE WHEN d.event_type='job_apply_click' THEN d.event_count ELSE 0 END) apply_clicks,SUM(CASE WHEN d.event_type='job_impression' THEN d.event_count ELSE 0 END) impressions FROM (SELECT job_id,event_type,event_count FROM analytics_daily WHERE job_id > 0 AND metric_date >= ? AND metric_date <= ? ORDER BY metric_date DESC LIMIT ${DETAIL_ROW_CAP}) d LEFT JOIN jobs j ON j.id=d.job_id GROUP BY d.job_id ORDER BY views DESC LIMIT 50`).bind(range.from, range.to).all(); return { range, rows: results || [] }; } catch (e) { return { range, rows: [] }; }
 }
 
 export async function getAnalyticsTopCompanies(env, input = {}) {
   const range = dateRange(input);
-  try { const { results } = await env.DB.prepare(`SELECT d.company_id,c.name,SUM(CASE WHEN d.event_type='company_view' THEN d.event_count ELSE 0 END) views,SUM(CASE WHEN d.event_type='job_view' THEN d.event_count ELSE 0 END) job_views,SUM(CASE WHEN d.event_type='job_apply_click' THEN d.event_count ELSE 0 END) apply_clicks FROM analytics_daily d LEFT JOIN companies c ON c.id=d.company_id WHERE d.company_id > 0 AND d.metric_date >= ? AND d.metric_date <= ? GROUP BY d.company_id ORDER BY job_views DESC LIMIT 50`).bind(range.from, range.to).all(); return { range, rows: results || [] }; } catch (e) { return { range, rows: [] }; }
+  try { const { results } = await env.DB.prepare(`SELECT d.company_id,c.name,SUM(CASE WHEN d.event_type='company_view' THEN d.event_count ELSE 0 END) views,SUM(CASE WHEN d.event_type='job_view' THEN d.event_count ELSE 0 END) job_views,SUM(CASE WHEN d.event_type='job_apply_click' THEN d.event_count ELSE 0 END) apply_clicks FROM (SELECT company_id,event_type,event_count FROM analytics_daily WHERE company_id > 0 AND metric_date >= ? AND metric_date <= ? ORDER BY metric_date DESC LIMIT ${DETAIL_ROW_CAP}) d LEFT JOIN companies c ON c.id=d.company_id GROUP BY d.company_id ORDER BY job_views DESC LIMIT 50`).bind(range.from, range.to).all(); return { range, rows: results || [] }; } catch (e) { return { range, rows: [] }; }
 }

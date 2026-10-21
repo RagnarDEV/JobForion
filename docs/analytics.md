@@ -76,3 +76,7 @@ Analytics failures are caught at intake, aggregation, cleanup, alert evaluation 
 ## Live Analytics (`/admin/analytics/live`)
 
 Read-only real-time view built on `analytics_event_queue` — no new tables, indexes or writes. `lib/analytics/live.js` serves three modes through `GET /admin/analytics/live/data`: `init` (one bounded query, newest 3,000 rows, memoised 15 s), `delta` (`id > ?`, max 300 rows, polled every 15 s) and `series` (7/30-day totals from `analytics_daily`, memoised 5 min). The browser pauses when the tab is hidden and stops after 30 minutes until Resume. Raw session ids are hashed server-side and never sent. Tests: `tests/live-analytics.test.mjs`.
+
+## Report read budget (analytics_summary_daily)
+
+`analytics_daily` has one row per day × event × job × company × country × device × source × medium, so reading it for a 30-day report is O(site traffic). Overview, trends, traffic, geography and device reports now read `analytics_summary_daily` (same table without the job/company dimension, ~200× fewer rows). The aggregator writes both in one atomic batch; `backfillAnalyticsSummary()` copies existing history once (also run from the analytics cron; flag `_analytics_summary_ready`). Per-job / per-company leaderboards read a capped newest-first window of 20,000 `analytics_daily` rows. Measured on a 433k-row table: 30-day `/admin/analytics` ≈ 3.46M → ≈ 49k rows read. Tests: `tests/analytics-summary.test.mjs`.

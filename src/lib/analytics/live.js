@@ -22,10 +22,10 @@ import { sha256Hex } from '../accounts/tokens.js';
 import { memoStat } from '../platform/stat-memo.js';
 import { getSettings } from '../platform/settings.js';
 import { loadSyncState, parseDailyBudget } from '../platform/write-budget.js';
-import { getAnalyticsTrends } from './events.js';
 
 export const LIVE_INIT_ROWS = 3000;
 export const LIVE_DELTA_ROWS = 300;
+export const LIVE_SERIES_ROW_CAP = 4000; // max analytics_daily rows read per event type for 7d/30d
 const DAY_MS = 86400000;
 const COLS = 'id,event_type,job_id,country,device_type,referrer,source,page,metadata,created_at,session_id';
 
@@ -231,19 +231,30 @@ export async function getLiveDelta(env, sinceId, selfHosts) {
   };
 }
 
-export function getLiveSeries(env, days, timeZone = 'UTC') {
+export function getLiveSeries(env, days) {
   const d = days === 30 ? 30 : 7;
-  return memoStat(`live:series:${d}:${timeZone}`, async () => {
-    const trends = await getAnalyticsTrends(env, { preset: d === 30 ? '30d' : '7d', timeZone });
+  return memoStat(`live:series:${d}`, async () => {
+    // READ BUDGET: analytics_daily keeps one row per day × job × country × device × source,
+    // so an unbounded SUM could read tens of thousands of rows per click. Each event type is
+    // read through a capped, newest-first subquery (≤ LIVE_SERIES_ROW_CAP rows each); when the
+    // cap is hit only the OLDEST days of the range can be incomplete, and `capped` says so.
+    const from = new Date(Date.now() - d * DAY_MS).toISOString().slice(0, 10);
+    const types = [['page_view', 'pv'], ['job_view', 'jv'], ['job_apply_click', 'ap']];
+    const results = await env.DB.batch(types.map(([type]) => env.DB.prepare(
+      `SELECT metric_date, SUM(event_count) n, COUNT(*) r FROM (SELECT metric_date, event_count FROM analytics_daily WHERE metric_date >= ? AND event_type = ? ORDER BY metric_date DESC LIMIT ?) GROUP BY metric_date`
+    ).bind(from, type, LIVE_SERIES_ROW_CAP)));
     const byDay = new Map();
-    for (const row of trends?.rows || []) {
-      const cur = byDay.get(row.metric_date) || { d: row.metric_date, pv: 0, jv: 0, ap: 0 };
-      const n = Number(row.events || 0);
-      if (row.event_type === 'page_view') cur.pv += n;
-      else if (row.event_type === 'job_view') cur.jv += n;
-      else if (row.event_type === 'job_apply_click') cur.ap += n;
-      byDay.set(row.metric_date, cur);
-    }
-    return { ok: true, days: d, rows: [...byDay.values()].sort((a, b) => a.d.localeCompare(b.d)) };
+    let capped = false;
+    results.forEach((res, i) => {
+      let read = 0;
+      for (const row of res.results || []) {
+        const cur = byDay.get(row.metric_date) || { d: row.metric_date, pv: 0, jv: 0, ap: 0 };
+        cur[types[i][1]] += Number(row.n || 0);
+        byDay.set(row.metric_date, cur);
+        read += Number(row.r || 0);
+      }
+      if (read >= LIVE_SERIES_ROW_CAP) capped = true;
+    });
+    return { ok: true, days: d, capped, rows: [...byDay.values()].sort((a, b) => a.d.localeCompare(b.d)) };
   }, { ttl: 5 * 60 * 1000 });
 }
