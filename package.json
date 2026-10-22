@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
-    "test": "node --no-warnings tests/smoke.test.mjs && node tests/salary-tier.test.mjs && node tests/home-layout.test.mjs && node tests/trust-strip.test.mjs && node tests/monetization.test.mjs && node tests/analytics.test.mjs && node --no-warnings tests/row-budget.test.mjs && node --no-warnings tests/sync-budget.test.mjs && node --no-warnings tests/affiliate.test.mjs && node --no-warnings tests/admin-i18n.test.mjs && node --no-warnings tests/live-analytics.test.mjs && node --no-warnings tests/analytics-summary.test.mjs && node --no-warnings tests/company-query-plans.test.mjs && node --no-warnings tests/config-rev.test.mjs && node --no-warnings tests/job-lifecycle.test.mjs && node --no-warnings tests/ai-service.test.mjs"
+    "test": "node --no-warnings tests/smoke.test.mjs && node tests/salary-tier.test.mjs && node tests/home-layout.test.mjs && node tests/trust-strip.test.mjs && node tests/monetization.test.mjs && node tests/analytics.test.mjs && node --no-warnings tests/row-budget.test.mjs && node --no-warnings tests/sync-budget.test.mjs && node --no-warnings tests/affiliate.test.mjs && node --no-warnings tests/admin-i18n.test.mjs && node --no-warnings tests/live-analytics.test.mjs && node --no-warnings tests/analytics-summary.test.mjs && node --no-warnings tests/company-query-plans.test.mjs && node --no-warnings tests/schema-no-index-churn.test.mjs && node --no-warnings tests/config-rev.test.mjs && node --no-warnings tests/job-lifecycle.test.mjs && node --no-warnings tests/ai-service.test.mjs"
   },
   "devDependencies": {
     "wrangler": "^4.0.0"
