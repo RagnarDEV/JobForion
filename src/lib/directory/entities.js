@@ -437,14 +437,17 @@ export async function companySnapshot(env, companyName) {
   // company on EVERY job-page render (a large employer has hundreds). The count
   // now stops at COMPANY_COUNT_CAP rows and the "first seen" date is a single
   // index lookup of the company's oldest listing (≈ 1 row).
+  // Plain `status = 'active'` (not the `+` form): idx_jobs_company_status_id(company, status, id DESC)
+  // then answers both queries directly — the `+` form forced a sort of ALL the company's jobs
+  // (measured on production: 2,255 rows read instead of 1) on EVERY job-page view.
   const COMPANY_COUNT_CAP = 200;
   try {
     const [countRes, firstRow] = await Promise.all([
       env.DB.prepare(
-        `SELECT COUNT(*) c FROM (SELECT 1 FROM jobs WHERE company = ? AND ${PUBLIC_JOB_STATUS_NOINDEX_SQL} LIMIT ${COMPANY_COUNT_CAP})`
+        `SELECT COUNT(*) c FROM (SELECT 1 FROM jobs WHERE company = ? AND ${PUBLIC_JOB_STATUS_SQL} LIMIT ${COMPANY_COUNT_CAP})`
       ).bind(companyName).all(),
       env.DB.prepare(
-        `SELECT created_at FROM jobs WHERE company = ? AND ${PUBLIC_JOB_STATUS_NOINDEX_SQL} ORDER BY id ASC LIMIT 1`
+        `SELECT created_at FROM jobs WHERE company = ? AND ${PUBLIC_JOB_STATUS_SQL} ORDER BY id ASC LIMIT 1`
       ).bind(companyName).first(),
     ]);
     const count = Number(countRes?.results?.[0]?.c || 0);

@@ -44,11 +44,14 @@ export async function getRelatedJobs(env, job, limit = RELATED_JOBS_LIMIT) {
   const add = (rows) => { for (const r of rows) if (r && !picked.has(r.id) && picked.size < max) picked.set(r.id, r); };
 
   // 1) Other open roles at the same company (most recent first).
+  //    NO `+` on status here: idx_jobs_company_status_id(company, status, id DESC) serves the filter AND
+  //    the ORDER BY, so this reads ~`max` rows. With `+jobs.status` SQLite sorted every job of the
+  //    company (measured: 2,255 rows for one Stripe job page vs 1 row).
   const company = String(job.company || '').trim();
   if (company) {
     add(await safeAll(
       env,
-      `SELECT ${JOB_LISTING_COLUMNS} FROM jobs WHERE company = ? AND +jobs.status = 'active' AND id != ? ORDER BY id DESC LIMIT ${max}`,
+      `SELECT ${JOB_LISTING_COLUMNS} FROM jobs WHERE company = ? AND jobs.status = 'active' AND id != ? ORDER BY id DESC LIMIT ${max}`,
       [company, jobId]
     ));
   }
