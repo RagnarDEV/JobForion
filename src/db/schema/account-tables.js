@@ -303,7 +303,7 @@ export async function ensureAccountTables(env) {
   await ensureColumn(env, 'jobs', 'company_id', 'INTEGER REFERENCES companies(id)');
   await ensureColumn(env, 'jobs', 'source_type', "TEXT DEFAULT 'provider'");
   await ensureColumn(env, 'jobs', 'submitted_by_user_id', 'INTEGER REFERENCES users(id)');
-  await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_jobs_company_id ON jobs(company_id)`).run();
+  // (idx removed: it was created here and dropped again at the end of the migration — see DROP INDEX below)
 
   // ── Link job_postings → an authenticated company submission ────
   // Also additive/nullable — the existing anonymous "Post a Job" modal
@@ -330,7 +330,7 @@ export async function ensureAccountTables(env) {
   // Indexes for the query patterns Job Management actually runs:
   // admin/company filtering by status, cleanup's source/expiry scan, and
   // the new company-jobs page's "my jobs, this status" lookup.
-  await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status)`).run();
+  // (idx removed: it was created here and dropped again at the end of the migration — see DROP INDEX below)
   await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_jobs_status_id ON jobs(status, id DESC)`).run();
   await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_jobs_status_updated ON jobs(status, updated_at DESC, id DESC)`).run();
   await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_jobs_source ON jobs(source)`).run();
@@ -443,7 +443,7 @@ export async function ensureAccountTables(env) {
   // (SQLite can still use just the company prefix efficiently) or don't
   // filter status at all, so a plain single-column index is the correct,
   // simpler choice here — not every index needs to be composite.
-  await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_jobs_company ON jobs(company)`).run();
+  // (idx removed: it was created here and dropped again at the end of the migration — see DROP INDEX below)
   // Public listings combine the active-status predicate with recency, source
   // and salary-tier filters. These three bounded composites improve the
   // common paths without adding an index for every free-text search column.
@@ -636,6 +636,9 @@ export async function ensureAccountTables(env) {
   // These three are strict left-prefixes of composite indexes created above, so
   // SQLite serves the same queries from the composites — dropping them removes 3
   // written rows per job insert/delete (~18%) with no query-plan loss.
+  // WRITE BUDGET: these three used to be CREATEd earlier in this same migration and then dropped here, so every
+  // SCHEMA_VERSION bump rebuilt three indexes over the whole jobs table (~12k written rows EACH, ≈36k per
+  // deploy — measured on production: 41k rows written the day a version bump shipped). They are now only dropped.
   await env.DB.prepare(`DROP INDEX IF EXISTS idx_jobs_status`).run();
   await env.DB.prepare(`DROP INDEX IF EXISTS idx_jobs_company`).run();
   await env.DB.prepare(`DROP INDEX IF EXISTS idx_jobs_company_id`).run();
