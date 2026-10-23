@@ -5,14 +5,14 @@
 export const SHARED_CSS = `
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
-  --bg:#ffffff;--bg2:#faf9ff;--surface:#ffffff;--surface2:#f8f7fc;
-  --border:#eceaf2;--border2:#ddd9e9;
-  --ink:#181632;--ink2:#45415e;--ink3:#7d798f;
-  --brand:#6339e6;--brand2:#4f2bd0;--brand-soft:#f1edff;
-  --navy:#191735;--navy2:#26224d;--navy-border:#39345d;--navy-ink2:#b8b4d2;
+  --bg:#090909;--bg2:#0f0e0b;--surface:#111111;--surface2:#1a1812;
+  --border:#332b1a;--border2:#544522;
+  --ink:#f6f1e3;--ink2:#c8c0aa;--ink3:#8d8777;
+  --brand:#d4af37;--brand2:#f0c94f;--brand-soft:rgba(212,175,55,.13);
+  --navy:#050505;--navy2:#12100b;--navy-border:#3b3018;--navy-ink2:#b8aa84;
   --green:#2dad69;--amber:#d99a22;--coral:#ff6f8a;--cyan:#54c4d2;--pink:#df64a6;
-  --pastel-blue:#f0ecff;--pastel-yellow:#fff8e4;--pastel-pink:#fff0f7;--pastel-green:#eafaf1;
-  --salary:#2a9a66;--font-mono:'JetBrains Mono',ui-monospace,'SF Mono',Menlo,monospace;
+  --pastel-blue:rgba(212,175,55,.14);--pastel-yellow:rgba(212,175,55,.18);--pastel-pink:rgba(212,175,55,.12);--pastel-green:rgba(212,175,55,.12);
+  --salary:#e7c75c;--font-mono:'JetBrains Mono',ui-monospace,'SF Mono',Menlo,monospace;
   --r:12px;--shadow:0 2px 10px rgba(37,24,92,.05);--shadow-lg:0 16px 40px rgba(39,24,105,.12);
   --shadow-card:0 1px 2px rgba(37,24,92,.04),0 8px 24px -4px rgba(37,24,92,.08);
   --shadow-card-hover:0 4px 12px rgba(37,24,92,.06),0 20px 40px -8px rgba(99,57,230,.16);
@@ -83,4 +83,24 @@ body{overscroll-behavior-x:none}
 }
 @media(hover:none){*:hover{transform:none!important}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;scroll-behavior:auto!important}}
+
+/* Black & Gold identity layer: shared by public SSR pages and admin-controlled tokens. */
+body{background:var(--bg);background-image:radial-gradient(circle at 8% 12%,rgba(212,175,55,.08),transparent 24rem),radial-gradient(circle at 92% 78%,rgba(212,175,55,.05),transparent 28rem),linear-gradient(rgba(212,175,55,.025) 1px,transparent 1px),linear-gradient(90deg,rgba(212,175,55,.025) 1px,transparent 1px);background-size:auto,auto,56px 56px,56px 56px;background-attachment:fixed}
+body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:-1;background:radial-gradient(circle at 50% -15%,rgba(245,215,110,.10),transparent 34%);animation:gold-drift 18s ease-in-out infinite alternate}
+@keyframes gold-drift{from{transform:translate3d(-1%,0,0) scale(1)}to{transform:translate3d(1%,1%,0) scale(1.04)}}
+.nav{background:rgba(9,9,9,.88);border-bottom-color:var(--border);box-shadow:0 12px 28px rgba(0,0,0,.22)}
+.nav-link{color:var(--ink2)}.nav-link:hover,.nav-account-trigger:hover{color:var(--brand);background:var(--brand-soft)}
+.nav-cta,.pj-submit{background:linear-gradient(135deg,var(--brand),var(--brand2));color:#0b0904;box-shadow:0 8px 24px rgba(212,175,55,.18)}
+.nav-cta:hover,.pj-submit:hover{background:linear-gradient(135deg,var(--brand2),#ffe59a);color:#0b0904}
+.nav-logo,.mob-logo{color:var(--ink)}.nav-logo .dot{background:var(--brand)}
+.mob-hdr{background:rgba(9,9,9,.92);border-bottom-color:var(--border)}.mob-burger{background:var(--surface);border-color:var(--border2);color:var(--brand)}
+.mob-menu{background:#0b0b0b;border-bottom-color:var(--border)}.mob-menu a,.mob-menu button{color:var(--ink2)}
+.mobile-bottom-nav{background:rgba(9,9,9,.94);border-top-color:var(--border)}.mobile-bottom-item{color:var(--ink3)}.mobile-bottom-item.active{color:var(--brand);background:var(--brand-soft)}
+.site-footer{background:#050505;border-top:1px solid var(--border)}
+.public-card,.public-link-card,.public-prose,.article-body,.job-hero,.related-card,.side-card,.company-tile,.filters-panel-inner,.search-card{background:var(--surface);border-color:var(--border);color:var(--ink)}
+.public-card:hover,.public-link-card:hover{border-color:var(--brand);box-shadow:0 18px 34px rgba(212,175,55,.12)}
+.apply-big{background:var(--brand);color:#0b0904}.apply-big:hover{background:var(--brand2);color:#0b0904;box-shadow:0 10px 28px rgba(212,175,55,.24)}
+.skill-tag,.tag-pinned,.tag-new{background:var(--brand-soft);border-color:rgba(212,175,55,.28);color:var(--brand)}
+.pj-modal,.pj-input,.pj-select,.pj-textarea{background:var(--surface);color:var(--ink);border-color:var(--border2)}
+
 `;
