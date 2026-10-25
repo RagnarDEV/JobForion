@@ -48,6 +48,12 @@ export async function handleFormsApi(url, request, env, ctx) {
         return new Response(JSON.stringify({ success: false, error: "Too many submissions. Please try again later." }), { status: 429, headers: { "Content-Type": "application/json" } });
       }
       const b = await readBoundedJson(request, 32 * 1024);
+      // Honeypot: "company_website" is a hidden field rendered by components/post-job-modal.js.
+      // Real visitors never see or fill it; form-filling bots do. Answer with a normal-looking
+      // success (so the bot learns nothing) but store nothing and notify nobody.
+      if (typeof b.company_website === 'string' && b.company_website.trim() !== '') {
+        return new Response(JSON.stringify({ success: true }), { headers: { "Content-Type": "application/json" } });
+      }
       const title = (b.title || '').toString().slice(0, 150);
       const company = (b.company || '').toString().slice(0, 100);
       const email = (b.email || '').toString().trim().toLowerCase().slice(0, 254);
