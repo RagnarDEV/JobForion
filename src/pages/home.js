@@ -318,7 +318,7 @@ export async function renderMainHTML(env, base, user = null) {
     </section>`).join('');
 
   return `<!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-reveal="${settings.appearance_reveal_enabled !== '0' && settings.appearance_motion !== 'reduced' ? 'on' : 'off'}" data-motion="${escapeHtml(settings.appearance_motion || 'standard')}">
 <head>
 ${googleAnalyticsTag(settings.ga_measurement_id)}
 <meta charset="UTF-8">

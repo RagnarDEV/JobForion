@@ -86,7 +86,7 @@ body{overscroll-behavior-x:none}
 
 /* White & Blue interactive identity layer, driven by the admin theme tokens. */
 body{background:var(--bg);background-image:radial-gradient(circle at 8% 12%,rgba(37,99,235,.08),transparent 24rem),radial-gradient(circle at 92% 78%,rgba(56,189,248,.07),transparent 28rem),linear-gradient(rgba(37,99,235,.025) 1px,transparent 1px),linear-gradient(90deg,rgba(37,99,235,.025) 1px,transparent 1px);background-size:auto,auto,56px 56px,56px 56px;background-attachment:fixed}
-body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:-1;background:radial-gradient(circle at 50% -15%,rgba(56,189,248,.13),transparent 34%);animation:blue-drift 18s ease-in-out infinite alternate}
+body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:-1;background:radial-gradient(circle at 50% -15%,rgba(56,189,248,.13),transparent 34%);animation:var(--motion-background-animation,blue-drift 18s ease-in-out infinite alternate)}
 @keyframes blue-drift{from{transform:translate3d(-1%,0,0) scale(1)}to{transform:translate3d(1%,1%,0) scale(1.04)}}
 .nav{background:rgba(255,255,255,.9);border-bottom-color:var(--border);box-shadow:0 12px 28px rgba(15,23,42,.08)}
 .nav-link{color:var(--ink2)}.nav-link:hover,.nav-account-trigger:hover{color:var(--brand);background:var(--brand-soft)}

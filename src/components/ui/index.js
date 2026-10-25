@@ -90,8 +90,8 @@ export function uiCard({ content = '', heading = '', className = '', as = 'secti
 
 /** Shared CSS for the primitives above. Injected by the existing layouts. */
 export const UI_COMPONENTS_CSS = `
-.ui-btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px;border:1px solid transparent;border-radius:8px;padding:0 16px;font:800 13px/1 var(--font-body,inherit);text-decoration:none;cursor:pointer;touch-action:manipulation;transition:background-color .18s ease,border-color .18s ease,color .18s ease,box-shadow .18s ease,transform .18s ease;white-space:nowrap;-webkit-tap-highlight-color:transparent}
-.ui-btn:hover{transform:translateY(-1px)}
+.ui-btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px;border:1px solid transparent;border-radius:8px;padding:0 16px;font:800 13px/1 var(--font-body,inherit);text-decoration:none;cursor:pointer;touch-action:manipulation;transition:background-color var(--transition-fast,.18s) ease,border-color var(--transition-fast,.18s) ease,color var(--transition-fast,.18s) ease,box-shadow var(--transition-fast,.18s) ease,transform var(--transition-fast,.18s) ease;white-space:nowrap;-webkit-tap-highlight-color:transparent}
+.ui-btn:hover{transform:translateY(var(--motion-hover-distance,-1px))}
 .ui-btn:active{transform:translateY(0)}
 .ui-btn:focus-visible{outline:3px solid var(--brand-soft);outline-offset:2px}
 .ui-btn[aria-disabled="true"],.ui-btn:disabled{opacity:.58;cursor:not-allowed;pointer-events:none}

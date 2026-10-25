@@ -46,6 +46,8 @@ export const APPEARANCE_DEFAULTS = {
   appearance_section_spacing: '46',
   appearance_card_gap: '14',
   appearance_density: 'comfortable',
+  appearance_motion: 'standard',
+  appearance_reveal_enabled: '1',
   appearance_font_family: 'Inter',
   appearance_heading_font: 'Plus Jakarta Sans',
   salary_tier_high_token: 'green',
@@ -102,6 +104,8 @@ export const THEME_SETTING_METADATA = Object.freeze({
   appearance_section_spacing: { type: 'integer', min: 20, max: 96, category: 'layout', description: 'Section spacing in pixels' },
   appearance_card_gap: { type: 'integer', min: 6, max: 32, category: 'layout', description: 'Card grid gap in pixels' },
   appearance_density: { type: 'enum', values: ['compact', 'comfortable', 'spacious'], category: 'layout', description: 'Public layout density' },
+  appearance_motion: { type: 'enum', values: ['reduced', 'standard', 'expressive'], category: 'motion', description: 'Interaction motion profile' },
+  appearance_reveal_enabled: { type: 'boolean', category: 'motion', description: 'Enable homepage scroll reveal' },
   appearance_font_family: { type: 'font', values: ['Manrope', 'Inter', 'Plus Jakarta Sans', 'Poppins'], category: 'typography', description: 'Body font family' },
   appearance_heading_font: { type: 'font', values: ['Space Grotesk', 'Plus Jakarta Sans', 'Poppins', 'Sora', 'Outfit'], category: 'typography', description: 'Heading font family' },
   salary_tier_high_token: { type: 'enum', values: ['green', 'blue', 'slate'], category: 'salary_tier', description: 'High Pay badge token' },
@@ -349,6 +353,7 @@ export const SETTINGS_KEYS = Object.keys(SETTINGS_DEFAULTS);
 const HEX_PATTERN = /^#[0-9a-fA-F]{6}$/;
 const FONT_VALUES = new Set(['Manrope', 'Inter', 'Plus Jakarta Sans', 'Poppins', 'Space Grotesk', 'Sora', 'Outfit']);
 const DENSITY_VALUES = new Set(['compact', 'comfortable', 'spacious']);
+const MOTION_VALUES = new Set(['reduced', 'standard', 'expressive']);
 
 function boundedInteger(value, fallback, min, max) {
   const parsed = parseInt(value, 10);
@@ -360,6 +365,7 @@ export function resolveTheme(settings = {}) {
   const color = (key) => HEX_PATTERN.test(String(source[key] || '')) ? String(source[key]).toUpperCase() : THEME_DEFAULTS[key];
   const font = (key) => FONT_VALUES.has(String(source[key] || '')) ? String(source[key]) : THEME_DEFAULTS[key];
   const density = DENSITY_VALUES.has(String(source.appearance_density || '')) ? String(source.appearance_density) : THEME_DEFAULTS.appearance_density;
+  const motion = MOTION_VALUES.has(String(source.appearance_motion || '')) ? String(source.appearance_motion) : THEME_DEFAULTS.appearance_motion;
   const token = (key, fallback) => ['green', 'blue', 'slate'].includes(String(source[key])) ? String(source[key]) : fallback;
   return {
     primary: color('appearance_primary_color'), secondary: color('appearance_secondary_color'), accent: color('appearance_accent_color'),
@@ -368,7 +374,8 @@ export function resolveTheme(settings = {}) {
     border: color('appearance_border_color'), radius: boundedInteger(source.appearance_radius, 12, 6, 24),
     containerWidth: boundedInteger(source.appearance_container_width, 1150, 960, 1440),
     sectionSpacing: boundedInteger(source.appearance_section_spacing, 46, 20, 96),
-    cardGap: boundedInteger(source.appearance_card_gap, 14, 6, 32), density,
+    cardGap: boundedInteger(source.appearance_card_gap, 14, 6, 32), density, motion,
+    revealEnabled: String(source.appearance_reveal_enabled) !== '0',
     fontFamily: font('appearance_font_family'), headingFont: font('appearance_heading_font'),
     salaryHighToken: token('salary_tier_high_token', 'green'), salaryGoodToken: token('salary_tier_good_token', 'blue'), salaryStandardToken: token('salary_tier_standard_token', 'slate'),
     companyCardRadius: boundedInteger(source.company_card_radius, 14, 8, 24),
@@ -407,11 +414,16 @@ export function googleFontsHref(settings = {}, extraFontNames = []) {
 export function themeCssVariables(settings = {}) {
   const theme = resolveTheme(settings);
   const densityScale = theme.density === 'compact' ? 0.85 : theme.density === 'spacious' ? 1.15 : 1;
+  const motionTokens = {
+    reduced: { fast: '0ms', normal: '0ms', reveal: '0ms', distance: '0px', background: 'none' },
+    standard: { fast: '180ms', normal: '240ms', reveal: '420ms', distance: '-6px', background: 'blue-drift 18s ease-in-out infinite alternate' },
+    expressive: { fast: '180ms', normal: '300ms', reveal: '560ms', distance: '-10px', background: 'blue-drift 14s ease-in-out infinite alternate' },
+  }[theme.motion] || { fast: '180ms', normal: '240ms', reveal: '420ms', distance: '-6px', background: 'blue-drift 18s ease-in-out infinite alternate' };
   const companyShadow = { none: 'none', soft: '0 8px 24px rgba(48,31,121,.10)', strong: '0 14px 34px rgba(48,31,121,.18)' }[theme.companyCardShadow] || '0 8px 24px rgba(48,31,121,.10)';
   const companyHoverTransform = theme.companyCardHover === 'lift' ? 'translateY(-2px)' : 'none';
   const salaryPalette = { green: { bg: 'rgba(22,163,74,.16)', text: '#166534', border: 'rgba(22,163,74,.30)' }, blue: { bg: 'rgba(37,99,235,.15)', text: '#1D4ED8', border: 'rgba(37,99,235,.30)' }, slate: { bg: 'rgba(71,85,105,.14)', text: '#475569', border: 'rgba(71,85,105,.28)' } };
   const salaryColor = (token, part) => salaryPalette[token]?.[part] || salaryPalette.slate[part];
-  return `:root{--brand:${theme.primary};--brand2:${theme.secondary};--cyan:${theme.accent};--brand-soft:color-mix(in srgb, ${theme.primary} 10%, transparent);--bg:${theme.pageBackground};--bg2:${theme.elevatedSurface};--surface:${theme.surface};--surface2:${theme.elevatedSurface};--ink:${theme.textPrimary};--ink2:${theme.textSecondary};--ink3:${theme.textMuted};--border:${theme.border};--border2:${theme.border};--r:${theme.radius}px;--radius-sm:8px;--radius-md:${theme.radius}px;--radius-card:${Math.min(28, theme.radius + 2)}px;--container-width:${theme.containerWidth}px;--section-space:${theme.sectionSpacing}px;--card-gap:${theme.cardGap}px;--space-xs:4px;--space-sm:8px;--space-md:16px;--space-lg:24px;--space-xl:32px;--space-2xl:48px;--density-scale:${densityScale};--transition-fast:180ms;--transition-normal:240ms;--layout-header-height:${theme.navHeaderHeight}px;--nav-logo-size:${theme.navLogoSize}px;--nav-header-height:${theme.navHeaderHeight}px;--nav-gap:${theme.navGap}px;--company-card-radius:${theme.companyCardRadius}px;--company-card-padding:${theme.companyCardPadding}px;--company-card-logo-size:${theme.companyCardLogoSize}px;--company-card-gap:${theme.companyCardGap}px;--company-card-shadow:${companyShadow};--company-card-hover-transform:${companyHoverTransform};--salary-high-bg:${salaryColor(theme.salaryHighToken, 'bg')};--salary-high-text:${salaryColor(theme.salaryHighToken, 'text')};--salary-high-border:${salaryColor(theme.salaryHighToken, 'border')};--salary-good-bg:${salaryColor(theme.salaryGoodToken, 'bg')};--salary-good-text:${salaryColor(theme.salaryGoodToken, 'text')};--salary-good-border:${salaryColor(theme.salaryGoodToken, 'border')};--salary-standard-bg:${salaryColor(theme.salaryStandardToken, 'bg')};--salary-standard-text:${salaryColor(theme.salaryStandardToken, 'text')};--salary-standard-border:${salaryColor(theme.salaryStandardToken, 'border')};--font-body:'${theme.fontFamily}',sans-serif;--font-heading:'${theme.headingFont}',sans-serif}`;
+  return `:root{--brand:${theme.primary};--brand2:${theme.secondary};--cyan:${theme.accent};--brand-soft:color-mix(in srgb, ${theme.primary} 10%, transparent);--bg:${theme.pageBackground};--bg2:${theme.elevatedSurface};--surface:${theme.surface};--surface2:${theme.elevatedSurface};--ink:${theme.textPrimary};--ink2:${theme.textSecondary};--ink3:${theme.textMuted};--border:${theme.border};--border2:${theme.border};--r:${theme.radius}px;--radius-sm:8px;--radius-md:${theme.radius}px;--radius-card:${Math.min(28, theme.radius + 2)}px;--container-width:${theme.containerWidth}px;--section-space:${theme.sectionSpacing}px;--card-gap:${theme.cardGap}px;--space-xs:4px;--space-sm:8px;--space-md:16px;--space-lg:24px;--space-xl:32px;--space-2xl:48px;--density-scale:${densityScale};--transition-fast:${motionTokens.fast};--transition-normal:${motionTokens.normal};--motion-reveal-duration:${motionTokens.reveal};--motion-hover-distance:${motionTokens.distance};--motion-background-animation:${motionTokens.background};--motion-mode:${theme.motion};--reveal-enabled:${theme.revealEnabled ? '1' : '0'};--layout-header-height:${theme.navHeaderHeight}px;--nav-logo-size:${theme.navLogoSize}px;--nav-header-height:${theme.navHeaderHeight}px;--nav-gap:${theme.navGap}px;--company-card-radius:${theme.companyCardRadius}px;--company-card-padding:${theme.companyCardPadding}px;--company-card-logo-size:${theme.companyCardLogoSize}px;--company-card-gap:${theme.companyCardGap}px;--company-card-shadow:${companyShadow};--company-card-hover-transform:${companyHoverTransform};--salary-high-bg:${salaryColor(theme.salaryHighToken, 'bg')};--salary-high-text:${salaryColor(theme.salaryHighToken, 'text')};--salary-high-border:${salaryColor(theme.salaryHighToken, 'border')};--salary-good-bg:${salaryColor(theme.salaryGoodToken, 'bg')};--salary-good-text:${salaryColor(theme.salaryGoodToken, 'text')};--salary-good-border:${salaryColor(theme.salaryGoodToken, 'border')};--salary-standard-bg:${salaryColor(theme.salaryStandardToken, 'bg')};--salary-standard-text:${salaryColor(theme.salaryStandardToken, 'text')};--salary-standard-border:${salaryColor(theme.salaryStandardToken, 'border')};--font-body:'${theme.fontFamily}',sans-serif;--font-heading:'${theme.headingFont}',sans-serif}`;
 }
 
 // Subset of SETTINGS_KEYS that render as HTML checkboxes (maintenance_mode
@@ -424,6 +436,7 @@ export function themeCssVariables(settings = {}) {
 export const CHECKBOX_SETTINGS_KEYS = [
   'maintenance_mode',
   'seo_indexing_enabled',
+  'appearance_reveal_enabled',
   'feature_blog',
   'feature_job_alerts',
   'feature_company_pages',
