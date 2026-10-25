@@ -4,6 +4,7 @@
 
 import { SHARED_CSS } from '../../styles/shared-css.js';
 import { JOB_CARD_CSS } from '../../styles/job-card-css.js';
+import { UI_COMPONENTS_CSS } from '../../components/ui/index.js';
 import { themeCssVariables } from '../../lib/platform/settings.js';
 
 export function homeStyles({ settings, heroFont }) {
@@ -11,6 +12,7 @@ export function homeStyles({ settings, heroFont }) {
 ${SHARED_CSS}
 ${themeCssVariables(settings)}
 ${JOB_CARD_CSS}
+${UI_COMPONENTS_CSS}
 
 /* ── HERO (light editorial surface with a purple decision path) ── */
 .hero{padding:66px 24px 84px;background:linear-gradient(116deg,var(--bg) 0%,var(--surface) 55%,var(--bg2) 100%);position:relative;overflow:hidden;border-bottom:1px solid #f0edf8}

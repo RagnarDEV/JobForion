@@ -18,6 +18,7 @@ import { hydrateHotPay, HOT_PAY_LABEL } from '../lib/jobs/hot-pay.js';
 import { salaryTierBadgeHtml } from '../components/job-card.js';
 import { getVerifiedCompanyNameSet, getPublicCompanyBySlug } from '../lib/companies/companies.js';
 import { parseDbDate, dbDateMs } from '../lib/platform/db-date.js';
+import { applyButton, uiCard } from '../components/ui/index.js';
 
 // SECURITY: JSON.stringify() does NOT escape "<", so a malicious job title
 // like `</script><script>...` embedded in scraped/submitted data could
@@ -157,7 +158,7 @@ export async function renderJobPage(job, related, base, env, user = null) {
   const companyNameHtml = companyHref ? `<a href="${companyHref}" style="color:inherit">${escapeHtml(job.company)}</a>` : escapeHtml(job.company);
   const companyDescriptionHtml = publicCompany?.description ? `<p>${escapeHtml(publicCompany.description)}</p>` : '';
   const applyUrl = safeExternalUrl(job.url);
-  const applyHtml = applyUrl ? `<a href="${escapeHtml(applyUrl)}" target="_blank" rel="noopener noreferrer" class="apply-big" onclick="recordApplyClick(${job.id})">Apply Now </a>` : '';
+  const applyHtml = applyUrl ? applyButton({ href: applyUrl, jobId: job.id, label: 'Apply now' }) : '';
   const postedLabel = job.created_at ? (isNew ? 'Posted recently' : `Posted ${parseDbDate(job.created_at).toLocaleDateString('en-US', { timeZone: 'UTC', month: 'short', day: 'numeric', year: 'numeric' })}`) : '';
   const titleCase = value => String(value || '').replace(/_/g, ' ').replace(/\b\w/g, letter => letter.toUpperCase());
   const employmentLabel = job.employment_type ? titleCase(job.employment_type) : '';
@@ -175,7 +176,7 @@ export async function renderJobPage(job, related, base, env, user = null) {
   const asideCompanyHtml = publicCompany ? `<div class="detail-aside-card"><div class="aside-company-head">${logoImgHtml(job.company, '40px', 'aside-company-logo', companyLogoUrl, companyWebsite)}<div><strong>${escapeHtml(publicCompany.name || job.company)}</strong>${publicCompany.verified ? `<span class="verified-ico" title="Verified Company">${iconBadgeCheck({ size: 13 })}</span>` : ''}</div></div>${publicCompany.description ? `<p class="aside-company-desc">${escapeHtml(publicCompany.description)}</p>` : ''}<a href="${companyHref}" class="text-link">View company profile </a></div>` : '';
   const companyPreviewHtml = publicCompany ? `<div id="company" class="job-section-anchor job-company-summary"><div class="company-preview"><div class="company-preview-logo">${logoImgHtml(job.company, '48px', 'co-logo', companyLogoUrl, companyWebsite)}</div><div><div class="sec-label">About ${escapeHtml(job.company)}</div>${companyDescriptionHtml}${publicCompany.country || publicCompany.city ? `<p>${escapeHtml([publicCompany.city, publicCompany.country].filter(Boolean).join(', '))}</p>` : ''}${companyInfo?.openPositions ? `<p>${companyInfo.openPositions} open position${companyInfo.openPositions === 1 ? '' : 's'} on JobForion.</p>` : ''}<a href="${companyHref}" class="text-link">View company profile </a></div></div></div>` : '';
   const companyTabHtml = publicCompany ? '<a href="#company">About company</a>' : '';
-  const asideHtml = `<aside class="job-detail-aside" aria-label="Job summary">${applyHtml ? `<div class="detail-aside-card detail-apply-card">${applyHtml}</div>` : ''}${asideFactsHtml}${asideCompanyHtml}</aside>`;
+  const asideHtml = `<aside class="job-detail-aside" aria-label="Job summary">${applyHtml ? uiCard({ content: applyHtml, className: 'detail-aside-card detail-apply-card', as: 'div' }) : ''}${asideFactsHtml}${asideCompanyHtml}</aside>`;
 
   const schema = safeJsonLd(jobPostingSchema(job, base, { description: cleanDesc || desc }));
   const breadcrumbSchema = safeJsonLd({
@@ -209,7 +210,7 @@ export async function renderJobPage(job, related, base, env, user = null) {
         ${salaryTierBadgeHtml(job, settings)}
       </div>
       ${job.salary ? `<div class="job-salary-lg">${iconDollarSign({ size: 20 })} ${escapeHtml(job.salary)}</div>` : ''}
-      <div class="job-primary-actions"><button class="job-save-outline" onclick="toggleJobSave(${job.id});return false">${iconBookmark({ size: 16 })} Save</button></div>
+      <div class="job-primary-actions">${applyHtml ? `<span class="job-primary-apply">${applyHtml}</span>` : ''}<button class="job-save-outline" onclick="toggleJobSave(${job.id});return false">${iconBookmark({ size: 16 })} Save</button></div>
     </div>
     ${jobFactsHtml}
     <nav class="job-detail-tabs" aria-label="Job detail sections"><a class="active" href="#overview">Overview</a>${companyTabHtml}${skills.length ? '<a href="#requirements">Requirements</a>' : ''}${job.benefits ? '<a href="#benefits">Benefits</a>' : ''}</nav>
@@ -224,7 +225,7 @@ export async function renderJobPage(job, related, base, env, user = null) {
   </div>
   ${insightsHtml ? `<div class="insights-wrap">${insightsHtml}</div>` : ''}
   </main>${asideHtml}</div>
-  ${applyUrl ? `<div class="apply-mobile-sticky-wrap"><a class="apply-mobile-sticky" href="${escapeHtml(applyUrl)}" target="_blank" rel="noopener noreferrer" onclick="recordApplyClick(${job.id})">Apply Now </a></div>` : ''}
+  ${applyUrl ? `<div class="apply-mobile-sticky-wrap">${applyButton({ href: applyUrl, jobId: job.id, label: 'Apply now', className: 'apply-mobile-sticky', mobile: true })}</div>` : ''}
   ${related.length ? `
     <div class="related-title" style="margin-top:24px">Similar Jobs</div>
     <div class="jobs-list">
@@ -245,7 +246,9 @@ export async function renderJobPage(job, related, base, env, user = null) {
 .job-hero.jt-card-premium .apply-big,.job-hero.jt-card-sponsored .apply-big{padding:16px 40px;font-size:17px;box-shadow:0 8px 24px rgba(53,86,255,.28)}
 .job-primary-actions{display:flex;align-items:center;gap:9px;margin-top:17px}.job-primary-actions .apply-big{flex:1;justify-content:center}.job-save-outline{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:42px;padding:0 20px;border:1px solid var(--brand);border-radius:8px;background:#fff;color:var(--brand);font:800 13px var(--font-body,sans-serif);cursor:pointer;transition:all .18s}.job-save-outline:hover,.job-save-outline.active{background:var(--brand-soft)}.job-detail-status{display:flex;align-items:center;gap:7px;color:#858094;font-size:12px;margin:-5px 0 11px}.job-detail-status strong{color:var(--green);font-size:12px}.status-dot{width:6px;height:6px;border-radius:50%;background:var(--green);box-shadow:0 0 0 3px rgba(45,173,105,.1)}.job-facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(128px,1fr));border-top:1px solid #f0eef4;border-bottom:1px solid #f0eef4;background:#fff}.job-fact{display:grid;justify-items:center;gap:3px;padding:15px 9px;border-right:1px solid #f0eef4;text-align:center;min-width:0}.job-fact:last-child{border-right:0}.job-description-content{font-size:14px;line-height:1.78;color:var(--ink2)}.job-description-content p{margin:0 0 14px}.job-description-content h2,.job-description-content h3,.job-description-content h4{font-family:var(--font-heading,sans-serif);color:var(--ink);margin:22px 0 9px;font-weight:800}.job-description-content h2{font-size:18px}.job-description-content h3{font-size:16px}.job-description-content ul,.job-description-content ol{margin:0 0 14px;padding-left:22px}.job-description-content li{margin:5px 0}.job-description-content a{color:var(--brand);font-weight:700;text-decoration:underline}.company-preview{display:flex;align-items:center;gap:13px;padding:14px;border:1px solid #eceaf2;background:#fff;border-radius:11px}.company-preview-logo{flex:0 0 auto}.company-preview .sec-label{margin-bottom:5px}.company-preview p{margin:0 0 8px;color:var(--ink2);font-size:14px}.apply-mobile-sticky-wrap{display:contents}.job-fact>span{color:var(--brand);display:inline-flex;margin-bottom:2px}.job-fact strong{font-size:12.5px;color:var(--ink);font-weight:800;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.job-fact small{color:#938fa0;font-size:11.5px}.job-detail-tabs{display:flex;gap:26px;overflow-x:auto;border-bottom:1px solid #efedf4;margin-top:17px;padding:0 7px;scrollbar-width:none}.job-detail-tabs::-webkit-scrollbar{display:none}.job-detail-tabs a{position:relative;flex-shrink:0;padding:0 0 11px;color:#767184;font-size:12.5px;font-weight:800}.job-detail-tabs a.active{color:var(--brand)}.job-detail-tabs a.active::after{content:'';position:absolute;left:0;right:0;bottom:-1px;height:2px;background:var(--brand);border-radius:3px}.job-section-anchor{scroll-margin-top:88px}.job-section-anchor+.job-section-anchor{border-top:1px solid #f0eef4;margin-top:24px;padding-top:22px}.job-company-summary p,.job-benefits-summary p{font-size:14px;color:var(--ink2);line-height:1.7;margin-bottom:10px}.text-link{display:inline-flex;align-items:center;gap:5px;color:var(--brand);font-size:13px;font-weight:800}.apply-mobile-sticky{display:none}.job-mobile-topbar{display:none}
 @media(max-width:640px){.page{padding-top:12px}.job-mobile-topbar{display:flex;align-items:center;justify-content:space-between;height:38px;margin:0 0 12px;padding:0 2px}.job-mobile-topbar a{display:grid;place-items:center;width:30px;height:30px;border:0;background:transparent;color:var(--ink);font-size:12.5px;font-weight:800;cursor:pointer}.job-mobile-topbar strong{font:800 13px var(--font-heading,sans-serif)}.breadcrumb{display:none}.job-primary-actions{margin-top:14px}.job-primary-actions .apply-big{font-size:13px;padding:0 10px;min-height:42px}.job-save-outline{padding:0 14px;min-width:92px;font-size:12.5px}.job-facts{grid-template-columns:repeat(2,1fr)}.job-fact:nth-child(2n){border-right:0}.job-fact:nth-last-child(-n+2){border-bottom:0}.job-fact{border-bottom:1px solid #f0eef4}.job-detail-tabs{gap:22px;margin-left:-16px;margin-right:-16px;padding-left:16px;padding-right:16px}.job-detail-tabs a{font-size:12px}.job-body{padding-bottom:84px}.apply-mobile-sticky{position:fixed;display:flex;align-items:center;justify-content:center;gap:7px;left:14px;right:14px;bottom:76px;height:42px;background:var(--brand);border-radius:8px;color:#fff;font-size:13px;font-weight:800;box-shadow:0 10px 24px rgba(99,57,230,.25);z-index:340}.job-hero-hdr{padding:19px 16px}.job-co-row{gap:10px}.job-logo{width:52px;height:52px}.job-title-h1{font-size:21px}.job-hero{margin-left:-2px;margin-right:-2px}.job-detail-layout{display:block}.job-detail-aside{display:none}.job-primary-actions{padding-bottom:2px}.apply-mobile-sticky-wrap{display:contents} }
-</style>
+  .job-primary-apply{display:flex;flex:1;min-width:0}.job-primary-apply .ui-apply-btn{width:100%}.detail-apply-card .ui-apply-btn{width:100%}.apply-mobile-sticky{display:none}
+  @media(max-width:640px){.job-primary-apply .ui-apply-btn{min-height:42px;padding:0 10px;font-size:13px}.apply-mobile-sticky{display:inline-flex!important}}
+  </style>
 <script>
 (function(){
   var jobId = ${job.id};

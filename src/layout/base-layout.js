@@ -9,6 +9,7 @@ import { postJobModalHtml } from '../components/post-job-modal.js';
 import { SHARED_CSS } from '../styles/shared-css.js';
 import { JOB_CARD_CSS } from '../styles/job-card-css.js';
 import { ACCOUNTS_CSS } from '../styles/accounts-css.js';
+import { UI_COMPONENTS_CSS } from '../components/ui/index.js';
 import { ICON_HEAD } from '../assets/favicon.js';
 import { BASE_URL } from '../config/constants.js';
 import { escapeHtml } from '../lib/directory/entities.js';
@@ -74,6 +75,7 @@ ${extraHead}
 <style>
 ${SHARED_CSS}
 ${JOB_CARD_CSS}
+${UI_COMPONENTS_CSS}
 ${ACCOUNTS_CSS}
 ${themeVariables}
 .page{max-width:var(--container-width);margin:0 auto;padding:36px 20px 72px}
