@@ -1,6 +1,6 @@
 import { memoConfig } from '../platform/config-memo.js';
 // src/lib/content/nav-buttons.js
-// ════════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════════════
 // CUSTOM MENU BUTTONS — arbitrary extra links/buttons an admin can add
 // to the site's mobile menu (and desktop nav) without a code edit:
 // label, destination (internal path or full external URL), an emoji
@@ -13,7 +13,7 @@ import { memoConfig } from '../platform/config-memo.js';
 // existing page, a category, or a completely external URL) and carries
 // its own icon/color. Use pages-cms's `show_in_menu` flag to put a CMS
 // page in the menu, and nav_buttons for everything else.
-// ════════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════════════
 
 export async function getNavButtons(env) {
   return memoConfig('nav_buttons', () => loadNavButtons(env));
@@ -51,6 +51,25 @@ function safeNavUrl(value) {
 function safeNavColor(value) {
   const clean = String(value || '').trim();
   return /^#[0-9a-f]{6}$/i.test(clean) ? clean : '#2563EB';
+}
+
+// RENDER-TIME defense in depth. createNavButton() validates on write, but rows can predate
+// that validation (or be edited directly in D1). Every renderer (components/nav.js) passes
+// each row through here, so a bad scheme such as javascript: or a non-hex colour can never
+// reach the page. Returns null when the row is unusable — callers simply skip it.
+export function sanitizeNavButtonForRender(button) {
+  try {
+    const label = String(button?.label || '').trim().slice(0, 40);
+    if (!label) return null;
+    return {
+      label,
+      url: safeNavUrl(button?.url),
+      icon: String(button?.icon || '').trim().slice(0, 8),
+      color: safeNavColor(button?.color),
+    };
+  } catch (e) {
+    return null;
+  }
 }
 
 export async function createNavButton(env, { label, url, icon, color }) {

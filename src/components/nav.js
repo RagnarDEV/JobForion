@@ -3,6 +3,7 @@
 import { iconSearch, iconBuilding, iconFolder, iconBookmark, iconFileText, iconPlus, iconLock, iconMenu, iconGlobe, iconX, iconUser, iconLayoutDashboard, iconHome, iconBriefcase, iconBell } from '../assets/icons.js';
 import { escapeHtml } from '../lib/directory/entities.js';
 import { SETTINGS_DEFAULTS } from '../lib/platform/settings.js';
+import { sanitizeNavButtonForRender } from '../lib/content/nav-buttons.js';
 
 function authLinksHtml(user, mobile = false) {
   if (!user) {
@@ -17,13 +18,19 @@ function authLinksHtml(user, mobile = false) {
     : `<div class="nav-account"><a href="/user/dashboard" class="nav-account-trigger"><span class="nav-user-avatar">${initials}</span><span class="nav-account-label">${label}</span></a><div class="nav-account-menu"><a href="/user/dashboard">${iconLayoutDashboard({ size: 14 })} Dashboard</a><a href="/user/profile">${iconUser({ size: 14 })} My Profile</a><a href="/user/saved-jobs">${iconBookmark({ size: 14 })} Saved Jobs</a><a href="/user/applications">${iconBriefcase({ size: 14 })} Applications</a><a href="/user/job-alerts">${iconBell({ size: 14 })} Job Alerts</a><form method="POST" action="/logout"><button type="submit">${iconX({ size: 14 })} Sign out</button></form></div></div>`;
 }
 
+// Admin-managed menu buttons are re-validated at render time (see sanitizeNavButtonForRender):
+// an unsafe URL scheme or a non-hex colour in an old/edited row is dropped, never rendered.
+function safeButtons(navButtons) {
+  return (navButtons || []).map(sanitizeNavButtonForRender).filter(Boolean);
+}
+
 export function navHtml(settings, menuPages = [], navButtons = [], user = null) {
   const siteName = escapeHtml(settings?.site_name || SETTINGS_DEFAULTS.site_name);
   const ctaText = escapeHtml(settings?.nav_cta_text || 'Post a job');
   const ctaEnabled = settings?.nav_cta_enabled !== '0';
   const extraLinks = [
     ...menuPages.map(p => `<a href="/${escapeHtml(p.slug)}" class="nav-link">${escapeHtml(p.title)}</a>`),
-    ...navButtons.map(b => `<a href="${escapeHtml(b.url)}" class="nav-link" style="color:${escapeHtml(b.color)}">${escapeHtml(b.icon)} ${escapeHtml(b.label)}</a>`),
+    ...safeButtons(navButtons).map(b => `<a href="${escapeHtml(b.url)}" class="nav-link" style="color:${escapeHtml(b.color)}">${escapeHtml(b.icon)} ${escapeHtml(b.label)}</a>`),
   ].join('');
   return `
 <nav class="nav" aria-label="Primary navigation">
@@ -48,7 +55,7 @@ export function mobileHeaderHtml(settings, menuPages = [], navButtons = [], user
   const ctaEnabled = settings?.nav_cta_enabled !== '0';
   const extraMenuItems = [
     ...menuPages.map(p => `<a href="/${escapeHtml(p.slug)}">${iconFileText({ size: 16 })} ${escapeHtml(p.title)}</a>`),
-    ...navButtons.map(b => `<a href="${escapeHtml(b.url)}" style="color:${escapeHtml(b.color)}"><span style="width:16px;display:inline-flex;justify-content:center">${escapeHtml(b.icon)}</span> ${escapeHtml(b.label)}</a>`),
+    ...safeButtons(navButtons).map(b => `<a href="${escapeHtml(b.url)}" style="color:${escapeHtml(b.color)}"><span style="width:16px;display:inline-flex;justify-content:center">${escapeHtml(b.icon)}</span> ${escapeHtml(b.label)}</a>`),
   ].join('');
   return `
 <div class="mob-hdr">

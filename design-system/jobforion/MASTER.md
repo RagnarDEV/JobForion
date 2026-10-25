@@ -6,195 +6,89 @@
 
 ---
 
-**Project:** Jobforion
-**Generated:** 2026-10-25 05:19:12
-**Category:** Job Board/Recruitment
+**Project:** JobForion
+**Category:** Job Board / Recruitment
+**Source of truth:** `src/styles/shared-css.js` (tokens + shell), `src/styles/job-card-css.js` (job cards), `src/styles/accounts-css.js` (account/company area). This file DOCUMENTS those tokens. If the two ever disagree, **the CSS wins** — update this file.
+
+**History:** First generated on 2026-10-25 by `ui-ux-pro-max-skill`. Its generated suggestions (Poppins + Open Sans, primary `#0369A1`, "Flat Design" with no gradients/shadows, a Funnel page pattern) were deliberately **NOT adopted**: they contradict JobForion's established white & blue identity. The skill is used here only as a checklist and anti-pattern source. Reconciled with the production tokens in the UI/UX audit (P0).
 
 ---
 
 ## Global Rules
 
-### Color Palette
+### Color Palette (production tokens)
 
-| Role | Hex | CSS Variable |
-|------|-----|--------------|
-| Primary | `#0369A1` | `--color-primary` |
-| On Primary | `#FFFFFF` | `--color-on-primary` |
-| Secondary | `#0EA5E9` | `--color-secondary` |
-| On Secondary | `#0F172A` | `--color-on-secondary` |
-| Accent/CTA | `#16A34A` | `--color-accent` |
-| On Accent/CTA | `#000000` | `--color-on-accent` |
-| Background | `#F0F9FF` | `--color-background` |
-| Foreground | `#0C4A6E` | `--color-foreground` |
-| Card | `#FFFFFF` | `--color-card` |
-| Card Foreground | `#0C4A6E` | `--color-card-foreground` |
-| Muted | `#E7EFF5` | `--color-muted` |
-| Muted Foreground | `#475569` | `--color-muted-foreground` |
-| Border | `#BAE6FD` | `--color-border` |
-| Destructive | `#DC2626` | `--color-destructive` |
-| On Destructive | `#FFFFFF` | `--color-on-destructive` |
-| Ring | `#0369A1` | `--color-ring` |
+| Role | Value | CSS Variable | Notes |
+|------|-------|--------------|-------|
+| Brand | `#2563EB` | `--brand` | Links, primary buttons, focus ring (≈ 5.2:1 on white) |
+| Brand hover | `#1D4ED8` | `--brand2` | Gradient end / hover |
+| Brand soft | `rgba(37,99,235,.10)` | `--brand-soft` | Tinted backgrounds, hover fills |
+| Background | `#FFFFFF` | `--bg` | Page |
+| Background alt | `#F8FAFC` | `--bg2` | Scrollbar track, subtle areas |
+| Surface | `#FFFFFF` | `--surface` | Cards, modals |
+| Surface alt | `#F1F5F9` | `--surface2` | Inputs, tags, ad slots |
+| Border | `#E2E8F0` / `#CBD5E1` | `--border` / `--border2` | Dividers / input borders |
+| Text | `#0F172A` | `--ink` | Headings, titles |
+| Text secondary | `#475569` | `--ink2` | Body copy, labels (≈ 7.6:1 on white) |
+| Text muted | `#64748B` | `--ink3` | Meta only (≈ 4.8:1 on white, ≈ 4.4:1 on `--surface2`) |
+| Navy (footer) | `#0F172A` / `#172554` | `--navy` / `--navy2` | Footer + dark areas |
+| Salary / success text | `#15803D` | `--salary` | AA text colour (≈ 5.0:1). Never use `#16A34A` or `--green` for text |
+| Decorative accents | `--green` `--amber` `--coral` `--cyan` `--pink` | — | **Fills, dots, borders only** — they fail 4.5:1 as small text |
 
-**Color Notes:** Professional blue + success green [Accent adjusted from #22C55E]
+**Contrast rules**
+- Body/meta text must reach **4.5:1**; large text and UI boundaries (focus rings, input borders) **3:1**.
+- On tinted backgrounds (`--surface2`, `--brand-soft`, pastels) use `--ink2` or darker, not `--ink3`.
+- Category hues (`--cat-color`) colour the **dot**, never the label text.
+- Admin theme variables (`--card-*-color`) may override colours: their fallbacks must stay AA tokens.
 
 ### Typography
 
-- **Heading Font:** Poppins
-- **Body Font:** Open Sans
-- **Mood:** modern, professional, clean, corporate, friendly, approachable
-- **Google Fonts:** [Poppins + Open Sans](https://fonts.googleapis.com/css2?family=Open+Sans:wght@300;400;500;600;700&family=Poppins:wght@400;500;600;700&display=swap)
+- **Headings:** Plus Jakarta Sans (`--font-heading`)
+- **Body:** Inter (`--font-body`)
+- **Numbers (salary):** JetBrains Mono (`--font-mono`)
+- **Mood:** modern, professional, clean, friendly
+- Minimum sizes: body 14px+, secondary meta 12px+, tags/badges 11.5–12px. Form fields are **16px on phones** (prevents iOS zoom).
 
-**CSS Import:**
-```css
-@import url('https://fonts.googleapis.com/css2?family=Open+Sans:wght@300;400;500;600;700&family=Poppins:wght@400;500;600;700&display=swap');
-```
+### Spacing, Shape & Elevation
 
-### Spacing Variables
+- Base radius `--r: 12px`; controls 8–10px; modals 16px; pills 20px.
+- Elevation tokens: `--shadow`, `--shadow-lg`, `--shadow-card`, `--shadow-card-hover`. Cards use a border first, shadow second.
+- Touch targets: **44px minimum on phones** (see the touch layer in `shared-css.js`).
 
-| Token | Value | Usage |
-|-------|-------|-------|
-| `--space-xs` | `4px` / `0.25rem` | Tight gaps |
-| `--space-sm` | `8px` / `0.5rem` | Icon gaps, inline spacing |
-| `--space-md` | `16px` / `1rem` | Standard padding |
-| `--space-lg` | `24px` / `1.5rem` | Section padding |
-| `--space-xl` | `32px` / `2rem` | Large gaps |
-| `--space-2xl` | `48px` / `3rem` | Section margins |
-| `--space-3xl` | `64px` / `4rem` | Hero padding |
+### Icons
 
-### Shadow Depths
+- **Lucide only**, via `src/assets/icons.js` (inline SVG, `currentColor`, `aria-hidden`). No emoji as UI icons.
+- Icon-only buttons need an `aria-label`.
 
-| Level | Value | Usage |
-|-------|-------|-------|
-| `--shadow-sm` | `0 1px 2px rgba(0,0,0,0.05)` | Subtle lift |
-| `--shadow-md` | `0 4px 6px rgba(0,0,0,0.1)` | Cards, buttons |
-| `--shadow-lg` | `0 10px 15px rgba(0,0,0,0.1)` | Modals, dropdowns |
-| `--shadow-xl` | `0 20px 25px rgba(0,0,0,0.15)` | Hero images, featured cards |
+### Motion
+
+- Colour/shadow transitions 150–200ms only. No entrance animations on lists, no scale-on-hover on touch devices.
+- Everything animated must be disabled by `prefers-reduced-motion` (already global).
 
 ---
 
 ## Component Specs
 
-### Buttons
-
-```css
-/* Primary Button */
-.btn-primary {
-  background: #16A34A;
-  color: #000000;
-  padding: 12px 24px;
-  border-radius: 8px;
-  font-weight: 600;
-  transition: all 200ms ease;
-  cursor: pointer;
-}
-
-.btn-primary:hover {
-  opacity: 0.9;
-  transform: translateY(-1px);
-}
-
-/* Secondary Button */
-.btn-secondary {
-  background: transparent;
-  color: #0369A1;
-  border: 2px solid #0369A1;
-  padding: 12px 24px;
-  border-radius: 8px;
-  font-weight: 600;
-  transition: all 200ms ease;
-  cursor: pointer;
-}
-```
-
-### Cards
-
-```css
-.card {
-  background: #F0F9FF;
-  border-radius: 12px;
-  padding: 24px;
-  box-shadow: var(--shadow-md);
-  transition: all 200ms ease;
-  cursor: pointer;
-}
-
-.card:hover {
-  box-shadow: var(--shadow-lg);
-  transform: translateY(-2px);
-}
-```
-
-### Inputs
-
-```css
-.input {
-  padding: 12px 16px;
-  border: 1px solid #E2E8F0;
-  border-radius: 8px;
-  font-size: 16px;
-  transition: border-color 200ms ease;
-}
-
-.input:focus {
-  border-color: #0369A1;
-  outline: none;
-  box-shadow: 0 0 0 3px #0369A120;
-}
-```
-
-### Modals
-
-```css
-.modal-overlay {
-  background: rgba(0, 0, 0, 0.5);
-  backdrop-filter: blur(4px);
-}
-
-.modal {
-  background: white;
-  border-radius: 16px;
-  padding: 32px;
-  box-shadow: var(--shadow-xl);
-  max-width: 500px;
-  width: 90%;
-}
-```
-
----
-
-## Style Guidelines
-
-**Style:** Flat Design
-
-**Keywords:** 2D, minimalist, bold colors, no shadows, clean lines, simple shapes, typography-focused, modern, icon-heavy
-
-**Best For:** Web apps, mobile apps, cross-platform, startup MVPs, user-friendly, SaaS, dashboards, corporate
-
-**Key Effects:** No gradients/shadows, simple hover (color/opacity shift), fast loading, clean transitions (150-200ms ease), minimal icons
-
-### Page Pattern
-
-**Pattern Name:** Funnel (3-Step Conversion)
-
-- **Conversion Strategy:** Progressive disclosure. Show only essential info per step. Use progress indicators. Multiple CTAs.
-- **CTA Placement:** Each step: mini-CTA. Final: main CTA
-- **Section Order:** Hero > Step 1 (problem) > Step 2 (solution) > Step 3 (action) > CTA progression
+- **Primary button** (`.nav-cta`, `.pj-submit`, `.apply-big`): brand → brand2 gradient, white text, radius 8–9px, weight 800.
+- **Job card** (`.job-card`): border `--border`, radius `--r`, `contain: layout paint style`; title `--ink`, company `--ink2`, meta `--ink3`, salary `--salary` in mono.
+- **Inputs** (`.pj-input`, `.form-input`): `--surface2` fill, 1.5px `--border2`, focus = `--brand` border + `--brand-soft` ring **and** a visible outline.
+- **Modal** (`.pj-overlay`/`.pj-modal`): `role="dialog"` + `aria-modal` + labelled title, Escape closes, Tab is trapped, focus returns to the opener, errors inline with `role="alert"`.
+- **Focus ring** (global): `3px solid var(--brand)`, offset 2px; `#93C5FD` on the dark footer.
 
 ---
 
 ## Anti-Patterns (Do NOT Use)
 
-- ❌ Outdated forms
-- ❌ Hidden filters
-
-### Additional Forbidden Patterns
-
-- ❌ **Emojis as icons** — Use SVG icons (Heroicons, Lucide, Simple Icons)
-- ❌ **Missing cursor:pointer** — All clickable elements must have cursor:pointer
-- ❌ **Layout-shifting hovers** — Avoid scale transforms that shift layout
-- ❌ **Low contrast text** — Maintain 4.5:1 minimum contrast ratio
-- ❌ **Instant state changes** — Always use transitions (150-300ms)
-- ❌ **Invisible focus states** — Focus states must be visible for a11y
+- ❌ Emojis as icons — use Lucide SVG
+- ❌ Colour as the only carrier of meaning (status, category, required)
+- ❌ Low-contrast text (< 4.5:1), including admin-configurable colours
+- ❌ Invisible or near-transparent focus states
+- ❌ `window.alert()` for validation errors — use inline `role="alert"` messages
+- ❌ Unlabelled form fields (placeholder is not a label)
+- ❌ Layout-shifting hovers / scale transforms on touch devices
+- ❌ Instant state changes — always transition (150–300ms)
+- ❌ Hidden filters, outdated forms
+- ❌ Rendering admin-supplied URLs/colours without validation (see `lib/content/nav-buttons.js`)
 
 ---
 
@@ -202,13 +96,13 @@
 
 Before delivering any UI code, verify:
 
-- [ ] No emojis used as icons (use SVG instead)
-- [ ] All icons from consistent icon set (Heroicons/Lucide)
-- [ ] `cursor-pointer` on all clickable elements
-- [ ] Hover states with smooth transitions (150-300ms)
-- [ ] Light mode: text contrast 4.5:1 minimum
-- [ ] Focus states visible for keyboard navigation
+- [ ] No emojis used as icons; all icons from `assets/icons.js` (Lucide)
+- [ ] `cursor:pointer` on every clickable element; hover transitions 150–300ms
+- [ ] Text contrast ≥ 4.5:1 (meta on tinted backgrounds uses `--ink2`)
+- [ ] Every input has an associated `<label for>`; required fields marked
+- [ ] Focus visible for keyboard navigation; modals trap and restore focus
 - [ ] `prefers-reduced-motion` respected
-- [ ] Responsive: 375px, 768px, 1024px, 1440px
-- [ ] No content hidden behind fixed navbars
-- [ ] No horizontal scroll on mobile
+- [ ] Touch targets ≥ 44px on phones; form fields 16px on phones
+- [ ] Responsive: 375px, 768px, 1024px, 1440px; no horizontal scroll on mobile
+- [ ] No content hidden behind sticky/fixed bars
+- [ ] All user/admin/provider data escaped (`escapeHtml`) before reaching HTML
